@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`SpecModule_webview` is the **visualization consumption channel** for the SpecModule LLM framework: an independent frontend SPA + FastAPI thin backend that visualizes and manages specmodule runs. The library lives in the sibling repo `C:/Users/xingy/Desktop/开发/SpecModule` (PyPI package `specmodule`). The library's own stdlib visualization switch (`module_harness/feed.py`, zero-dependency http.server) only provides the minimal "see it running" form; **all rich interaction lives here**.
+`SpecModule_webview` is the **visualization consumption channel** for the SpecModule LLM framework: an independent frontend SPA + FastAPI thin backend that visualizes and manages specmodule runs. The library lives in the sibling repo [SpecModule](https://github.com/MountLynx/SpecModule) (PyPI package `specmodule`). The library's own stdlib visualization switch (`module_harness/feed.py`, zero-dependency http.server) only provides the minimal "see it running" form; **all rich interaction lives here**.
 
 **Thin layer, zero business logic.** The library's query functions map 1:1 to HTTP endpoints; `module_harness/query.py` was explicitly designed as the shared query layer for CLI/MCP/Web consumers. Import it, never reimplement. Anything that looks like logic belongs upstream in the library repo (see 统一 API 原则 below).
 
@@ -46,12 +46,12 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 
 ## Key Directories
 
-- `C:/Users/xingy/Desktop/开发/SpecModule_webview/` — this repo:
+- repo root — this repo:
   - `server/` — FastAPI thin layer: `app.py` (entry: CORS + router wiring), `deps.py` (base_dir resolution + run_id validation), `api/runs.py` (runtime read endpoints), `api/graph.py` (tasklist → graph render), `api/manage.py` (module/run enumeration + checkpoint writes), `ws.py` (tick stream push)
   - `web/` — frontend SPA (later phases)
   - `tests/` — pytest + httpx TestClient
   - `roadmap.md` — the plan: architecture, endpoint list, phase breakdown, acceptance criteria. Re-read before implementing.
-- `C:/Users/xingy/Desktop/开发/SpecModule/` — the consumed library (read-only for this repo):
+- `../SpecModule/` — the consumed library (read-only for this repo):
   - `module_harness/` — `query.py` (timeline/checkpoint queries), `status.py` (`ModuleStatus`), `graph_builder.py` (`TasklistTranslator`), `translator.py`, `store.py` (module store), `module.py` (`Module` orchestrator), `feed.py` (reference JSON composition + polling pattern), `entry.py`, `cli.py` (18-subcommand `specmodule` CLI)
   - `docs/references/api.md` — 库面编程 API 参考（按消费增量生长，本仓库消费新 API 必须同步补录）；`cli-usage.md` — parameter semantics for every operation
   - `AGENTS.md` — sibling guidelines (architecture rules, gotchas); mirror its conventions
