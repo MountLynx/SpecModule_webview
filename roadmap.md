@@ -41,29 +41,29 @@ SpecModule_webview/
 
 ### 阶段 0 —— HTTP 后端层（本轮）
 
-- [ ] 脚手架：`server/` 目录 + `pyproject.toml`（fastapi + uvicorn）+ `app.py` 入口（CORS 开 localhost dev 端口）
-- [ ] 运行时读端点（全部 import query.py / status.py）
-  - [ ] `GET /api/runs` — 运行列表 + 每 run phase/tick 摘要（管理面 + 运行选择器）
-  - [ ] `GET /api/runs/{id}/status` — `query_run_status` 全量：phase/tick/fired/outputs/node_states/error/updated_at
-  - [ ] `GET /api/runs/{id}/timeline?filter=...` — `build_timeline`，支持 failed/tick/node 过滤
-  - [ ] `GET /api/runs/{id}/checkpoints` — `build_checkpoints`
-  - [ ] `GET /api/runs/{id}/snapshot?tick=N` — `load_snapshot_summary`（缺省最新）
-  - [ ] `GET /api/runs/{id}/feed` — **feed.py 兼容组合端点**（status+timeline+checkpoints），前端 v1 先吃这份数据
-- [ ] 管理端点（薄层写操作）
-  - [ ] `POST /api/runs/{id}/checkpoints {label}` — `query.create_checkpoint`（纯数据操作，运行中也能用）
-  - [ ] `GET /api/modules` — `store.list_modules` 摘要
-- [ ] 图端点（运行时图视图消费）
-  - [ ] `GET /api/runs/{id}/graph?module=` — 库侧 `build_run_graph`（module_inputs 归档重建，见下节设计）+ `graph_to_dict` 序列化 + 叠加每节点运行摘要（fired_count/last_status/last_tick/running）
-  - [ ] 无 run 直渲染端点（原 `POST /api/graph/render`）推迟至阶段 3 图构建器（库函数保留 tasklist 直渲染通道）
-- [ ] 实时推送
-  - [ ] `WS /api/runs/{id}/stream` — 后端 ~1s 轮询 status.json mtime + run.sqlite latest_tick（与 feed 同一数据源，不改库），变化才推 `{phase, tick, fireable, fired, outputs, error, updated_at}`
-- [ ] 测试：pytest + TestClient，造最小 fixture run（直接构造 run.sqlite）覆盖每个端点
+- [x] 脚手架：`server/` 目录 + `pyproject.toml`（fastapi + uvicorn）+ `app.py` 入口（CORS 开 localhost dev 端口）
+- [x] 运行时读端点（全部 import query.py / status.py）
+  - [x] `GET /api/runs` — 运行列表 + 每 run phase/tick 摘要（管理面 + 运行选择器）
+  - [x] `GET /api/runs/{id}/status` — `query_run_status` 全量：phase/tick/fired/outputs/node_states/error/updated_at
+  - [x] `GET /api/runs/{id}/timeline?filter=...` — `build_timeline`，支持 failed/tick/node 过滤
+  - [x] `GET /api/runs/{id}/checkpoints` — `build_checkpoints`
+  - [x] `GET /api/runs/{id}/snapshot?tick=N` — `load_snapshot_summary`（缺省最新）
+  - [x] `GET /api/runs/{id}/feed` — **feed.py 兼容组合端点**（status+timeline+checkpoints），前端 v1 先吃这份数据
+- [x] 管理端点（薄层写操作）
+  - [x] `POST /api/runs/{id}/checkpoints {label}` — `query.create_checkpoint`（纯数据操作，运行中也能用）
+  - [x] `GET /api/modules` — `store.list_modules` 摘要
+- [x] 图端点（运行时图视图消费）
+  - [x] `GET /api/runs/{id}/graph?module=` — 库侧 `build_run_graph`（module_inputs 归档重建，见下节设计）+ `graph_to_dict` 序列化 + 叠加每节点运行摘要（fired_count/last_status/last_tick/running）
+  - [x] 无 run 直渲染端点（原 `POST /api/graph/render`）推迟至阶段 3 图构建器（库函数保留 tasklist 直渲染通道）
+- [x] 实时推送
+  - [x] `WS /api/runs/{id}/stream` — 后端 ~1s 轮询 status.json mtime + run.sqlite latest_tick（与 feed 同一数据源，不改库），变化才推 `{phase, tick, fireable, fired, outputs, error, updated_at}`
+- [x] 测试：pytest + TestClient，造最小 fixture run（直接构造 run.sqlite）覆盖每个端点
 
 ### 阶段 1 —— 运行时可视化（数据面阶段 0 已备齐）
 
 本轮切片（2026-08-29 定稿，设计见「运行时图视图设计」节）：
 
-- [ ] 运行时图视图：图结构 + 节点状态徽章（已完成/运行中/失败/未运行/次数）+ 跟随镜头 + 点击节点面板（firing 历史 / 实时输出）
+- [x] 运行时图视图：图结构 + 节点状态徽章（已完成/运行中/失败/未运行/次数）+ 跟随镜头 + 点击节点面板（firing 历史 / 实时输出）
 
 后续切片：
 
@@ -181,3 +181,4 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   图数据源收编 CLI visualize 为库共享函数 `build_run_graph`/`graph_to_dict`（`registry=None`
   纯产物解析因 guard 校验否决）；graph 端点改为 `GET /api/runs/{id}/graph`（无 run 直渲染推迟
   阶段 3）；WS 推送载荷定形；阶段 0/1 清单随之更新。
+- 2026-08-29（实施）：阶段 0 后端 + 运行时图视图落地。库侧收编 build_run_graph/graph_to_dict（库仓库 feat+docs 两笔）；webview 端点全家 + WS + React Flow 图视图，E2E 走查通过。已知偏差：模块名溯源（module=run_id 启发式 + ?module= 覆盖）待上游 status.json 补 module 字段后移除；E2E 后端启动需 SPECMODULE_PATH 指向模块目录。
