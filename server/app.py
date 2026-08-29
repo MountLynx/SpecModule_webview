@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from server.api import runs
 from server.api import manage
 from server.api import graph
-# from server.ws import router as ws_router   # Task 9 落地时解除
+from server.ws import router as ws_router
 
 app = FastAPI(title="SpecModule Webview", version="0.1.0")
 app.add_middleware(
@@ -30,4 +30,4 @@ def flatten_http_exception(request: Request, exc: HTTPException) -> JSONResponse
 app.include_router(runs.router)
 app.include_router(manage.router)
 app.include_router(graph.router)
-# app.include_router(ws_router)
+app.include_router(ws_router)
