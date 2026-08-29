@@ -25,9 +25,11 @@ export function NodePanel({
   useEffect(() => {
     setEntries([]);
     setOpenTick(null);
+    let cancelled = false;
     fetchNodeTimeline(runId, node.id)
-      .then((t) => setEntries(t.entries))
+      .then((t) => { if (!cancelled) setEntries(t.entries); })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [runId, node.id]);
 
   const latest = outputs[node.id];
