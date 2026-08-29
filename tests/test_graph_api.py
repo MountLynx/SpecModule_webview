@@ -52,6 +52,19 @@ class TestGraph:
         assert r.status_code == 200
         assert all(isinstance(v["running"], bool) for v in r.json()["node_states"].values())
 
+    def test_running_badge_overlay_true(self, base, client):
+        # phase=running 且最新快照 fireable 含 B → B.running=True；已 fired 的 A 不在 fireable → False
+        _seed_graph_run(
+            base,
+            firings=[{"tick": 1, "node": "A", "output": "a1"}],
+            status={"module_id": "mini_graph", "phase": "running", "updated_at": 2.0},
+            snapshots={1: {"tick": 1, "status": "running", "fireable": ["B"], "fired": ["A"]}},
+        )
+        r = client.get("/api/runs/mini_graph/graph")
+        assert r.status_code == 200
+        assert r.json()["node_states"]["B"]["running"] is True
+        assert r.json()["node_states"]["A"]["running"] is False
+
     def test_module_param_override(self, base, client):
         # run_id ≠ 模块名：?module= 显式指定
         seed_run(

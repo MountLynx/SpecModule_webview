@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchGraph,
   fetchModules,
@@ -15,6 +15,8 @@ import { GraphView } from "./components/GraphView";
 import { NodePanel } from "./components/NodePanel";
 import { RunList } from "./components/RunList";
 
+const TERMINAL_PHASES = new Set(["done", "aborted", "cancelled"]);
+
 export default function App() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
@@ -25,6 +27,8 @@ export default function App() {
   const [moduleOverride, setModuleOverride] = useState<string | null>(null);
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const stream = useRunStream(runId);
+  // 已应用到 node_states 的 tick 基线（首条 WS 消息重放的是 /graph 初始载荷已计入的状态）
+  const appliedTickRef = useRef<number | null>(null);
 
   const refreshRuns = useCallback(() => {
     fetchRuns()
@@ -45,6 +49,7 @@ export default function App() {
     setError(null);
     setInitialStatus(null);
     setModuleOverride(null);
+    appliedTickRef.current = null;
   }, [runId]);
 
   // 加载：run/moduleOverride 变化即重新拉取；cancelled 防止切换后旧响应覆盖新 run 的状态
@@ -72,6 +77,49 @@ export default function App() {
       cancelled = true;
     };
   }, [runId, moduleOverride]);
+
+  // WS 增量：tick 前进即本地累加 fired_count/last_tick（last_status 留待终态权威重取）；
+  // phase 到终态时重拉 /graph（快照/失败状态以库侧为准）
+  useEffect(() => {
+    if (!runId || !stream) return;
+    let cancelled = false;
+    if (stream.tick != null) {
+      if (appliedTickRef.current == null) {
+        // 首条消息重放当前状态——已含在 /graph 初始载荷里，只记基线不重复计数
+        appliedTickRef.current = stream.tick;
+      } else if (stream.tick > appliedTickRef.current) {
+        const tick = stream.tick;
+        const fired = stream.fired;
+        appliedTickRef.current = tick;
+        setPayload(
+          (prev) =>
+            prev && {
+              ...prev,
+              node_states: {
+                ...prev.node_states,
+                ...Object.fromEntries(
+                  Object.entries(prev.node_states).map(([id, ns]) =>
+                    fired.includes(id)
+                      ? [id, { ...ns, fired_count: ns.fired_count + 1, last_tick: tick }]
+                      : [id, ns],
+                  ),
+                ),
+              },
+            },
+        );
+      }
+    }
+    if (TERMINAL_PHASES.has(stream.phase)) {
+      fetchGraph(runId, moduleOverride ?? undefined)
+        .then((p) => {
+          if (!cancelled) setPayload(p);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [stream, runId, moduleOverride]);
 
   const statusView: StatusCore | null = stream ?? initialStatus;
   const selectedNode = payload?.graph.nodes.find((n) => n.id === selected) ?? null;

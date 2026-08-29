@@ -60,6 +60,8 @@ def seed_run(
 def base(tmp_path, monkeypatch):
     monkeypatch.setenv("SPECMODULE_BASE", str(tmp_path))
     monkeypatch.setenv("SPECMODULE_PATH", str(TEST_MODULES))
+    # store 发现不再读真实 ~/.specmodule
+    monkeypatch.setenv("SPECMODULE_HOME", str(tmp_path / "home"))
     return tmp_path
 
 

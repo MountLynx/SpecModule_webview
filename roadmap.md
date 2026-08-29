@@ -45,7 +45,7 @@ SpecModule_webview/
 - [x] 运行时读端点（全部 import query.py / status.py）
   - [x] `GET /api/runs` — 运行列表 + 每 run phase/tick 摘要（管理面 + 运行选择器）
   - [x] `GET /api/runs/{id}/status` — `query_run_status` 全量：phase/tick/fired/outputs/node_states/error/updated_at
-  - [x] `GET /api/runs/{id}/timeline?filter=...` — `build_timeline`，支持 failed/tick/node 过滤
+  - [x] `GET /api/runs/{id}/timeline?node=&tick=&failed=` — `build_timeline`，支持 failed/tick/node 过滤
   - [x] `GET /api/runs/{id}/checkpoints` — `build_checkpoints`
   - [x] `GET /api/runs/{id}/snapshot?tick=N` — `load_snapshot_summary`（缺省最新）
   - [x] `GET /api/runs/{id}/feed` — **feed.py 兼容组合端点**（status+timeline+checkpoints），前端 v1 先吃这份数据
@@ -54,7 +54,6 @@ SpecModule_webview/
   - [x] `GET /api/modules` — `store.list_modules` 摘要
 - [x] 图端点（运行时图视图消费）
   - [x] `GET /api/runs/{id}/graph?module=` — 库侧 `build_run_graph`（module_inputs 归档重建，见下节设计）+ `graph_to_dict` 序列化 + 叠加每节点运行摘要（fired_count/last_status/last_tick/running）
-  - [x] 无 run 直渲染端点（原 `POST /api/graph/render`）推迟至阶段 3 图构建器（库函数保留 tasklist 直渲染通道）
 - [x] 实时推送
   - [x] `WS /api/runs/{id}/stream` — 后端 ~1s 轮询 status.json mtime + run.sqlite latest_tick（与 feed 同一数据源，不改库），变化才推 `{phase, tick, fireable, fired, outputs, error, updated_at}`
 - [x] 测试：pytest + TestClient，造最小 fixture run（直接构造 run.sqlite）覆盖每个端点
@@ -79,6 +78,7 @@ SpecModule_webview/
 ### 阶段 3 —— tasklist 图构建器（可选 / 远期）
 
 - [ ] 图编辑（拖拽节点，graph/render 往返验证）
+- [ ] 无 run 直渲染端点（POST /api/graph/render，库函数已留 tasklist 通道）
 
 ## 数据契约与错误处理
 

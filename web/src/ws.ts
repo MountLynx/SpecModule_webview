@@ -11,10 +11,9 @@ export function useRunStream(runId: string | null): StatusMsg | null {
   const terminalRef = useRef(false);
 
   useEffect(() => {
-    if (!runId) {
-      setMsg(null);
-      return;
-    }
+    // 切换 run 先清旧消息，避免 header 短暂显示上一个 run 的 phase
+    setMsg(null);
+    if (!runId) return;
     terminalRef.current = false;
     let ws: WebSocket | null = null;
     let timer: number | undefined;
@@ -28,6 +27,11 @@ export function useRunStream(runId: string | null): StatusMsg | null {
       );
       ws.onmessage = (ev) => {
         const data = JSON.parse(ev.data) as WsMsg;
+        if (data.type === "error") {
+          // 服务端错误关闭（如 run 不存在）→ 停止重连，避免错误-关闭-重连循环
+          terminalRef.current = true;
+          return;
+        }
         if (data.type === "status") {
           setMsg(data);
           if (TERMINAL.has(data.phase)) terminalRef.current = true;
