@@ -37,21 +37,40 @@ export default function App() {
     return () => clearInterval(t);
   }, [refreshRuns]);
 
+  // run 切换：清空全部派生状态（含 moduleOverride，避免上一个 run 的模块选择泄漏到下一个 run）
   useEffect(() => {
     if (!runId) return;
     setPayload(null);
     setSelected(null);
     setError(null);
     setInitialStatus(null);
+    setModuleOverride(null);
+  }, [runId]);
+
+  // 加载：run/moduleOverride 变化即重新拉取；cancelled 防止切换后旧响应覆盖新 run 的状态
+  useEffect(() => {
+    if (!runId) return;
+    let cancelled = false;
     fetchStatus(runId)
-      .then(setInitialStatus)
+      .then((s) => {
+        if (!cancelled) setInitialStatus(s);
+      })
       .catch(() => {});
     fetchGraph(runId, moduleOverride ?? undefined)
-      .then(setPayload)
-      .catch((e: Error) => setError(e.message));
+      .then((p) => {
+        if (!cancelled) setPayload(p);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      });
     fetchModules()
-      .then(setModules)
+      .then((m) => {
+        if (!cancelled) setModules(m);
+      })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [runId, moduleOverride]);
 
   const statusView: StatusCore | null = stream ?? initialStatus;
