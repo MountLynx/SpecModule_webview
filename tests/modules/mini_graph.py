@@ -42,5 +42,6 @@ entry = ModuleEntry(
     description="webview 测试模块（script 流水线 + guard 分支）",
     templates={},
     build_registry=_registry_for,
+    review_harness=None,
     default_spec={"topic": "demo"},
 )
