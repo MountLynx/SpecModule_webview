@@ -8,3 +8,5 @@ build/
 *.egg-info/
 .venv/
 .superpowers/
+web/node_modules/
+web/dist/
