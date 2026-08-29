@@ -26,7 +26,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [moduleOverride, setModuleOverride] = useState<string | null>(null);
   const [modules, setModules] = useState<ModuleInfo[]>([]);
-  const stream = useRunStream(runId);
+  const streamState = useRunStream(runId);
+  const stream = streamState?.msg ?? null;
   // 已应用到 node_states 的 tick 基线（首条 WS 消息重放的是 /graph 初始载荷已计入的状态）
   const appliedTickRef = useRef<number | null>(null);
 
@@ -81,7 +82,10 @@ export default function App() {
   // WS 增量：tick 前进即本地累加 fired_count/last_tick（last_status 留待终态权威重取）；
   // phase 到终态时重拉 /graph（快照/失败状态以库侧为准）
   useEffect(() => {
-    if (!runId || !stream) return;
+    // 陈旧流守卫：切 run 瞬间旧 run 的最后一条消息可能仍在 state（setState 批处理），
+    // 不校验会把基线初始化到旧 run 的 tick，压制新 run 的本地增量
+    if (!streamState || streamState.runId !== runId) return;
+    const stream = streamState.msg;
     let cancelled = false;
     if (stream.tick != null) {
       if (appliedTickRef.current == null) {
@@ -119,7 +123,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [stream, runId, moduleOverride]);
+  }, [streamState, runId, moduleOverride]);
 
   const statusView: StatusCore | null = stream ?? initialStatus;
   const selectedNode = payload?.graph.nodes.find((n) => n.id === selected) ?? null;

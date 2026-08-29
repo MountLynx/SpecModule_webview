@@ -6,13 +6,19 @@ const TERMINAL = new Set(["done", "aborted", "cancelled"]);
 
 type WsMsg = StatusMsg | { type: "error"; error: string };
 
-export function useRunStream(runId: string | null): StatusMsg | null {
-  const [msg, setMsg] = useState<StatusMsg | null>(null);
+/** 流状态按 runId 打包：StatusMsg 本身无 run_id 字段，消费端据此丢弃切 run 瞬间的陈旧消息。 */
+export interface StreamState {
+  runId: string;
+  msg: StatusMsg;
+}
+
+export function useRunStream(runId: string | null): StreamState | null {
+  const [state, setState] = useState<StreamState | null>(null);
   const terminalRef = useRef(false);
 
   useEffect(() => {
     // 切换 run 先清旧消息，避免 header 短暂显示上一个 run 的 phase
-    setMsg(null);
+    setState(null);
     if (!runId) return;
     terminalRef.current = false;
     let ws: WebSocket | null = null;
@@ -33,7 +39,7 @@ export function useRunStream(runId: string | null): StatusMsg | null {
           return;
         }
         if (data.type === "status") {
-          setMsg(data);
+          setState({ runId, msg: data });
           if (TERMINAL.has(data.phase)) terminalRef.current = true;
         }
       };
@@ -50,5 +56,5 @@ export function useRunStream(runId: string | null): StatusMsg | null {
     };
   }, [runId]);
 
-  return msg;
+  return state;
 }
