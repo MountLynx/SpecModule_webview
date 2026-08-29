@@ -1,0 +1,3 @@
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; color: #111827; }
