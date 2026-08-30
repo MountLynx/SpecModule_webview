@@ -182,3 +182,4 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   纯产物解析因 guard 校验否决）；graph 端点改为 `GET /api/runs/{id}/graph`（无 run 直渲染推迟
   阶段 3）；WS 推送载荷定形；阶段 0/1 清单随之更新。
 - 2026-08-29（实施）：阶段 0 后端 + 运行时图视图落地。库侧收编 build_run_graph/graph_to_dict（库仓库 feat+docs 两笔）；webview 端点全家 + WS + React Flow 图视图，E2E 走查通过。已知偏差：模块名溯源（module=run_id 启发式 + ?module= 覆盖）待上游 status.json 补 module 字段后移除；E2E 后端启动需 SPECMODULE_PATH 指向模块目录。
+- 2026-08-30（审查修复）：AGENTS.md 对齐实现——端点映射表改 `GET /api/runs/{id}/graph`（序列化已收编库共享层）、当前状态/目录/开发命令更新；图端点错误体补契约字段 `code: "module_unresolved"`（前端模块选择器改按 code 分支，与错误文本解耦）；`test_bad_run_id_400` 拆分断言（严格 400 用例 + 路径穿越 404 用例）。

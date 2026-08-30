@@ -60,8 +60,11 @@ class TestRunStatus:
         assert r.json()["run_id"] == "ghost"
 
     def test_bad_run_id_400(self, client):
-        r = client.get("/api/runs/../etc/status")
-        assert r.status_code in (400, 404)   # 路径归一化后仍须拒绝
+        # 非法字符（空格走编码原样到达）与含 .. 的 run_id → deps 校验严格 400；
+        # 路径穿越（../）在 URL/路由层即被拒绝（404）——两者都不得读到运行数据
+        assert client.get("/api/runs/bad%20id/status").status_code == 400
+        assert client.get("/api/runs/a..b/status").status_code == 400
+        assert client.get("/api/runs/../etc/status").status_code == 404
 
 
 class TestTimeline:

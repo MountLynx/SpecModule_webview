@@ -6,7 +6,7 @@
 
 **Thin layer, zero business logic.** The library's query functions map 1:1 to HTTP endpoints; `module_harness/query.py` was explicitly designed as the shared query layer for CLI/MCP/Web consumers. Import it, never reimplement. Anything that looks like logic belongs upstream in the library repo (see 统一 API 原则 below).
 
-**Current state: planning complete, backend layer not yet implemented.** This repo currently contains `roadmap.md` (阶段 0 HTTP 后端层 design finalized: FastAPI thin layer, endpoint list, data contracts) + this file. Phase 0 implements the `server/` FastAPI layer; the SPA (`web/`) comes in later phases. Acceptance target: M1 + M2 modules fully wired — runtime visualization + output comparison.
+**Current state: 阶段 0 HTTP 后端层 + 阶段 1 运行时图视图已落地**（2026-08-29 实施，设计定稿见 roadmap「运行时图视图设计」节）：`server/` FastAPI 薄层（运行读端点 + 图端点 + WS 流）与 `web/` SPA（Vite + React + React Flow + dagre）均已实现、测试全绿；后续切片（状态面板/审阅时间线/产出对比/管理面）按 roadmap 阶段 1/2 推进。Acceptance target: M1 + M2 modules fully wired — runtime visualization + output comparison.
 
 ## Architecture & Data Flow
 
@@ -28,7 +28,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 | `GET /api/runs/{id}/feed` | `query_run_status` + `build_timeline` + `build_checkpoints` 组合（镜像 feed.py 的 JSON 组合） | feed.py 兼容结构：`{run_id, status, timeline, checkpoints}` — v1 前端基准 |
 | `POST /api/runs/{id}/checkpoints` | `create_checkpoint(module_id, label, *, tick=None, base_dir=None) -> dict` | `{label, tick, overwritten}`；label 自动补 `manual:` 前缀；无运行/无快照/tick 不存在 → `KeyError` 带可用清单 |
 | `GET /api/modules` | `store.list_modules(search=None, include_pip=True) -> dict[str, list[ModuleSource]]` | `{name, kind: entry\|packed\|pip, version, description, path}` |
-| `POST /api/graph/render` | `TasklistTranslator(registry, module_id).build(tasklist, spec)` → tickflow `Graph`；序列化适配在本层 | `{nodes: [{id, label, type, inputs}], edges: [{from, to}]}` (+ `run_id` 时叠加节点状态) |
+| `GET /api/runs/{id}/graph?module=` | `build_run_graph(module_name, run_id, *, base_dir=None, ...) -> (Graph, Tasklist) \| None`（module_inputs 归档重建，零 LLM）+ `graph_to_dict` 序列化（均库共享层） | `{run_id, module, phase, tick, graph: {nodes: [{id, label, type, is_start, join, inputs}], edges: [{from, to, guard}], starts}, node_states: {id: {fired_count, last_status, last_tick, running}}}`；`module` 缺省 = run_id 启发式，解析失败 404 带 `ValueError` 消息；无直渲染通道（`POST /api/graph/render` 推迟阶段 3） |
 
 **Run lifecycle.** `Module.run()` is a coroutine that completes when the run finishes — no timeout/cancel API; `max_ticks` (default 100) is the only run limit. `status.json` phase machine: `idle → translating → reviewing → building → ready → running → done | aborted | cancelled`. `status.json` is written atomically by the Module at every phase; `run.sqlite` gets a snapshot every tick (persist mode). The `feed.py` polling pattern (`GET /feed.json?run_id=` composing status+timeline+checkpoints) is the reference for both the compat endpoint and the WS stream design.
 
@@ -39,16 +39,16 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 - Failed runs write only `status.json` (no `run.sqlite`) — status/timeline endpoints must tolerate a run dir without sqlite (query layer returns `None` — map to 404, never raise).
 - Single-writer per `run_id` (WAL) — serialize any cross-process operations touching the same run.
 - `run_id`: Module default `mod_<8hex>`, SubModule `{name}_<6hex>`; consumers may supply their own (CLI `--run-id`). Webview treats `run_id` as opaque path segment.
-- **Real-time without touching the library**: the WS stream polls `status.json` / `run.sqlite` tick changes on the server side (same data source as feed.py) — no library hooks, no push mechanism in the library.
+- **Real-time without touching the library**: the WS stream (`/api/runs/{id}/stream`) polls `query_run_status`（status.json + run.sqlite 最新快照，同 feed.py 数据源）on the server side（~1s），按 `(phase, tick, updated_at)` 签名变化才推、终态推完 close(1000) — no library hooks, no push mechanism in the library.
 - CORS: dev SPA runs on a Vite dev server; open the dev origin only. Prod: FastAPI serves the built static assets — same origin, no CORS needed.
-- **不重复构建（统一 API 原则）**：同步完善 API 文档与 CLI 先行的目的就是统一 API——出现第二个消费端（本仓库/TUI/Web）时，共享逻辑收编进库（共享层函数/入口方法），消费端只留传输级薄映射；消费端代码里出现与 CLI 重复的接线/校验逻辑即为违规——要么本轮收编上游，要么记录偏差并排期收编。上游不是不可动，视情况而定：值得统一的改动直接改 sibling 库仓库（遵守其 AGENTS.md），api.md 补录、库仓库独立提交，发新版后同步依赖。**graph 序列化是本层唯一的新数据形状**——若 TUI 或其他消费端也需要相同图结构，收编进库共享层，而非在本层继续维护。
+- **不重复构建（统一 API 原则）**：同步完善 API 文档与 CLI 先行的目的就是统一 API——出现第二个消费端（本仓库/TUI/Web）时，共享逻辑收编进库（共享层函数/入口方法），消费端只留传输级薄映射；消费端代码里出现与 CLI 重复的接线/校验逻辑即为违规——要么本轮收编上游，要么记录偏差并排期收编。上游不是不可动，视情况而定：值得统一的改动直接改 sibling 库仓库（遵守其 AGENTS.md），api.md 补录、库仓库独立提交，发新版后同步依赖。**graph 序列化已收编进库**（2026-08-29：`query.build_run_graph`/`graph_to_dict`，CLI visualize 与 Web 共用）——图结构是库侧唯一新数据形状；本层不再维护图构建/序列化代码，消费端只留薄映射。
 - **库 API 文档同步完善**：消费新的 specmodule API 时，同步补录 `../SpecModule/docs/references/api.md`（做到哪里写哪里，按消费增量生长）；文档变更在库仓库独立提交（`docs:` 前缀，遵循其 AGENTS.md），并在本仓库 roadmap.md 变更日志记录。
 
 ## Key Directories
 
 - repo root — this repo:
-  - `server/` — FastAPI thin layer: `app.py` (entry: CORS + router wiring), `deps.py` (base_dir resolution + run_id validation), `api/runs.py` (runtime read endpoints), `api/graph.py` (tasklist → graph render), `api/manage.py` (module/run enumeration + checkpoint writes), `ws.py` (tick stream push)
-  - `web/` — frontend SPA (later phases)
+  - `server/` — FastAPI thin layer: `app.py` (entry: CORS + router wiring), `deps.py` (base_dir resolution + run_id validation), `api/runs.py` (runtime read endpoints), `api/graph.py` (run 图重建：`build_run_graph`/`graph_to_dict` 薄调用 + 每节点运行摘要叠加), `api/manage.py` (module/run 枚举 + checkpoint 写操作), `ws.py` (tick 流实时推送)
+  - `web/` — Vite + React + TS + React Flow + dagre SPA：`src/App.tsx`（run 选择 → 图加载 → WS 增量基线）、`src/ws.ts`（WS 客户端，消息按 runId 打包防陈旧流）+ `components/`（GraphView/StatusNode 图与徽章、NodePanel 节点面板、RunList 运行列表）、`src/api.ts`（端点载荷类型）
   - `tests/` — pytest + httpx TestClient
   - `roadmap.md` — the plan: architecture, endpoint list, phase breakdown, acceptance criteria. Re-read before implementing.
 - `../SpecModule/` — the consumed library (read-only for this repo):
@@ -78,6 +78,13 @@ uvicorn server.app:app --reload --port 8000
 # with explicit run root (recommended — server cwd ≠ run root)
 SPECMODULE_BASE=<运行根目录> uvicorn server.app:app --port 8000
 
+# frontend (web/ only; node_modules/ and dist/ are gitignored)
+cd web && npm install && npm run dev   # dev server on :5173, /api proxied to :8000 (WS too)
+npm run build                          # tsc --noEmit + vite build (acceptance gate)
+```
+
+运行业务模块需要其所在目录可被库发现：模块在 cwd/modules 或 `$SPECMODULE_PATH`（os.pathsep 分隔）下（测试用 `SPECMODULE_PATH=tests/modules`）。
+
 # library CLI reference (semantics of the API surface)
 python -m module_harness.cli run --module <name> --spec '{"...": "..."}' --mock
 python -m module_harness.cli status --run-id <id>
@@ -98,7 +105,7 @@ Python ≥3.10 (library dev'd on 3.13). No lint/format/type tooling in this ecos
 - **base_dir**: resolved once per server (env `SPECMODULE_BASE`, default cwd), passed explicitly to every query call — never rely on implicit cwd.
 - **feed.json compat**: the `/api/runs/{id}/feed` endpoint must keep the feed.py response shape (status/timeline/checkpoints field names) as the v1 frontend contract; richer endpoints extend it, they don't break it.
 - **Mock pattern** for key-free tests: `mock_llm.complete = AsyncMock(return_value=LLMResponse(content='{"ok": true}', usage={}, finish_reason="end_turn"))` — only needed if tests exercise `Module.run`; endpoint tests use fixture run artifacts instead.
-- Spec is a free-form dict; `--spec` inline > `--spec-file` > `entry.default_spec`. Two mutually exclusive channels: template (translator) or tasklist dict — `graph/render` accepts either, mirroring `entry.build_module`'s `template_name` XOR `tasklist` contract (`ValueError` otherwise).
+- Spec is a free-form dict; `--spec` inline > `--spec-file` > `entry.default_spec`. Two mutually exclusive channels: template (translator) or tasklist dict — 当前图端点从 module_inputs 存档重建，无直渲染通道；无 run 直渲染 `POST /api/graph/render`（库函数已留 tasklist 通道）推迟阶段 3，届时消费层核对 `entry.build_module` 的 `template_name` XOR `tasklist` 契约（`ValueError` 冲突）。
 
 ## Important Files
 
@@ -106,7 +113,7 @@ Python ≥3.10 (library dev'd on 3.13). No lint/format/type tooling in this ecos
 - `../SpecModule/module_harness/query.py` — the shared query layer to import (timeline/checkpoint dict shapes).
 - `../SpecModule/module_harness/feed.py` — reference JSON composition + polling pattern for the compat endpoint and WS stream.
 - `../SpecModule/module_harness/status.py` — `ModuleStatus` fields + phase machine.
-- `../SpecModule/module_harness/graph_builder.py`, `translator.py` — graph render backend (tickflow `Graph` output; serialization adaptation lives in `server/api/graph.py`).
+- `../SpecModule/module_harness/graph_builder.py`, `translator.py` — graph render backend (tickflow `Graph` output); 序列化 `query.graph_to_dict` 与归档重建 `query.build_run_graph` 均在库共享层（`server/api/graph.py` 只薄调用 + 状态叠加）。
 - `../SpecModule/module_harness/store.py` — `list_modules` for the management surface.
 - `../SpecModule/docs/references/api.md` — 库面编程 API 参考（按消费增量生长，本仓库消费新 API 必须同步补录）；`cli-usage.md` — parameter semantics for every operation.
 - `../SpecModule/AGENTS.md` — sibling guidelines (architecture rules, gotchas); mirror its conventions.

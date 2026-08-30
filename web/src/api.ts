@@ -67,11 +67,24 @@ export interface TimelineEntry {
   error: string | null;
 }
 
+/** 服务端错误：message 面向用户，code/status 供前端分支（如模块解析失败弹选择器）。 */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(status: number, message: string, code: string | null) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url);
   const body = await r.json().catch(() => ({}));
   if (!r.ok) {
-    throw new Error((body as { error?: string }).error ?? `HTTP ${r.status}`);
+    const b = body as { error?: string; code?: string };
+    throw new ApiError(r.status, b.error ?? `HTTP ${r.status}`, b.code ?? null);
   }
   return body as T;
 }

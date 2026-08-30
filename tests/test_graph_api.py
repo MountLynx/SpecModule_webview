@@ -81,6 +81,7 @@ class TestGraph:
         r = client.get("/api/runs/mini_graph/graph")
         assert r.status_code == 404
         assert r.json()["error"] == "无运行记录"
+        assert "code" not in r.json()   # 无归档 ≠ 模块解析失败，不触发前端选择器
 
     def test_module_unresolvable_404_with_message(self, base, client):
         seed_run(
@@ -91,6 +92,7 @@ class TestGraph:
         r = client.get("/api/runs/orphan_run/graph")   # module=orphan_run 不存在
         assert r.status_code == 404
         assert "未找到" in r.json()["error"]
+        assert r.json()["code"] == "module_unresolved"   # 前端选择器契约字段（与错误文本解耦）
 
     def test_invalid_run_id_400(self, client):
         r = client.get("/api/runs/bad..id/graph")

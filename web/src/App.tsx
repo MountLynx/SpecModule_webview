@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ApiError,
   fetchGraph,
   fetchModules,
   fetchRuns,
@@ -23,7 +24,7 @@ export default function App() {
   const [payload, setPayload] = useState<GraphPayload | null>(null);
   const [initialStatus, setInitialStatus] = useState<StatusResp | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; code: string | null } | null>(null);
   const [moduleOverride, setModuleOverride] = useState<string | null>(null);
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const streamState = useRunStream(runId);
@@ -67,7 +68,12 @@ export default function App() {
         if (!cancelled) setPayload(p);
       })
       .catch((e: Error) => {
-        if (!cancelled) setError(e.message);
+        if (!cancelled) {
+          setError({
+            message: e.message,
+            code: e instanceof ApiError ? e.code : null,
+          });
+        }
       });
     fetchModules()
       .then((m) => {
@@ -127,7 +133,7 @@ export default function App() {
 
   const statusView: StatusCore | null = stream ?? initialStatus;
   const selectedNode = payload?.graph.nodes.find((n) => n.id === selected) ?? null;
-  const needModulePicker = !!error && error.includes("未找到");
+  const needModulePicker = error?.code === "module_unresolved";
 
   return (
     <div style={{ display: "flex", height: "100%" }}>
@@ -150,7 +156,7 @@ export default function App() {
         <div style={{ flex: 1, position: "relative" }}>
           {error && (
             <div style={{ padding: 12, color: "#b91c1c" }}>
-              图加载失败：{error}
+              图加载失败：{error.message}
               {needModulePicker && (
                 <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
                   <select onChange={(e) => setModuleOverride(e.target.value || null)} defaultValue="">

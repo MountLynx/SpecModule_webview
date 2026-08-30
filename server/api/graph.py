@@ -31,9 +31,13 @@ def run_graph(
     try:
         res = query.build_run_graph(module_name, run_id, base_dir=base_dir)
     except ValueError as e:
+        # code 是前端契约字段（弹模块选择器的依据），error 文本面向用户
         raise HTTPException(
             status_code=404,
-            detail={"error": e.args[0], "run_id": run_id, "module": module_name},
+            detail={
+                "error": e.args[0], "run_id": run_id, "module": module_name,
+                "code": "module_unresolved",
+            },
         )
     if res is None:
         raise HTTPException(
