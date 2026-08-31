@@ -77,6 +77,7 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
       } catch {
         setPreflight(null); // 非法 JSON：行内校验已示错，跳过预检
         setPreflightBusy(false);
+        setPreflightErr(null);
         return;
       }
     }
@@ -191,12 +192,19 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
             <option value="">最新快照（续跑）</option>
             {(targets ?? []).map((c) => (
               <option key={c.target} value={c.target}>
-                {c.kind === "manual"
-                  ? `${c.target}（${c.label ?? "手动检查点"}）`
-                  : `tick ${c.target}`}
+                {targetLabel(c, targets)}
               </option>
             ))}
           </select>
+          {(() => {
+            const sel = (targets ?? []).find((c) => c.target === target);
+            const fired = sel ? firedOf(sel, targets) : [];
+            return fired.length > 0 ? (
+              <div style={{ fontSize: 11, color: "#6b7280" }}>
+                目标时点已执行：{fired.join("、")}
+              </div>
+            ) : null;
+          })()}
         </div>
         <div>
           <div style={fieldLabel}>模块名（须与先前 run 一致）</div>
@@ -326,6 +334,24 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
       </div>
     </div>
   );
+}
+
+/** manual 条目 fired 为空但含 tick——按 tick join 同 tick 快照条目取 fired。 */
+function firedOf(c: CheckpointTarget, targets: CheckpointTarget[] | null): string[] {
+  if (c.fired.length > 0) return c.fired;
+  const tickEntry = (targets ?? []).find((t) => t.kind === "tick" && t.tick === c.tick);
+  return tickEntry?.fired ?? [];
+}
+
+function targetLabel(c: CheckpointTarget, targets: CheckpointTarget[] | null): string {
+  const base = c.kind === "manual"
+    ? `${c.target}（${c.label ?? "手动检查点"}）`
+    : `tick ${c.target}`;
+  const fired = firedOf(c, targets);
+  if (fired.length === 0) return base;
+  const head = fired.slice(0, 3).join("→");
+  const more = fired.length > 3 ? `…` : "";
+  return `${base} · 已执行 ${fired.length} 节点：${head}${more}`;
 }
 
 export { ResumeDialog };
