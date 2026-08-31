@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
+  fetchControl,
   fetchGraph,
   fetchModules,
   fetchRuns,
@@ -14,6 +15,7 @@ import {
 import { useRunStream } from "./ws";
 import { GraphView } from "./components/GraphView";
 import { NodePanel } from "./components/NodePanel";
+import { RunControls } from "./components/RunControls";
 import { RunList } from "./components/RunList";
 
 const TERMINAL_PHASES = new Set(["done", "aborted", "cancelled"]);
@@ -27,6 +29,7 @@ export default function App() {
   const [error, setError] = useState<{ message: string; code: string | null } | null>(null);
   const [moduleOverride, setModuleOverride] = useState<string | null>(null);
   const [modules, setModules] = useState<ModuleInfo[]>([]);
+  const [paused, setPaused] = useState(false);
   const streamState = useRunStream(runId);
   const stream = streamState?.msg ?? null;
   // 已应用到 node_states 的 tick 基线（首条 WS 消息重放的是 /graph 初始载荷已计入的状态）
@@ -51,7 +54,22 @@ export default function App() {
     setError(null);
     setInitialStatus(null);
     setModuleOverride(null);
+    setPaused(false);
     appliedTickRef.current = null;
+  }, [runId]);
+
+  // 暂停状态初值（control.json；此后由 WS paused 增量驱动）
+  useEffect(() => {
+    if (!runId) return;
+    let cancelled = false;
+    fetchControl(runId)
+      .then((c) => {
+        if (!cancelled) setPaused(c.paused);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [runId]);
 
   // 加载：run/moduleOverride 变化即重新拉取；cancelled 防止切换后旧响应覆盖新 run 的状态
@@ -119,7 +137,9 @@ export default function App() {
         );
       }
     }
+    if (stream.paused != null) setPaused(stream.paused);
     if (TERMINAL_PHASES.has(stream.phase)) {
+      setPaused(false);
       fetchGraph(runId, moduleOverride ?? undefined)
         .then((p) => {
           if (!cancelled) setPayload(p);
@@ -145,13 +165,29 @@ export default function App() {
             borderBottom: "1px solid #e5e7eb",
             fontSize: 13,
             color: "#6b7280",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
           }}
         >
-          {runId
-            ? `${runId} · ${statusView?.phase ?? payload?.phase ?? "…"}${
-                statusView?.tick != null ? ` · tick ${statusView.tick}` : ""
-              }${statusView?.error ? ` · ${statusView.error}` : ""}`
-            : "SpecModule 运行时图视图"}
+          {runId ? (
+            <>
+              <span>
+                {`${runId} · ${statusView?.phase ?? payload?.phase ?? "…"}${
+                  statusView?.tick != null ? ` · tick ${statusView.tick}` : ""
+                }${statusView?.error ? ` · ${statusView.error}` : ""}`}
+              </span>
+              <RunControls
+                runId={runId}
+                phase={statusView?.phase ?? payload?.phase ?? null}
+                paused={paused}
+                moduleHint={moduleOverride}
+                onAction={refreshRuns}
+              />
+            </>
+          ) : (
+            "SpecModule 运行时图视图"
+          )}
         </header>
         <div style={{ flex: 1, position: "relative" }}>
           {error && (

@@ -52,6 +52,7 @@ export interface StatusCore {
 
 export interface StatusMsg extends StatusCore {
   type: "status";
+  paused?: boolean;
 }
 
 export interface StatusResp extends StatusCore {
@@ -89,6 +90,20 @@ async function getJson<T>(url: string): Promise<T> {
   return body as T;
 }
 
+async function postJson<T>(url: string, payload: unknown): Promise<T> {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const b = body as { error?: string; code?: string };
+    throw new ApiError(r.status, b.error ?? `HTTP ${r.status}`, b.code ?? null);
+  }
+  return body as T;
+}
+
 export const fetchRuns = () =>
   getJson<{ runs: RunSummary[] }>("/api/runs").then((d) => d.runs);
 
@@ -117,3 +132,74 @@ export const fetchNodeTimeline = (runId: string, node: string) =>
   getJson<{ entries: TimelineEntry[] }>(
     `/api/runs/${encodeURIComponent(runId)}/timeline?node=${encodeURIComponent(node)}`,
   );
+
+// ------------------------------------------------------------------
+// 控制面：cancel/pause/unpause + 恢复/回退
+// ------------------------------------------------------------------
+
+export type ControlAction = "cancel" | "pause" | "unpause";
+
+export interface ControlView {
+  run_id: string;
+  control: { action: ControlAction; reason: string | null; requested_at: number } | null;
+  paused: boolean;
+}
+
+export const fetchControl = (runId: string) =>
+  getJson<ControlView>(`/api/runs/${encodeURIComponent(runId)}/control`);
+
+export const postControl = (runId: string, action: ControlAction, reason?: string) =>
+  postJson<ControlView>(`/api/runs/${encodeURIComponent(runId)}/control`, {
+    action,
+    reason: reason ?? null,
+  });
+
+export interface CheckpointTarget {
+  target: string;
+  tick: number;
+  kind: "tick" | "manual";
+  fired: string[];
+  label: string | null;
+}
+
+export const fetchCheckpoints = (runId: string) =>
+  getJson<{ module_id: string; checkpoints: CheckpointTarget[] }>(
+    `/api/runs/${encodeURIComponent(runId)}/checkpoints`,
+  ).then((d) => d.checkpoints);
+
+export interface RunInputs {
+  run_id: string;
+  spec: Record<string, unknown> | null;
+  tasklist: Record<string, unknown> | null;
+}
+
+export const fetchInputs = (runId: string) =>
+  getJson<RunInputs>(`/api/runs/${encodeURIComponent(runId)}/inputs`);
+
+export interface ResumeRequest {
+  module?: string | null;
+  target?: string | null; // tick 号或 "manual:<label>"；null = 续最新
+  spec?: Record<string, unknown> | null;
+  tasklist?: Record<string, unknown> | null;
+  max_ticks?: number;
+  mock?: boolean;
+  /** phase=running 也放行（max_ticks 截断的残留 running 态） */
+  force?: boolean;
+}
+
+export const postResume = (runId: string, body: ResumeRequest) =>
+  postJson<{ started: boolean; run_id: string; pid: number }>(
+    `/api/runs/${encodeURIComponent(runId)}/resume`,
+    body,
+  );
+
+export interface ProcessInfo {
+  run_id: string;
+  running: boolean;
+  pid: number | null;
+  started_at: number | null;
+  log: string | null;
+}
+
+export const fetchProcess = (runId: string) =>
+  getJson<ProcessInfo>(`/api/runs/${encodeURIComponent(runId)}/process`);

@@ -7,6 +7,7 @@ import asyncio
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from module_harness import control
 from module_harness.status import query_run_status
 from server.deps import get_base_dir, is_valid_run_id
 
@@ -49,7 +50,11 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
                         return
                     return
             else:
-                sig = (st.phase, st.tick, st.updated_at)
+                # paused 走 control.json（status.json 无此状态）；签名比对含
+                # paused——挂起/释放即使 phase/tick 不变也要推，前端换按钮
+                req = control.read_control(run_id, base_dir=base_dir)
+                paused = bool(req and req.get("action") == "pause")
+                sig = (st.phase, st.tick, st.updated_at, paused)
                 if sig != last_sig:
                     last_sig = sig
                     try:
@@ -63,6 +68,7 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
                             "outputs": st.outputs,
                             "error": st.error,
                             "updated_at": st.updated_at,
+                            "paused": paused,
                         })
                     except Exception:
                         return

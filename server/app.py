@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from server.api import runs
 from server.api import manage
 from server.api import graph
+from server.api import control
 from server.ws import router as ws_router
 
 app = FastAPI(title="SpecModule Webview", version="0.1.0")
@@ -30,4 +31,5 @@ def flatten_http_exception(request: Request, exc: HTTPException) -> JSONResponse
 app.include_router(runs.router)
 app.include_router(manage.router)
 app.include_router(graph.router)
+app.include_router(control.router)
 app.include_router(ws_router)

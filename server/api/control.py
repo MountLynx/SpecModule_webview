@@ -1,0 +1,269 @@
+# server/api/control.py
+"""控制面端点：运行控制（cancel/pause/unpause）+ 恢复/回退 + 进程观测。
+
+- control 两端点 = 库 `control.request_control`/`read_control` 薄映射
+  （控制文件协议，见库 api.md `module_harness.control`）。
+- `GET /inputs` = 库 `query.read_module_inputs` 薄映射（resume 预填）。
+- `POST /resume` = 子进程拉起官方 CLI（`specmodule resume`）：恢复是长任务，
+  且 spec/LLM/模块解析接线必须复用 CLI（消费端重复接线即违规）——server 只
+  负责传输级编排（spawn + 互斥 + 日志落盘）；进度监控走既有 WS（子进程写
+  status.json，同一数据源）。
+- 进程注册表：内存态 {run_id: Popen}，单写者防重入（同 run 双 resume → 409）；
+  server 重启丢注册表不影响子进程继续跑（监控只依赖落盘产物）。
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from module_harness import control, query, store
+from module_harness.status import query_run_status
+from server.deps import get_base_dir, validate_run_id
+
+router = APIRouter(prefix="/api/runs")
+
+_LOG_TAIL_BYTES = 8 * 1024
+
+
+def _not_found(run_id: str) -> HTTPException:
+    return HTTPException(status_code=404, detail={"error": "无运行记录", "run_id": run_id})
+
+
+def _require_run(run_id: str, base_dir: Path) -> dict[str, Any]:
+    """目标 run 必须已有 status.json（控制/恢复都只对已落盘的运行有意义）。"""
+    st = query_run_status(run_id, base_dir=base_dir)
+    if st is None:
+        raise _not_found(run_id)
+    return {"phase": st.phase}
+
+
+# ------------------------------------------------------------------
+# 运行控制（cancel/pause/unpause —— 控制文件薄映射）
+# ------------------------------------------------------------------
+
+
+def _control_view(run_id: str, base_dir: Path) -> dict[str, Any]:
+    req = control.read_control(run_id, base_dir=base_dir)
+    return {
+        "run_id": run_id,
+        "control": req,
+        "paused": bool(req and req.get("action") == "pause"),
+    }
+
+
+@router.get("/{run_id}/control")
+def get_control(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
+    validate_run_id(run_id)
+    _require_run(run_id, base_dir)
+    return _control_view(run_id, base_dir)
+
+
+class ControlBody(BaseModel):
+    action: str
+    reason: str | None = None
+
+
+@router.post("/{run_id}/control")
+def post_control(
+    run_id: str, body: ControlBody, base_dir: Path = Depends(get_base_dir)
+) -> dict:
+    validate_run_id(run_id)
+    _require_run(run_id, base_dir)
+    try:
+        control.request_control(
+            run_id, body.action, reason=body.reason, base_dir=base_dir
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={"error": e.args[0], "run_id": run_id})
+    return _control_view(run_id, base_dir)
+
+
+# ------------------------------------------------------------------
+# 运行输入存档（resume 预填）
+# ------------------------------------------------------------------
+
+
+@router.get("/{run_id}/inputs")
+def get_inputs(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
+    validate_run_id(run_id)
+    _require_run(run_id, base_dir)
+    inputs = query.read_module_inputs(run_id, base_dir=base_dir) or {}
+    return {
+        "run_id": run_id,
+        "spec": inputs.get("spec"),
+        "tasklist": inputs.get("tasklist"),
+    }
+
+
+# ------------------------------------------------------------------
+# 恢复/回退（子进程拉起 CLI resume）+ 进程观测
+# ------------------------------------------------------------------
+
+
+class ResumeBody(BaseModel):
+    module: str | None = None      # 缺省 = run_id（同图端点启发式）
+    target: int | str | None = None  # tick 号 / "manual:<label>" / None 续最新
+    spec: dict[str, Any] | None = None
+    tasklist: dict[str, Any] | None = None
+    max_ticks: int = 100
+    mock: bool = False
+    force: bool = False  # phase=running 也放行（max_ticks 截断的残留 running 态）
+
+
+class _Proc:
+    """一个被跟踪的 resume 子进程（互斥 + 日志 + 临时文件生命周期）。"""
+
+    def __init__(self, popen: subprocess.Popen, tmp_paths: list[Path]) -> None:
+        self.popen = popen
+        self.started_at = time.time()
+        self.tmp_paths = tmp_paths
+
+
+_PROCS: dict[str, _Proc] = {}
+
+
+def _reap(run_id: str) -> _Proc | None:
+    """惰性收割：子进程已退出 → 清理临时文件并移出注册表。返回仍活着的条目。"""
+    proc = _PROCS.get(run_id)
+    if proc is None:
+        return None
+    if proc.popen.poll() is None:
+        return proc
+    for p in proc.tmp_paths:
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
+    del _PROCS[run_id]
+    return None
+
+
+def _spawn(argv: list[str], cwd: str, log_fh: Any) -> subprocess.Popen:
+    """spawn 薄封装（测试 monkeypatch 点）。"""
+    return subprocess.Popen(argv, cwd=cwd, stdout=log_fh, stderr=subprocess.STDOUT)
+
+
+def _target_str(target: int | str | None) -> str | None:
+    if target is None:
+        return None
+    if isinstance(target, int):
+        return str(target)
+    return target
+
+
+@router.get("/{run_id}/process")
+def get_process(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
+    """resume 子进程观测：是否在跑 + 日志尾（CLI 启动失败只在这能看到）。"""
+    validate_run_id(run_id)
+    proc = _reap(run_id)
+    log_path = base_dir / ".specmodule" / "runs" / run_id / "process.log"
+    log_tail: str | None = None
+    if log_path.exists():
+        try:
+            log_tail = log_path.read_text(encoding="utf-8", errors="replace")[
+                -_LOG_TAIL_BYTES:
+            ]
+        except OSError:
+            log_tail = None
+    return {
+        "run_id": run_id,
+        "running": proc is not None,
+        "pid": proc.popen.pid if proc else None,
+        "started_at": proc.started_at if proc else None,
+        "log": log_tail,
+    }
+
+
+@router.post("/{run_id}/resume")
+def post_resume(
+    run_id: str, body: ResumeBody, base_dir: Path = Depends(get_base_dir)
+) -> dict:
+    validate_run_id(run_id)
+    _require_run(run_id, base_dir)
+    if not (base_dir / ".specmodule" / "runs" / run_id / "run.sqlite").exists():
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "无可恢复快照（运行未落盘 run.sqlite）", "run_id": run_id},
+        )
+    if _reap(run_id) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "该 run 已有恢复进程在跑", "run_id": run_id},
+        )
+    st = query_run_status(run_id, base_dir=base_dir)
+    if st is not None and st.phase == "running" and not body.force:
+        # force 逃生门：max_ticks 截断的 run phase 停在 running 但进程已退出，
+        # 库语义无法区分"真在跑"与"残留态"——由用户判断（误用由 WAL 单写者
+        # 风险自担，UI 仅在 running 态出示该选项）
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "运行进行中——先取消/暂停再恢复", "run_id": run_id},
+        )
+    module_name = body.module or run_id
+    if store.resolve_module(module_name) is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": f"模块 '{module_name}' 未找到",
+                "run_id": run_id,
+                "module": module_name,
+                "code": "module_unresolved",
+            },
+        )
+    target = _target_str(body.target)
+    if target is not None and not (
+        target.isdigit() or target.startswith("manual:")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": f"非法回退目标: {target!r}（tick 号或 manual:<label>）",
+                    "run_id": run_id},
+        )
+
+    # spec/tasklist 落临时文件——CLI 通道是 --spec-file/--tasklist（内联 --spec
+    # 受 Windows 命令行长度限制；文件内容校验交给 CLI，server 不重复）
+    tmp_paths: list[Path] = []
+    argv = [sys.executable, "-m", "module_harness.cli", "resume"]
+    if target is not None:
+        argv.append(target)
+    argv += ["--module", module_name, "--run-id", run_id]
+    for payload, suffix in ((body.spec, "--spec-file"), (body.tasklist, "--tasklist")):
+        if payload is None:
+            continue
+        fd, name = tempfile.mkstemp(prefix=f"webview_{run_id}_", suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+        tmp_paths.append(Path(name))
+        argv += [suffix, name]
+    argv += ["--max-ticks", str(body.max_ticks)]
+    if body.mock:
+        argv.append("--mock")
+
+    run_dir = base_dir / ".specmodule" / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_fh = (run_dir / "process.log").open("wb")
+    try:
+        popen = _spawn(argv, cwd=str(base_dir), log_fh=log_fh)
+    except OSError:
+        log_fh.close()
+        for p in tmp_paths:
+            p.unlink(missing_ok=True)
+        raise
+    _PROCS[run_id] = _Proc(popen, tmp_paths)
+    return {
+        "started": True,
+        "run_id": run_id,
+        "pid": popen.pid,
+        "module": module_name,
+        "target": target,
+    }

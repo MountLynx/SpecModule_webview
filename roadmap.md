@@ -74,6 +74,8 @@ SpecModule_webview/
 
 - [ ] 模块列表（store.list_modules）
 - [ ] 运行列表/选择器 + 检查点管理（列表、命名）
+- [x] 运行控制（2026-08-31 落地，设计见「运行控制设计」节）：运行中取消/暂停/继续
+  （跨进程 control.json 通道）+ 结束后恢复/回退（spec/tasklist 可改重传，子进程拉官方 CLI）
 
 ### 阶段 3 —— tasklist 图构建器（可选 / 远期）
 
@@ -153,6 +155,52 @@ guard 边标签，minimap，**跟随模式**：每 tick 平滑居中当前 fire 
 - 提交顺序：库仓库先行（功能一笔 + `docs:` api.md 补录一笔，遵守其 AGENTS.md）→ 发新版 →
   本仓库同步依赖并提交 server/ web/ roadmap。开发全程按统一 API 原则边开发边完善库 API 与 api.md。
 
+## 运行控制设计（2026-08-31 定稿并落地）
+
+运行监控补控制功能两件事：①运行中取消/暂停 ②结束后恢复/回退（resume/rollback），
+回退支持 spec 或 tasklist 更改重传。
+
+### 分工（统一 API 原则）
+
+- **库侧收编 `module_harness/control.py`**（库仓库独立提交）：控制文件协议
+  `control.json`（status.json 的反向通道；单发一次性、消费即删、`run()/resume()`
+  开始清场）+ `control_tick_start`（pause 在 tick_start 挂起）/`control_tick_end`
+  （cancel 消费）hook 工厂 + CLI `cancel/pause/unpause` + `query.read_module_inputs`。
+  **cancel 必须在 tick_end 消费**：引擎每 tick 末尾无条件重写 `runner.status`，
+  tick_start 期设置的 CANCELLED 被同 tick 赋值冲掉（真实子进程 E2E 实测缺陷，
+  已修并附真实 AsyncRunner 回归测试）。`Module(control=False)` 关闭通道。
+- **本仓库只留传输级薄映射**：control 两端点 = `request_control`/`read_control`
+  直调；恢复/回退 = 子进程拉起官方 CLI（`specmodule resume`）——spec/LLM/模块
+  解析接线全复用 CLI，server 不重复（消费端重复接线即违规）。
+
+### 恢复/回退（结束后）
+
+`POST /api/runs/{id}/resume {module?, target?, spec?, tasklist?, max_ticks?, mock?}`：
+
+```
+前置校验（status.json→404 / run.sqlite→400 / 运行中或已有恢复进程→409 /
+模块可解析→404 code=module_unresolved / target 形状→400）
+→ spec/tasklist 落系统临时文件（Windows argv 长度限制，走 --spec-file/--tasklist）
+→ Popen([python, -m module_harness.cli, resume, target?, --module, --run-id, …],
+        cwd=SPECMODULE_BASE, stdout=<run_dir>/process.log)
+→ 202 {started, run_id, pid, module, target}
+```
+
+子进程写 status.json/run.sqlite → 既有 WS 自然续监控，零额外管道。内存注册表
+`{run_id: Popen}` 单写者互斥 + 惰性收割（退出即清临时文件）；`GET /process`
+出 running/pid/日志尾（CLI 启动期失败只在此可见）。UI 恢复对话框：回退目标
+（`/checkpoints` 列表，缺省最新续跑）+ 模块名（moduleHint 缺省 run_id 启发式）
++ spec 预填（`/inputs` 读 module_inputs 存档，可改重传）+ tasklist 文件上传（可选，
+模板通道互斥）+ `--mock`/max_ticks。头部控制条 phase 感知：running→暂停/取消、
+paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入口。
+
+### 已知偏差
+
+- CLI resume/rollback 对无 `default_template` 的模块需显式 `--tasklist`（与 run
+  一致，既有行为）；真实模块（M1/M2）走 default_template 不受影响。
+- 库查询 latest_tick 取历史最大 tick——深回退后 `status.tick` 偏高直至运行追上
+  （上游可改为按写入序取最新，本轮不动）。
+
 ## 与原仓库的同步（统一 API 原则）
 
 - **不重复构建**：HTTP 端点 = 库调用 + 传输级薄映射。出现第二个 Web 消费形态或 TUI 也需要
@@ -183,3 +231,10 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   阶段 3）；WS 推送载荷定形；阶段 0/1 清单随之更新。
 - 2026-08-29（实施）：阶段 0 后端 + 运行时图视图落地。库侧收编 build_run_graph/graph_to_dict（库仓库 feat+docs 两笔）；webview 端点全家 + WS + React Flow 图视图，E2E 走查通过。已知偏差：模块名溯源（module=run_id 启发式 + ?module= 覆盖）待上游 status.json 补 module 字段后移除；E2E 后端启动需 SPECMODULE_PATH 指向模块目录。
 - 2026-08-30（审查修复）：AGENTS.md 对齐实现——端点映射表改 `GET /api/runs/{id}/graph`（序列化已收编库共享层）、当前状态/目录/开发命令更新；图端点错误体补契约字段 `code: "module_unresolved"`（前端模块选择器改按 code 分支，与错误文本解耦）；`test_bad_run_id_400` 拆分断言（严格 400 用例 + 路径穿越 404 用例）。
+- 2026-08-31（运行控制落地）：运行中取消/暂停 + 结束后恢复/回退（spec/tasklist 可改
+  重传）。库侧收编 control.json 协议（`control_tick_start`/`control_tick_end` hook 工厂 +
+  CLI `cancel/pause/unpause` + `read_module_inputs`；cancel 消费点在 tick_end——修 E2E
+  实测的终态冲掉缺陷；库仓库 feat+docs+fix 三笔）；本仓库控制面四端点
+  （control/inputs/resume/process，resume 为子进程拉官方 CLI）+ WS `paused` 字段 +
+  头部控制条与恢复对话框。真实子进程全链路走查：暂停冻结 tick → 继续前进 → 取消落
+  cancelled → 续跑 → 回退 tick 4 换 spec 重传归档。已知偏差两条（见设计节）。
