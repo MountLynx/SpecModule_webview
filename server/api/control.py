@@ -10,6 +10,7 @@
   status.json，同一数据源）。
 - 进程注册表：内存态 {run_id: Popen}，单写者防重入（同 run 双 resume → 409）；
   server 重启丢注册表不影响子进程继续跑（监控只依赖落盘产物）。
+- preflight = 恢复预检 dry-run（薄调库 check_resume_compat_from_run，不 spawn 不写状态）。
 """
 
 from __future__ import annotations
@@ -118,6 +119,12 @@ class ResumeBody(BaseModel):
     max_ticks: int = 100
     mock: bool = False
     force: bool = False  # phase=running 也放行（max_ticks 截断的残留 running 态）
+
+
+class PreflightBody(BaseModel):
+    module: str | None = None      # 缺省 = run_id（同 resume 启发式）
+    target: int | str | None = None
+    tasklist: dict[str, Any] | None = None  # None = 归档 tasklist（纯续跑预检）
 
 
 class _Proc:
@@ -267,3 +274,26 @@ def post_resume(
         "module": module_name,
         "target": target,
     }
+
+
+@router.post("/{run_id}/resume/preflight")
+def post_preflight(
+    run_id: str, body: PreflightBody, base_dir: Path = Depends(get_base_dir)
+) -> dict:
+    """恢复预检 dry-run：薄调库 check_resume_compat_from_run，不 spawn 不写状态。
+
+    兼容性 hard_errors/warnings 是 200 正常载荷（对话框内联展示）；
+    ValueError（tasklist 非法 / 模块未解析）→ 400；无 run.sqlite → 404。
+    """
+    validate_run_id(run_id)
+    _require_run(run_id, base_dir)
+    try:
+        result = query.check_resume_compat_from_run(
+            body.module or run_id, run_id,
+            new_tasklist=body.tasklist, target=body.target, base_dir=base_dir,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={"error": e.args[0], "run_id": run_id})
+    if result is None:
+        raise _not_found(run_id)
+    return result

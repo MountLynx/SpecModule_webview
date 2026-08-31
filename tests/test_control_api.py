@@ -249,3 +249,70 @@ class TestProcessEndpoint:
         assert d["running"] is False
         assert not tmp.exists()
         assert "mini_graph" not in control_api._PROCS
+
+
+# ------------------------------------------------------------------
+# resume/preflight（恢复预检 dry-run——薄调库 check_resume_compat_from_run）
+# ------------------------------------------------------------------
+
+
+def _seed_preflight(base, run_id="mini_graph"):
+    """预检 fixture：快照含 marking + firings + inputs 存档（模块 mini_graph 可解析）。"""
+    return seed_run(
+        base, run_id,
+        firings=[{"tick": 0, "node": "A", "output": "a1"}],
+        snapshots={1: {"tick": 1, "status": "running", "fireable": ["B"], "fired": ["A"],
+                       "marking": {"slots": {"B|A": True}, "armed_starts": ["A"]}}},
+        status={"module_id": run_id, "phase": "done", "updated_at": 2.0},
+        inputs={"spec": {"topic": "demo"}, "tasklist": MINI_TASKLIST},
+    )
+
+
+class TestPreflightEndpoint:
+    def test_preflight_clean(self, base, client):
+        _seed_preflight(base)
+        r = client.post("/api/runs/mini_graph/resume/preflight", json={})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["hard_errors"] == []
+        assert d["target"] == "1" and d["target_tick"] == 1
+        assert d["executed_nodes"] == ["A"]
+
+    def test_preflight_hard_errors_inline_200(self, base, client):
+        """兼容性硬错误是正常载荷（200），不是 HTTP 错误。"""
+        _seed_preflight(base)
+        bad = {"Tasks": {"A": {"type": "script", "script": "A"},
+                         "B": {"type": "script", "script": "B",
+                               "inputs": {"value": "Z"}}},
+               "Flow": "[A] --> B"}
+        r = client.post("/api/runs/mini_graph/resume/preflight",
+                        json={"tasklist": bad})
+        assert r.status_code == 200
+        assert any("不在新图中" in e for e in r.json()["hard_errors"])
+
+    def test_preflight_bad_tasklist_400(self, base, client):
+        _seed_preflight(base)
+        r = client.post("/api/runs/mini_graph/resume/preflight",
+                        json={"tasklist": {"bogus": True}})
+        assert r.status_code == 400
+
+    def test_preflight_module_unresolved_400(self, base, client):
+        _seed_preflight(base)
+        r = client.post("/api/runs/mini_graph/resume/preflight",
+                        json={"module": "no_such_mod"})
+        assert r.status_code == 400
+        assert "未找到" in r.json()["error"]
+
+    def test_preflight_404_without_sqlite(self, base, client):
+        run_dir = base / ".specmodule" / "runs" / "bare"
+        run_dir.mkdir(parents=True)
+        (run_dir / "status.json").write_text(
+            json.dumps({"module_id": "bare", "phase": "aborted", "updated_at": 1.0}),
+            encoding="utf-8",
+        )
+        r = client.post("/api/runs/bare/resume/preflight", json={})
+        assert r.status_code == 404
+
+    def test_preflight_unknown_run_404(self, client):
+        assert client.post("/api/runs/ghost/resume/preflight",
+                           json={}).status_code == 404
