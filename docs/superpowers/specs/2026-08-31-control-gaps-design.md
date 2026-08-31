@@ -113,6 +113,11 @@ force）。阈值取宽：真实运行中单 tick 可含多次 LLM 调用，tick
 属常态——提示是引导信号不是告警，误报由用户看进程一眼消解。paused 排除；
 切 run 重置计时。
 
+**terminate 按钮 ⑤ 的前端出口**：App 在 `phase=running` 期间每 3s 轮询
+`GET /process`；`process.running` 为 true 时头部显示「终止进程」按钮
+（confirm 后 `POST /process/terminate`，成功后刷新）——只对本 server 拉起的
+恢复子进程可见（注册表外，如 CLI 手起的原始 run，不显示按钮）。
+
 **行内控制 ⑦**：RunList 每行 phase 感知小按钮——running：暂停 / 取消
 （confirm）；paused：继续；终态：恢复…（切换选中该 run 并打开对话框，行内
 不做无参直接恢复）。`stopPropagation` 不干扰行选中。
