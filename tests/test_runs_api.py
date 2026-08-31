@@ -175,3 +175,15 @@ class TestFeed:
         r = client.get("/api/runs/ghost/feed")
         assert r.status_code == 404
         assert r.json()["error"] == "无运行记录"
+
+
+def test_list_runs_paused_flag(base, client):
+    """行内控制按钮的数据支撑：paused 取自 control.json 薄映射。"""
+    seed_run(base, "p_run", status={"module_id": "p_run", "phase": "running", "updated_at": 1.0})
+    d = client.get("/api/runs").json()
+    row = next(r for r in d["runs"] if r["run_id"] == "p_run")
+    assert row["paused"] is False
+    client.post("/api/runs/p_run/control", json={"action": "pause"})
+    d = client.get("/api/runs").json()
+    row = next(r for r in d["runs"] if r["run_id"] == "p_run")
+    assert row["paused"] is True

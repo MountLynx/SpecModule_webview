@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from module_harness import query
+from module_harness import control, query
 from module_harness.status import query_run_status
 from server.deps import get_base_dir, validate_run_id
 
@@ -32,12 +32,14 @@ def list_runs(base_dir: Path = Depends(get_base_dir)) -> dict:
             st = query_run_status(d.name, base_dir=base_dir)
             if st is None:
                 continue
+            req = control.read_control(d.name, base_dir=base_dir)
             out.append({
                 "run_id": st.module_id,
                 "phase": st.phase,
                 "tick": st.tick,
                 "error": st.error,
                 "updated_at": st.updated_at,
+                "paused": bool(req and req.get("action") == "pause"),
             })
     out.sort(key=lambda r: r["updated_at"], reverse=True)
     return {"runs": out}
