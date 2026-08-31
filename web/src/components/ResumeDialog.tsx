@@ -76,6 +76,7 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
         parsedTl = JSON.parse(trimmed);
       } catch {
         setPreflight(null); // 非法 JSON：行内校验已示错，跳过预检
+        setPreflightBusy(false);
         return;
       }
     }
