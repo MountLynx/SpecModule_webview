@@ -120,8 +120,6 @@ export default function App() {
     // 陈旧流守卫：切 run 瞬间旧 run 的最后一条消息可能仍在 state（setState 批处理），
     // 不校验会把基线初始化到旧 run 的 tick，压制新 run 的本地增量
     if (!streamState || streamState.runId !== runId) return;
-    lastMsgAtRef.current = Date.now();
-    setStalled(false);
     const stream = streamState.msg;
     let cancelled = false;
     if (stream.tick != null) {
@@ -163,6 +161,14 @@ export default function App() {
       cancelled = true;
     };
   }, [streamState, runId, moduleOverride]);
+
+  // 停滞计时基准：新消息即推进 + 自愈清黄条。独立于 WS 增量 effect——
+  // moduleOverride 变化会重跑后者，但那不是活性信号，不应重置停滞计时。
+  useEffect(() => {
+    if (!streamState || streamState.runId !== runId) return;
+    lastMsgAtRef.current = Date.now();
+    setStalled(false);
+  }, [streamState, runId]);
 
   const statusView: StatusCore | null = stream ?? initialStatus;
 
