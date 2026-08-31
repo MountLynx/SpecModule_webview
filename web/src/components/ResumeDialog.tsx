@@ -3,8 +3,10 @@ import {
   ApiError,
   fetchCheckpoints,
   fetchInputs,
+  postPreflight,
   postResume,
   type CheckpointTarget,
+  type PreflightResult,
 } from "../api";
 import { btnStyle, dialogStyle, fieldLabel, jsonFieldError, overlayStyle } from "./dialogStyles";
 
@@ -30,6 +32,9 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
   const [maxTicks, setMaxTicks] = useState(100);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [preflight, setPreflight] = useState<PreflightResult | null>(null);
+  const [preflightErr, setPreflightErr] = useState<string | null>(null);
+  const [preflightBusy, setPreflightBusy] = useState(false);
 
   const specErr = jsonFieldError(specText, true);
   const tasklistErr = jsonFieldError(tasklistText, true);
@@ -60,6 +65,48 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
+
+  // ② 恢复预检：当前表单（module/target/tasklist）下 dry-run，hard_errors 禁启停
+  useEffect(() => {
+    let alive = true;
+    const trimmed = tasklistText.trim();
+    let parsedTl: Record<string, unknown> | null = null;
+    if (trimmed) {
+      try {
+        parsedTl = JSON.parse(trimmed);
+      } catch {
+        setPreflight(null); // 非法 JSON：行内校验已示错，跳过预检
+        return;
+      }
+    }
+    const t = setTimeout(() => {
+      setPreflightBusy(true);
+      postPreflight(runId, {
+        module: module || null,
+        target: target || null,
+        tasklist: parsedTl,
+      })
+        .then((r) => {
+          if (alive) {
+            setPreflight(r);
+            setPreflightErr(null);
+          }
+        })
+        .catch((e) => {
+          if (alive) {
+            setPreflight(null);
+            setPreflightErr(e instanceof ApiError ? e.message : String(e));
+          }
+        })
+        .finally(() => {
+          if (alive) setPreflightBusy(false);
+        });
+    }, 500);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [runId, module, target, tasklistText]);
 
   const submit = async () => {
     let spec: Record<string, unknown> | null = null;
@@ -110,7 +157,7 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
     }
   };
 
-  const onTasklistFile = async (file: File | null) => {
+  const onTasklistFile = async (file: File | null, ev?: React.ChangeEvent<HTMLInputElement>) => {
     if (!file) return;
     try {
       // 文件上传 = 载入到编辑区（编辑起点，而非独立提交通道）
@@ -120,6 +167,8 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
       setErr(null);
     } catch {
       setErr("tasklist 文件不是合法 JSON");
+    } finally {
+      if (ev) ev.target.value = ""; // 重选同一文件也能再触发 onChange
     }
   };
 
@@ -202,7 +251,7 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
             <input
               type="file"
               accept=".json,application/json"
-              onChange={(e) => onTasklistFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => onTasklistFile(e.target.files?.[0] ?? null, e)}
             />
           </div>
         </div>
@@ -236,12 +285,40 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
             </label>
           )}
         </div>
+        <div>
+          <div style={fieldLabel}>
+            兼容性预检
+            {preflightBusy && <span style={{ fontWeight: 400, color: "#6b7280" }}>（检查中…）</span>}
+          </div>
+          {preflightErr && <div style={{ color: "#b45309", fontSize: 12 }}>预检不可用：{preflightErr}</div>}
+          {preflight && (
+            <>
+              {preflight.hard_errors.length > 0 && (
+                <div style={{ color: "#b91c1c", fontSize: 12 }}>
+                  {preflight.hard_errors.map((e, i) => <div key={i}>✗ {e}</div>)}
+                </div>
+              )}
+              {preflight.warnings.length > 0 && (
+                <div style={{ color: "#b45309", fontSize: 12 }}>
+                  {preflight.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+                </div>
+              )}
+              {preflight.hard_errors.length === 0 && preflight.warnings.length === 0 && (
+                <div style={{ color: "#16a34a", fontSize: 12 }}>✓ 未发现兼容性问题（回退目标 tick {preflight.target_tick}）</div>
+              )}
+            </>
+          )}
+        </div>
         {err && <div style={{ color: "#b91c1c" }}>{err}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button style={btnStyle} onClick={onClose} disabled={busy}>
             取消
           </button>
-          <button style={btnStyle} onClick={submit} disabled={busy}>
+          <button
+            style={btnStyle}
+            onClick={submit}
+            disabled={busy || (preflight != null && preflight.hard_errors.length > 0)}
+          >
             {busy ? "启动中…" : "启动恢复"}
           </button>
         </div>
