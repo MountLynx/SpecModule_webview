@@ -231,6 +231,9 @@ export default function App() {
     setResumeRequest({ runId: rid, seq: Date.now() });
   }, []);
 
+  // 恢复请求已被 RunControls 消费（防 run 切换重挂载后陈旧请求重放误开对话框）
+  const consumeResumeRequest = useCallback(() => setResumeRequest(null), []);
+
   const selectedNode = payload?.graph.nodes.find((n) => n.id === selected) ?? null;
   const needModulePicker = error?.code === "module_unresolved";
 
@@ -263,12 +266,14 @@ export default function App() {
                 }${statusView?.error ? ` · ${statusView.error}` : ""}`}
               </span>
               <RunControls
+                key={runId}
                 runId={runId}
                 phase={statusView?.phase ?? payload?.phase ?? null}
                 paused={paused}
                 moduleHint={moduleOverride}
                 onAction={refreshRuns}
                 resumeRequest={resumeRequest}
+                onResumeRequestConsumed={consumeResumeRequest}
                 procRunning={procRunning}
                 onTerminate={terminateProc}
               />

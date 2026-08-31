@@ -14,12 +14,14 @@ interface RunControlsProps {
   onAction: () => void;
   /** 打开恢复对话框的请求（黄条/行内按钮发起；带目标 runId + seq） */
   resumeRequest: { runId: string; seq: number } | null;
+  /** 恢复请求已消费（App 据此清空，防重挂载重放） */
+  onResumeRequestConsumed?: () => void;
   /** 本 server 拉起的恢复子进程在跑（/process 轮询） */
   procRunning: boolean;
   onTerminate: () => void;
 }
 
-/** 头部控制条：phase 感知的 运行中控制（取消/暂停/继续）+ 终态恢复/回退入口。 */
+/** 头部控制条：phase 感知的运行控制（暂停/继续/取消/终止恢复进程）+ 存检查点 + 终态恢复/回退入口。 */
 export function RunControls({
   runId,
   phase,
@@ -27,6 +29,7 @@ export function RunControls({
   moduleHint,
   onAction,
   resumeRequest,
+  onResumeRequestConsumed,
   procRunning,
   onTerminate,
 }: RunControlsProps) {
@@ -64,8 +67,9 @@ export function RunControls({
     ) {
       lastSeqRef.current = resumeRequest.seq;
       setDialogOpen(true);
+      onResumeRequestConsumed?.();
     }
-  }, [resumeRequest, runId]);
+  }, [resumeRequest, runId, onResumeRequestConsumed]);
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
