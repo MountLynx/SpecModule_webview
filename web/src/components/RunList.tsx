@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { postControl, TERMINAL_PHASES, type ControlAction, type RunSummary } from "../api";
+import { TERMINAL_PHASES, type ControlAction, type RunSummary } from "../api";
 
 const PHASE_COLOR: Record<string, string> = {
   running: "#2563eb",
