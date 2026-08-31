@@ -22,7 +22,7 @@ def not_found(run_id: str) -> HTTPException:
 
 @router.get("")
 def list_runs(base_dir: Path = Depends(get_base_dir)) -> dict:
-    """运行列表：扫描 runs/ 目录 + query_run_status 摘要（updated_at 降序）。"""
+    """运行列表：扫描 runs/ 目录 + query_run_status 摘要 + read_control paused 标志（updated_at 降序）。"""
     runs_root = base_dir / ".specmodule" / "runs"
     out: list[dict[str, Any]] = []
     if runs_root.is_dir():

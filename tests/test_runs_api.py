@@ -187,3 +187,7 @@ def test_list_runs_paused_flag(base, client):
     d = client.get("/api/runs").json()
     row = next(r for r in d["runs"] if r["run_id"] == "p_run")
     assert row["paused"] is True
+    client.post("/api/runs/p_run/control", json={"action": "cancel"})
+    d = client.get("/api/runs").json()
+    row = next(r for r in d["runs"] if r["run_id"] == "p_run")
+    assert row["paused"] is False  # 挂起的 cancel 请求不等于暂停
