@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { postControl, type ControlAction } from "../api";
 import { btnStyle } from "./dialogStyles";
 import { ResumeDialog } from "./ResumeDialog";
@@ -14,10 +14,24 @@ interface RunControlsProps {
   moduleHint: string | null;
   /** 动作成功后的回调（App 据此刷新 run 列表等） */
   onAction: () => void;
+  /** 打开恢复对话框的请求（黄条/行内按钮发起；带目标 runId + seq） */
+  resumeRequest: { runId: string; seq: number } | null;
+  /** 本 server 拉起的恢复子进程在跑（/process 轮询） */
+  procRunning: boolean;
+  onTerminate: () => void;
 }
 
 /** 头部控制条：phase 感知的 运行中控制（取消/暂停/继续）+ 终态恢复/回退入口。 */
-export function RunControls({ runId, phase, paused, moduleHint, onAction }: RunControlsProps) {
+export function RunControls({
+  runId,
+  phase,
+  paused,
+  moduleHint,
+  onAction,
+  resumeRequest,
+  procRunning,
+  onTerminate,
+}: RunControlsProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [cpOpen, setCpOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -41,6 +55,19 @@ export function RunControls({ runId, phase, paused, moduleHint, onAction }: RunC
 
   const running = phase === "running";
   const resumable = phase != null && (TERMINAL_PHASES.has(phase) || running);
+
+  // 外部请求打开恢复对话框（ref 记上次已响应的 seq——只响应当前 run 的新请求）
+  const lastSeqRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      resumeRequest &&
+      resumeRequest.runId === runId &&
+      resumeRequest.seq !== lastSeqRef.current
+    ) {
+      lastSeqRef.current = resumeRequest.seq;
+      setDialogOpen(true);
+    }
+  }, [resumeRequest, runId]);
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
@@ -71,6 +98,19 @@ export function RunControls({ runId, phase, paused, moduleHint, onAction }: RunC
       <button style={btnStyle} disabled={busy} onClick={() => setCpOpen(true)}>
         存检查点…
       </button>
+      {procRunning && (
+        <button
+          style={{ ...btnStyle, color: "#b91c1c" }}
+          disabled={busy}
+          onClick={() => {
+            if (window.confirm("硬终止恢复子进程？（不写终态，status 停留 running；之后可强制恢复）")) {
+              onTerminate();
+            }
+          }}
+        >
+          终止进程
+        </button>
+      )}
       {resumable && (
         <button style={btnStyle} disabled={busy} onClick={() => setDialogOpen(true)}>
           恢复 / 回退…
