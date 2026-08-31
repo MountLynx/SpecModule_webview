@@ -22,7 +22,7 @@ function CheckpointDialog({ runId, onClose, onCreated }: CheckpointDialogProps) 
       return;
     }
     const tick = tickText.trim() ? Number(tickText.trim()) : null;
-    if (tick != null && (!Number.isFinite(tick) || tick < 0)) {
+    if (tick != null && (!Number.isInteger(tick) || tick < 0)) {
       setErr("tick 必须是非负整数");
       return;
     }
