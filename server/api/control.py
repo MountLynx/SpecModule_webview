@@ -191,6 +191,26 @@ def get_process(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
     }
 
 
+@router.post("/{run_id}/process/terminate")
+def post_terminate(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
+    """恢复子进程硬终止：注册表握有 Popen，terminate 即可（Windows = 硬杀）。
+
+    绕过库的优雅收尾（不写终态 phase）——status.json 停留 running 属预期
+    残留，UI 由 tick 停滞提示引导走强制恢复收尾；webview 不代写库产物格式。
+    注册表无活进程 → 409（CLI 手起的原始 run 不在观测范围，明确不支持）。
+    临时文件由 _reap 惰性收割清理。
+    """
+    validate_run_id(run_id)
+    proc = _reap(run_id)
+    if proc is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "无本 server 启动的恢复进程", "run_id": run_id},
+        )
+    proc.popen.terminate()
+    return {"run_id": run_id, "terminated": True, "pid": proc.popen.pid}
+
+
 @router.post("/{run_id}/resume")
 def post_resume(
     run_id: str, body: ResumeBody, base_dir: Path = Depends(get_base_dir)

@@ -19,9 +19,13 @@ class FakePopen:
     def __init__(self) -> None:
         self.pid = 4321
         self.exit_code: int | None = None
+        self.terminated = False
 
     def poll(self) -> int | None:
         return self.exit_code
+
+    def terminate(self) -> None:
+        self.terminated = True
 
 
 @pytest.fixture()
@@ -316,3 +320,33 @@ class TestPreflightEndpoint:
     def test_preflight_unknown_run_404(self, client):
         assert client.post("/api/runs/ghost/resume/preflight",
                            json={}).status_code == 404
+
+    def test_preflight_invalid_target_inline_200(self, base, client):
+        """非法/不存在 target 是 200 载荷 hard_error（区别于 /resume 的 400 预校验）。"""
+        _seed_preflight(base)
+        r = client.post("/api/runs/mini_graph/resume/preflight",
+                        json={"target": 999})
+        assert r.status_code == 200
+        assert any("不存在" in e for e in r.json()["hard_errors"])
+
+
+# ------------------------------------------------------------------
+# process/terminate（恢复子进程硬终止——注册表内进程；不代写终态）
+# ------------------------------------------------------------------
+
+
+class TestTerminateEndpoint:
+    def test_terminate_409_without_process(self, base, client):
+        seed_run(base, "t_run", status={"module_id": "t_run", "phase": "done", "updated_at": 1.0})
+        r = client.post("/api/runs/t_run/process/terminate")
+        assert r.status_code == 409
+        assert "无本 server 启动的恢复进程" in r.json()["error"]
+
+    def test_terminate_running_process(self, base, client, stub_spawn):
+        _seed_resumable(base)
+        assert client.post("/api/runs/mini_graph/resume", json={}).status_code == 200
+        r = client.post("/api/runs/mini_graph/process/terminate")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["terminated"] is True and d["pid"] == 4321
+        assert control_api._PROCS["mini_graph"].popen.terminated is True
