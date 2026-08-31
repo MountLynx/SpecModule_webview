@@ -1,10 +1,14 @@
 // 后端形状与 Part 2 各端点 Produces 一一对应。
 
+/** 终态集合：done/aborted/cancelled——轮询与控制条分支共用（收口定义源）。 */
+export const TERMINAL_PHASES = new Set(["done", "aborted", "cancelled"]);
+
 export interface RunSummary {
   run_id: string;
   phase: string;
   tick: number | null;
   error: string | null;
+  paused: boolean;
   updated_at: number;
 }
 
@@ -203,3 +207,33 @@ export interface ProcessInfo {
 
 export const fetchProcess = (runId: string) =>
   getJson<ProcessInfo>(`/api/runs/${encodeURIComponent(runId)}/process`);
+
+// ------------------------------------------------------------------
+// 控制面补齐：预检 / terminate / 检查点创建
+// ------------------------------------------------------------------
+
+export interface PreflightResult {
+  target: string | null;
+  target_tick: number | null;
+  executed_nodes: string[];
+  hard_errors: string[];
+  warnings: string[];
+}
+
+export const postPreflight = (runId: string, body: {
+  module?: string | null;
+  target?: string | null;
+  tasklist?: Record<string, unknown> | null;
+}) =>
+  postJson<PreflightResult>(
+    `/api/runs/${encodeURIComponent(runId)}/resume/preflight`, body);
+
+export const postTerminate = (runId: string) =>
+  postJson<{ run_id: string; terminated: boolean; pid: number | null }>(
+    `/api/runs/${encodeURIComponent(runId)}/process/terminate`, {});
+
+export const postCheckpoint = (
+  runId: string, body: { label: string; tick?: number | null },
+) =>
+  postJson<{ label: string; tick: number; overwritten: boolean }>(
+    `/api/runs/${encodeURIComponent(runId)}/checkpoints`, body);
