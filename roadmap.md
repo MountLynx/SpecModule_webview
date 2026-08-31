@@ -80,13 +80,13 @@ SpecModule_webview/
 
 控制功能缺口切片（2026-08-31 走查后盘点，详单见「控制功能缺口盘点」节）：
 
-- [ ] 恢复预检：dry-run 端点（薄调库 `check_resume_compat`，不 spawn）+ 对话框展示
+- [x] 恢复预检：dry-run 端点（薄调库 `check_resume_compat`，不 spawn）+ 对话框展示
   warnings / hard_errors（②）
-- [ ] 恢复对话框 tasklist 预填/展示（对齐 spec 的编辑重传体验）（③）
-- [ ] 截断 running 态提示：tick 停滞检测（排除暂停中）+ 引导强制恢复（④）
-- [ ] 恢复子进程硬终止端点（terminate；需权衡绕过库优雅收尾的代价）（⑤）
-- [ ] 回退目标展示 fired 上下文（checkpoints 载荷已含，纯前端）（⑥）
-- [ ] 小项：RunList 行内控制按钮；spec/tasklist 编辑器增强（⑦）
+- [x] 恢复对话框 tasklist 预填/展示（对齐 spec 的编辑重传体验）（③）
+- [x] 截断 running 态提示：tick 停滞检测（排除暂停中）+ 引导强制恢复（④）
+- [x] 恢复子进程硬终止端点（terminate；需权衡绕过库优雅收尾的代价）（⑤）
+- [x] 回退目标展示 fired 上下文（checkpoints 载荷已含，纯前端）（⑥）
+- [x] 小项：RunList 行内控制按钮；spec/tasklist 编辑器增强（⑦）
 
 ### 阶段 3 —— tasklist 图构建器（可选 / 远期）
 
@@ -215,6 +215,8 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 
 ### 控制功能缺口盘点（2026-08-31 走查后）
 
+> **2026-08-31 本轮全部补齐**：② 预检经库侧收编 check_resume_compat_from_run（库 0.1.4），⑤ terminate 附头部按钮出口，①③④⑥⑦ 见阶段 2 切片；下文为盘点原文存档。
+
 主链路（取消/暂停/继续、恢复/回退、预填重传、子进程观测）已闭环；以下为盘点出的
 剩余缺口，①②③ 为值得排期的真缺口，④-⑦ 已知边界/小项，等真实使用中疼了再动。
 
@@ -280,3 +282,11 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   对话框展示）③tasklist 预填重传；已知边界④截断 running 态提示⑤恢复子进程硬终止
   ⑥回退目标 fired 上下文⑦行内控制/编辑器小项。另：已知偏差中「resume 需显式
   --tasklist」已由库仓库 f76e8c5（流程来源兜底）修复，标记销项。
+- 2026-08-31（控制缺口补齐）：7 项缺口全部落地。库侧收编
+  `query.check_resume_compat_from_run`（executed_nodes 规则同步抽 `_executed_nodes`
+  单一事实源；库仓库 feat+fix+docs 三笔，0.1.4）；本仓库 preflight/terminate 两端点 +
+  `GET /api/runs` 补 paused；前端恢复对话框（tasklist 预填编辑区、预检内联展示、
+  fired 上下文、JSON 即时校验、文件载入改编辑区）+ 检查点创建对话框 + 停滞黄条 +
+  terminate 按钮 + RunList 行内控制。已知偏差：paused 判定表达式在
+  runs.py/control.py/_control_view/ws.py 三处消费端各自内联（一行式，收编库
+  `control.paused()` 待真实第三形态出现再动）；行内控制按钮无 busy 态（双击幂等）。

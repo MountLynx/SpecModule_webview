@@ -20,7 +20,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 
 | Endpoint | Library call | Shape |
 |---|---|---|
-| `GET /api/runs` | `store.list_modules` 无关；run 枚举：扫描 `runs/` 目录 + `query_run_status` 摘要 | `[{run_id, phase, tick, error, updated_at}]` |
+| `GET /api/runs` | `store.list_modules` 无关；run 枚举：扫描 `runs/` 目录 + `query_run_status` 摘要 | `[{run_id, phase, tick, error, updated_at, paused}]` |
 | `GET /api/runs/{id}/status` | `query_run_status(module_id, base_dir=None) -> ModuleStatus \| None` | `{module_id, phase, status, tick, fireable, fired, outputs, node_states, error, updated_at}` |
 | `GET /api/runs/{id}/timeline` | `build_timeline` + `timeline_to_dict`; filters `filter_failed/filter_tick/filter_node` | `{module_id, latest_tick, entries: [{tick, node, status, output, error}]}`; entry status `ok\|failed\|aborted` |
 | `GET /api/runs/{id}/checkpoints` | `build_checkpoints` + `checkpoints_to_dict` | `{module_id, checkpoints: [{target, tick, kind, fired, label}]}`; `target` = direct resume arg (`"<tick>"` or `"manual:<label>"`) |
@@ -34,6 +34,8 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 | `GET /api/runs/{id}/inputs` | `query.read_module_inputs(module_id, base_dir=None) -> dict \| None` | `{run_id, spec \| null, tasklist \| null}`（module_inputs 存档；恢复对话框预填上次输入） |
 | `POST /api/runs/{id}/resume` | **子进程拉起官方 CLI**：`[sys.executable, -m module_harness.cli, resume, target?, --module M, --run-id id, (--spec-file f)\|(--tasklist f), --max-ticks N, (--mock)]`，`cwd=SPECMODULE_BASE` | body `{module?, target?, spec?, tasklist?, max_ticks?=100, mock?=false}` → 202 `{started, run_id, pid, module, target}`；无 status.json → 404、无 run.sqlite → 400、运行中/已有恢复进程 → 409、模块未解析 → 404 `code=module_unresolved`、非法 target → 400 |
 | `GET /api/runs/{id}/process` | server 内存进程注册表 + `process.log` 尾（8KB） | `{run_id, running, pid, started_at, log}`（resume 子进程观测；CLI 启动期失败只在此可见） |
+| `POST /api/runs/{id}/resume/preflight` | `query.check_resume_compat_from_run(module, run_id, new_tasklist=..., target=..., base_dir=...)`（库共享组合函数） | `{target, target_tick, executed_nodes, hard_errors, warnings}`；不 spawn 不写状态；兼容性 hard_errors 是 200 载荷；无 run.sqlite → 404、tasklist 非法/建图失败（ValueError）→ 400 |
+| `POST /api/runs/{id}/process/terminate` | server 注册表 `Popen.terminate()`（Windows=硬杀） | `{run_id, terminated: true, pid}`；注册表无活进程 → 409（CLI 手起 run 不在观测范围）；不代写终态——status 残留 running 由前端停滞提示引导强制恢复 |
 
 **Run lifecycle.** `Module.run()` is a coroutine that completes when the run finishes — in-process cancel = cancel the asyncio task; `max_ticks` (default 100) is the only run limit. `status.json` phase machine: `idle → translating → reviewing → building → ready → running → done | aborted | cancelled`. `status.json` is written atomically by the Module at every phase; `run.sqlite` gets a snapshot every tick (persist mode). The `feed.py` polling pattern (`GET /feed.json?run_id=` composing status+timeline+checkpoints) is the reference for both the compat endpoint and the WS stream design.
 
