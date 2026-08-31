@@ -1,8 +1,6 @@
 // WS 客户端：首连即收当前状态；断线 1s 退避重连；终态后停止重连。
 import { useEffect, useRef, useState } from "react";
-import type { StatusMsg } from "./api";
-
-const TERMINAL = new Set(["done", "aborted", "cancelled"]);
+import { TERMINAL_PHASES, type StatusMsg } from "./api";
 
 type WsMsg = StatusMsg | { type: "error"; error: string };
 
@@ -40,7 +38,7 @@ export function useRunStream(runId: string | null): StreamState | null {
         }
         if (data.type === "status") {
           setState({ runId, msg: data });
-          if (TERMINAL.has(data.phase)) terminalRef.current = true;
+          if (TERMINAL_PHASES.has(data.phase)) terminalRef.current = true;
         }
       };
       ws.onclose = () => {
