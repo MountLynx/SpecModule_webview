@@ -120,6 +120,7 @@ export default function App() {
     // 不校验会把基线初始化到旧 run 的 tick，压制新 run 的本地增量
     if (!streamState || streamState.runId !== runId) return;
     lastMsgAtRef.current = Date.now();
+    setStalled(false);
     const stream = streamState.msg;
     let cancelled = false;
     if (stream.tick != null) {
