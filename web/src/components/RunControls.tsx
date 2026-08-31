@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { postControl, type ControlAction } from "../api";
+import { postControl, TERMINAL_PHASES, type ControlAction } from "../api";
 import { btnStyle } from "./dialogStyles";
 import { ResumeDialog } from "./ResumeDialog";
 import { CheckpointDialog } from "./CheckpointDialog";
-
-const TERMINAL_PHASES = new Set(["done", "aborted", "cancelled"]);
 
 interface RunControlsProps {
   runId: string;

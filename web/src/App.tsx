@@ -7,7 +7,10 @@ import {
   fetchProcess,
   fetchRuns,
   fetchStatus,
+  postControl,
   postTerminate,
+  TERMINAL_PHASES,
+  type ControlAction,
   type GraphPayload,
   type ModuleInfo,
   type RunSummary,
@@ -19,8 +22,6 @@ import { GraphView } from "./components/GraphView";
 import { NodePanel } from "./components/NodePanel";
 import { RunControls } from "./components/RunControls";
 import { RunList } from "./components/RunList";
-
-const TERMINAL_PHASES = new Set(["done", "aborted", "cancelled"]);
 
 export default function App() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -211,12 +212,37 @@ export default function App() {
     refreshRuns();
   }, [runId, refreshRuns]);
 
+  // ⑦ RunList 行内控制：失败静默——列表 5s 轮询刷新后状态即真相
+  const handleListControl = useCallback(
+    async (rid: string, action: ControlAction) => {
+      try {
+        await postControl(rid, action);
+      } catch {
+        // 行内静默：刷新后状态即真相
+      }
+      refreshRuns();
+    },
+    [refreshRuns],
+  );
+
+  // 行内 ↻：切到目标 run 并请求打开恢复对话框（RunControls 按 runId + seq 守卫）
+  const handleListResume = useCallback((rid: string) => {
+    setRunId(rid);
+    setResumeRequest({ runId: rid, seq: Date.now() });
+  }, []);
+
   const selectedNode = payload?.graph.nodes.find((n) => n.id === selected) ?? null;
   const needModulePicker = error?.code === "module_unresolved";
 
   return (
     <div style={{ display: "flex", height: "100%" }}>
-      <RunList runs={runs} current={runId} onSelect={setRunId} />
+      <RunList
+        runs={runs}
+        current={runId}
+        onSelect={setRunId}
+        onControl={handleListControl}
+        onResume={handleListResume}
+      />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <header
           style={{
