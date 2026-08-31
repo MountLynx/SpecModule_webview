@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { postControl, type ControlAction } from "../api";
 import { btnStyle } from "./dialogStyles";
 import { ResumeDialog } from "./ResumeDialog";
+import { CheckpointDialog } from "./CheckpointDialog";
 
 const TERMINAL_PHASES = new Set(["done", "aborted", "cancelled"]);
 
@@ -18,6 +19,7 @@ interface RunControlsProps {
 /** 头部控制条：phase 感知的 运行中控制（取消/暂停/继续）+ 终态恢复/回退入口。 */
 export function RunControls({ runId, phase, paused, moduleHint, onAction }: RunControlsProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [cpOpen, setCpOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -66,6 +68,9 @@ export function RunControls({ runId, phase, paused, moduleHint, onAction }: RunC
           取消
         </button>
       )}
+      <button style={btnStyle} disabled={busy} onClick={() => setCpOpen(true)}>
+        存检查点…
+      </button>
       {resumable && (
         <button style={btnStyle} disabled={busy} onClick={() => setDialogOpen(true)}>
           恢复 / 回退…
@@ -82,6 +87,13 @@ export function RunControls({ runId, phase, paused, moduleHint, onAction }: RunC
             setDialogOpen(false);
             onAction();
           }}
+        />
+      )}
+      {cpOpen && (
+        <CheckpointDialog
+          runId={runId}
+          onClose={() => setCpOpen(false)}
+          onCreated={onAction}
         />
       )}
     </div>
