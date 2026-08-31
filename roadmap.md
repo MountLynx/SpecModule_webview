@@ -73,9 +73,20 @@ SpecModule_webview/
 ### 阶段 2 —— 可视化管理
 
 - [ ] 模块列表（store.list_modules）
-- [ ] 运行列表/选择器 + 检查点管理（列表、命名）
+- [ ] 运行列表/选择器 + 检查点管理（列表、命名）——含手动检查点创建 UI 入口
+  （`POST /checkpoints` 端点阶段 0 已备，界面无入口，见「控制功能缺口盘点」①）
 - [x] 运行控制（2026-08-31 落地，设计见「运行控制设计」节）：运行中取消/暂停/继续
   （跨进程 control.json 通道）+ 结束后恢复/回退（spec/tasklist 可改重传，子进程拉官方 CLI）
+
+控制功能缺口切片（2026-08-31 走查后盘点，详单见「控制功能缺口盘点」节）：
+
+- [ ] 恢复预检：dry-run 端点（薄调库 `check_resume_compat`，不 spawn）+ 对话框展示
+  warnings / hard_errors（②）
+- [ ] 恢复对话框 tasklist 预填/展示（对齐 spec 的编辑重传体验）（③）
+- [ ] 截断 running 态提示：tick 停滞检测（排除暂停中）+ 引导强制恢复（④）
+- [ ] 恢复子进程硬终止端点（terminate；需权衡绕过库优雅收尾的代价）（⑤）
+- [ ] 回退目标展示 fired 上下文（checkpoints 载荷已含，纯前端）（⑥）
+- [ ] 小项：RunList 行内控制按钮；spec/tasklist 编辑器增强（⑦）
 
 ### 阶段 3 —— tasklist 图构建器（可选 / 远期）
 
@@ -196,10 +207,36 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 
 ### 已知偏差
 
-- CLI resume/rollback 对无 `default_template` 的模块需显式 `--tasklist`（与 run
-  一致，既有行为）；真实模块（M1/M2）走 default_template 不受影响。
+- ~~CLI resume/rollback 对无 `default_template` 的模块需显式 `--tasklist`~~
+  **已修复**（2026-08-31 库仓库 f76e8c5）：流程来源兜底——显式参数 >
+  `default_template` > module_inputs 归档 tasklist。
 - 库查询 latest_tick 取历史最大 tick——深回退后 `status.tick` 偏高直至运行追上
   （上游可改为按写入序取最新，本轮不动）。
+
+### 控制功能缺口盘点（2026-08-31 走查后）
+
+主链路（取消/暂停/继续、恢复/回退、预填重传、子进程观测）已闭环；以下为盘点出的
+剩余缺口，①②③ 为值得排期的真缺口，④-⑦ 已知边界/小项，等真实使用中疼了再动。
+
+1. **手动检查点创建无 UI 入口**。`POST /checkpoints` 端点阶段 0 已备，但界面无任何
+   命名检查点入口——「当前状态值得存点供以后回退」只能去 CLI 做。回退对话框能消费
+   `manual:<label>` 目标却不能生产它。归入「检查点管理」切片。
+2. **恢复前看不到兼容性预检**。`check_resume_compat` 的提示性警告（已执行节点被修改
+   不生效、某节点从检查点出发永不 fire 等）与硬错误明细只落在 `process.log`；硬错误
+   要等子进程失败后翻日志。库函数现成，加薄 dry-run 端点（不 spawn 只跑 check）+
+   对话框展示。
+3. **tasklist 更改重传只能从零上传**。`/inputs` 已返回归档 tasklist，对话框只预填
+   spec——改 tasklist 没有编辑起点。对齐 spec 做法（预填编辑区或可查看）。
+4. **截断 running 态无法与真运行区分**。max_ticks 截断后 phase 停在 running 但进程
+   已退：暂停/取消按钮对死进程点击无效且无提示。库语义无活性探测、webview 不该猜；
+   可加 tick 停滞提示（需排除暂停中的 run）引导走强制恢复。
+5. **恢复子进程无硬终止**。只有协作式取消（tick 边界生效）；子进程卡在单次长 LLM
+   调用时只能等。terminate 端点技术上 trivial（注册表握有 Popen），但绕过库的优雅
+   收尾（不写终态 phase），提供与否需先想清楚。
+6. **回退目标缺上下文**。checkpoints 载荷含每 tick 的 `fired` 节点列表，对话框未
+   展示——「tick 47」与「tick 47（刚完成 Normalize）」对选目标差别很大。纯前端。
+7. **小项**：RunList 行内无控制按钮（须进入 run 才能操作）；spec/tasklist 编辑器为
+   纯 textarea（提交时才校验 JSON）。
 
 ## 与原仓库的同步（统一 API 原则）
 
@@ -238,3 +275,8 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   （control/inputs/resume/process，resume 为子进程拉官方 CLI）+ WS `paused` 字段 +
   头部控制条与恢复对话框。真实子进程全链路走查：暂停冻结 tick → 继续前进 → 取消落
   cancelled → 续跑 → 回退 tick 4 换 spec 重传归档。已知偏差两条（见设计节）。
+- 2026-08-31（控制缺口盘点）：全链路走查后盘点剩余缺口并写入「控制功能缺口盘点」节、
+  阶段 2 增补对应切片项——①检查点管理 UI（入口缺失）②恢复兼容性预检（dry-run 端点 +
+  对话框展示）③tasklist 预填重传；已知边界④截断 running 态提示⑤恢复子进程硬终止
+  ⑥回退目标 fired 上下文⑦行内控制/编辑器小项。另：已知偏差中「resume 需显式
+  --tasklist」已由库仓库 f76e8c5（流程来源兜底）修复，标记销项。
