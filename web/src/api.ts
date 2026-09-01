@@ -1,7 +1,7 @@
 // 后端形状与 Part 2 各端点 Produces 一一对应。
 
-/** 终态集合：done/aborted/cancelled——轮询与控制条分支共用（收口定义源）。 */
-export const TERMINAL_PHASES = new Set(["done", "aborted", "cancelled"]);
+/** 终态集合：done/aborted/cancelled/truncated（截断）——轮询与控制条分支共用（收口定义源）。 */
+export const TERMINAL_PHASES = new Set(["done", "aborted", "cancelled", "truncated"]);
 
 export interface RunSummary {
   run_id: string;
@@ -57,6 +57,23 @@ export interface StatusCore {
 export interface StatusMsg extends StatusCore {
   type: "status";
   paused?: boolean;
+  /** stream.log 最后修改时间（LLM 流式心跳辅助；无 stream.log 为 null）。
+   *  仅 WS 推送携带——HTTP status 端点无此字段，故挂在 StatusMsg 而非 StatusCore。 */
+  stream_mtime: number | null;
+}
+
+/** stream.log 记录（LLM 流式输出；run_start = 新执行边界，前端据此清缓冲） */
+export interface StreamRecord {
+  type: "run_start" | "call_start" | "token" | "call_end" | "call_error";
+  ts: number;
+  node?: string;
+  chunk?: string;
+  [k: string]: unknown;
+}
+
+export interface StreamMsg {
+  type: "stream";
+  records: StreamRecord[];
 }
 
 export interface StatusResp extends StatusCore {
@@ -187,7 +204,7 @@ export interface ResumeRequest {
   tasklist?: Record<string, unknown> | null;
   max_ticks?: number;
   mock?: boolean;
-  /** phase=running 也放行（max_ticks 截断的残留 running 态） */
+  /** phase=running 也放行（进程被终止后的残留 running 态） */
   force?: boolean;
 }
 

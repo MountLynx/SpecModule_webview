@@ -6,6 +6,12 @@ const PHASE_COLOR: Record<string, string> = {
   done: "#16a34a",
   aborted: "#dc2626",
   cancelled: "#d97706",
+  truncated: "#b45309",
+};
+
+/** 非英文 phase 的展示标签（其余原样显示） */
+const PHASE_LABEL: Record<string, string> = {
+  truncated: "已截断",
 };
 
 const miniBtn: CSSProperties = {
@@ -60,7 +66,7 @@ export function RunList({
               }}
             >
               <span>
-                {r.phase}
+                {PHASE_LABEL[r.phase] ?? r.phase}
                 {r.tick != null ? ` · tick ${r.tick}` : ""}
               </span>
               <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}

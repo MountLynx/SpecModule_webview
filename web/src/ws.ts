@@ -1,13 +1,21 @@
-// WS 客户端：首连即收当前状态；断线 1s 退避重连；终态后停止重连。
+// WS 客户端：首连即收当前状态；stream 记录按节点累积缓冲（run_start 清缓冲）；
+// 断线 1s 退避重连；终态后停止重连。
 import { useEffect, useRef, useState } from "react";
-import { TERMINAL_PHASES, type StatusMsg } from "./api";
+import { TERMINAL_PHASES, type StatusMsg, type StreamMsg } from "./api";
 
-type WsMsg = StatusMsg | { type: "error"; error: string };
+type WsMsg = StatusMsg | StreamMsg | { type: "error"; error: string };
+
+/** 流缓冲：按节点累积的流式文本 + 版本号（每批消息自增，驱动订阅方 effect）。 */
+export interface StreamBuffer {
+  text: Record<string, string>;
+  seq: number;
+}
 
 /** 流状态按 runId 打包：StatusMsg 本身无 run_id 字段，消费端据此丢弃切 run 瞬间的陈旧消息。 */
 export interface StreamState {
   runId: string;
   msg: StatusMsg;
+  stream: StreamBuffer;
 }
 
 export function useRunStream(runId: string | null): StreamState | null {
@@ -36,8 +44,32 @@ export function useRunStream(runId: string | null): StreamState | null {
           terminalRef.current = true;
           return;
         }
+        if (data.type === "stream") {
+          setState((prev) => {
+            if (!prev || prev.runId !== runId) return prev;
+            const text = { ...prev.stream.text };
+            let seq = prev.stream.seq;
+            for (const r of data.records) {
+              if (r.type === "run_start") {
+                // 新执行边界：清空缓冲（resume 重跑的流从零开始显示）
+                for (const k of Object.keys(text)) delete text[k];
+                seq += 1;
+              } else if (r.type === "token" && r.node) {
+                text[r.node] = (text[r.node] ?? "") + (r.chunk ?? "");
+                seq += 1;
+              }
+            }
+            return { ...prev, stream: { text, seq } };
+          });
+          return;
+        }
         if (data.type === "status") {
-          setState({ runId, msg: data });
+          // 保留流缓冲（status 与 stream 交替到达，互相不重置）
+          setState((prev) => ({
+            runId,
+            msg: data,
+            stream: prev?.runId === runId ? prev.stream : { text: {}, seq: 0 },
+          }));
           if (TERMINAL_PHASES.has(data.phase)) terminalRef.current = true;
         }
       };

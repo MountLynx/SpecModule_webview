@@ -301,7 +301,7 @@ export default function App() {
             }}
           >
             <span>
-              tick 长时间未前进——进程可能已截断/失联。若确认进程已退出，可强制恢复。
+              进程长时间无输出——可能已失联/崩溃。若确认进程已退出，可强制恢复。
             </span>
             <button
               style={{ fontSize: 12, cursor: "pointer" }}
