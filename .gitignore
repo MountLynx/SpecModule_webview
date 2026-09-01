@@ -8,5 +8,7 @@ build/
 *.egg-info/
 .venv/
 .superpowers/
+.workbuddy/
 web/node_modules/
 web/dist/
+web/vite.config.ts.timestamp-*.mjs
