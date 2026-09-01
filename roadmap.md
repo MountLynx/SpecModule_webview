@@ -232,6 +232,8 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 4. **截断 running 态无法与真运行区分**。max_ticks 截断后 phase 停在 running 但进程
    已退：暂停/取消按钮对死进程点击无效且无提示。库语义无活性探测、webview 不该猜；
    可加 tick 停滞提示（需排除暂停中的 run）引导走强制恢复。
+   - **根除（2026-08-31）**：库 truncated 终态落地后，截断不再是 running 残留；
+     黄条只对进程真失联触发（流式心跳 + 终态关闭）。
 5. **恢复子进程无硬终止**。只有协作式取消（tick 边界生效）；子进程卡在单次长 LLM
    调用时只能等。terminate 端点技术上 trivial（注册表握有 Popen），但绕过库的优雅
    收尾（不写终态 phase），提供与否需先想清楚。
@@ -290,3 +292,10 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   terminate 按钮 + RunList 行内控制。已知偏差：paused 判定表达式在
   runs.py/control.py/_control_view/ws.py 三处消费端各自内联（一行式，收编库
   `control.paused()` 待真实第三形态出现再动）；行内控制按钮无 busy 态（双击幂等）。
+- **2026-08-31 截断终态 + LLM 流式落盘（库 A/B 两案，spec：2026-08-31-truncated-stream-design.md）**：
+  库侧 `_finalize_phase` 将 max_ticks 耗尽映射为新终态 **`truncated`**（error 记上限）——
+  控制缺口 ④ 的"截断 running 态"从根消除，黄条启发式只对真失联触发；库侧新增
+  `stream.log`（Module `stream_log=True` 默认开，EventBus 订阅 `LlmCallStarted/LlmToken/
+  LlmCallCompleted/HarnessFailed` 五类 JSONL 记录 append 落盘）+ `query.read_stream`
+  共享增量读端；webview WS 追尾推送（锚定最后一条 `run_start`）+ `stream_mtime`、
+  NodePanel 实时输出区、truncated 终态按钮矩阵。库仓库独立提交 ×3（含 api.md 补录）。

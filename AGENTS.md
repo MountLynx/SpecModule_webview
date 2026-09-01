@@ -13,7 +13,7 @@
 ```
 browser SPA → HTTP / WS → FastAPI thin layer (server/) → specmodule library (module_harness) → tickflow engine (tickflow-py)
                                                                   │
-                                                                  └→ <base_dir>/.specmodule/runs/<run_id>/run.sqlite + status.json
+                                                                  └→ <base_dir>/.specmodule/runs/<run_id>/run.sqlite + status.json + stream.log
 ```
 
 Library interfaces → endpoint mapping (all verified in `../SpecModule/module_harness/`):
@@ -37,7 +37,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 | `POST /api/runs/{id}/resume/preflight` | `query.check_resume_compat_from_run(module, run_id, new_tasklist=..., target=..., base_dir=...)`（库共享组合函数） | `{target, target_tick, executed_nodes, hard_errors, warnings}`；不 spawn 不写状态；兼容性 hard_errors 是 200 载荷；无 run.sqlite → 404、tasklist 非法/建图失败（ValueError）→ 400 |
 | `POST /api/runs/{id}/process/terminate` | server 注册表 `Popen.terminate()`（Windows=硬杀） | `{run_id, terminated: true, pid}`；注册表无活进程 → 409（CLI 手起 run 不在观测范围）；不代写终态——status 残留 running 由前端停滞提示引导强制恢复 |
 
-**Run lifecycle.** `Module.run()` is a coroutine that completes when the run finishes — in-process cancel = cancel the asyncio task; `max_ticks` (default 100) is the only run limit. `status.json` phase machine: `idle → translating → reviewing → building → ready → running → done | aborted | cancelled`. `status.json` is written atomically by the Module at every phase; `run.sqlite` gets a snapshot every tick (persist mode). The `feed.py` polling pattern (`GET /feed.json?run_id=` composing status+timeline+checkpoints) is the reference for both the compat endpoint and the WS stream design.
+**Run lifecycle.** `Module.run()` is a coroutine that completes when the run finishes — in-process cancel = cancel the asyncio task; `max_ticks` (default 100) is the only run limit. `status.json` phase machine: `idle → translating → reviewing → building → ready → running → done | aborted | cancelled | truncated`（truncated = max_ticks 耗尽，终态可 resume）。 `status.json` is written atomically by the Module at every phase; `run.sqlite` gets a snapshot every tick (persist mode). The `feed.py` polling pattern (`GET /feed.json?run_id=` composing status+timeline+checkpoints) is the reference for both the compat endpoint and the WS stream design.
 
 **Run control (cross-process).** cancel/pause ride the library `control.json` protocol (`module_harness/control.py`; library hooks consume requests at tick boundaries — **cancel is consumed at `on_tick_end`**: the engine rewrites `runner.status` at every tick end, so a CANCELLED set at tick_start is clobbered; pause holds at tick_start until unpause/cancel). `Module(control=False)` disables. Requests are one-shot (delete-on-consume) and `run()/resume()` clears stale requests at start. Resume/rollback after end = the library `Module.resume(rollback_to)` semantics (tick / `manual:<label>` / latest, with compat hard-checks), executed by the server **spawning the official CLI** (`specmodule resume`) as a subprocess — CLI wiring (spec resolution, LLM client, module resolution) is reused wholesale, never duplicated in server code; spec/tasklist go through temp files (`--spec-file`/`--tasklist`, Windows argv length limits). The child writes `status.json`/`run.sqlite` → the existing WS stream monitors it with zero extra plumbing. An in-memory registry (`{run_id: Popen}`) enforces single-writer (409 on double spawn); server restart loses the registry but the child keeps running (monitoring only depends on artifacts).
 
@@ -48,7 +48,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 - Failed runs write only `status.json` (no `run.sqlite`) — status/timeline endpoints must tolerate a run dir without sqlite (query layer returns `None` — map to 404, never raise).
 - Single-writer per `run_id` (WAL) — serialize any cross-process operations touching the same run.
 - `run_id`: Module default `mod_<8hex>`, SubModule `{name}_<6hex>`; consumers may supply their own (CLI `--run-id`). Webview treats `run_id` as opaque path segment.
-- **Real-time without touching the library**: the WS stream (`/api/runs/{id}/stream`) polls `query_run_status`（status.json + run.sqlite 最新快照，同 feed.py 数据源）+ `control.read_control`（paused 标志）on the server side（~1s），按 `(phase, tick, updated_at, paused)` 签名变化才推、终态推完 close(1000) — no library hooks, no push mechanism in the library.
+- **Real-time without touching the library**: the WS stream (`/api/runs/{id}/stream`) polls `query_run_status` + `control.read_control`（paused 标志）+ `query.read_stream`（stream.log 追尾，锚定最后一条 `run_start`）on the server side（~1s），status 按 `(phase, tick, updated_at, paused)` 签名变化才推（附 `stream_mtime` 辅助心跳）、新 stream 记录批量推 `{"type": "stream", records}`（先于 status）、终态（含 truncated）推完 close(1000) — no library hooks, no push mechanism in the library.
 - CORS: dev SPA runs on a Vite dev server; open the dev origin only. Prod: FastAPI serves the built static assets — same origin, no CORS needed.
 - **不重复构建（统一 API 原则）**：同步完善 API 文档与 CLI 先行的目的就是统一 API——出现第二个消费端（本仓库/TUI/Web）时，共享逻辑收编进库（共享层函数/入口方法），消费端只留传输级薄映射；消费端代码里出现与 CLI 重复的接线/校验逻辑即为违规——要么本轮收编上游，要么记录偏差并排期收编。上游不是不可动，视情况而定：值得统一的改动直接改 sibling 库仓库（遵守其 AGENTS.md），api.md 补录、库仓库独立提交，发新版后同步依赖。**graph 序列化已收编进库**（2026-08-29：`query.build_run_graph`/`graph_to_dict`，CLI visualize 与 Web 共用）——图结构是库侧唯一新数据形状；本层不再维护图构建/序列化代码，消费端只留薄映射。
 - **库 API 文档同步完善**：消费新的 specmodule API 时，同步补录 `../SpecModule/docs/references/api.md`（做到哪里写哪里，按消费增量生长）；文档变更在库仓库独立提交（`docs:` 前缀，遵循其 AGENTS.md），并在本仓库 roadmap.md 变更日志记录。
@@ -64,7 +64,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
   - `module_harness/` — `query.py` (timeline/checkpoint queries + `read_module_inputs`), `status.py` (`ModuleStatus`), `control.py` (跨进程控制文件协议：cancel/pause/unpause + hook 工厂), `graph_builder.py` (`TasklistTranslator`), `translator.py`, `store.py` (module store), `module.py` (`Module` orchestrator), `feed.py` (reference JSON composition + polling pattern), `entry.py`, `cli.py` (21-subcommand `specmodule` CLI: + `cancel`/`pause`/`unpause`)
   - `docs/references/api.md` — 库面编程 API 参考（按消费增量生长，本仓库消费新 API 必须同步补录）；`cli-usage.md` — parameter semantics for every operation
   - `AGENTS.md` — sibling guidelines (architecture rules, gotchas); mirror its conventions
-- Run artifacts (created at runtime): `<base_dir>/.specmodule/runs/<run_id>/`; module store: `$SPECMODULE_HOME` or `~/.specmodule/` (`modules/`, `manifests/`, `cache/`, `config.json`, `.env`, `rules.txt`).
+- Run artifacts (created at runtime): `<base_dir>/.specmodule/runs/<run_id>/`（`run.sqlite` + `status.json` + `stream.log`——LLM 流式 JSONL，`Module(stream_log=False)` 关闭）; module store: `$SPECMODULE_HOME` or `~/.specmodule/` (`modules/`, `manifests/`, `cache/`, `config.json`, `.env`, `rules.txt`).
 
 ## Development Commands
 
