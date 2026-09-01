@@ -1,29 +1,40 @@
 # server/ws.py
-"""tick 流实时推送：后端轮询 status.json/run.sqlite（feed 同源，不改库）。"""
+"""tick 流实时推送：status.json/run.sqlite 签名推送 + stream.log 追尾（不改库）。"""
 
 from __future__ import annotations
 
 import asyncio
+import os
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from module_harness import control
+from module_harness.query import read_stream
 from module_harness.status import query_run_status
+from module_harness.stream import stream_log_path
 from server.deps import get_base_dir, is_valid_run_id
 
 router = APIRouter()
 
-_TERMINAL = ("done", "aborted", "cancelled")
+_TERMINAL = ("done", "aborted", "cancelled", "truncated")
 _POLL_SECONDS = 1.0
+
+
+def _stream_mtime(base_dir, run_id: str) -> float | None:
+    try:
+        return os.path.getmtime(stream_log_path(run_id, base_dir))
+    except OSError:
+        return None
 
 
 @router.websocket("/api/runs/{run_id}/stream")
 async def run_stream(websocket: WebSocket, run_id: str) -> None:
-    """变化才推：sig=(phase, tick, updated_at) 比对；终态推完 close(1000)。
-
-    查询为同步短读（SQLite WAL 跨进程读，毫秒级），v1 直接在事件循环内调用。
-    receive 竞速轮询间隔：本协议无客户端→服务端消息，receive 任务仅为在两次
-    轮询之间察觉客户端断连（uvicorn 下断连只从 receive 侧暴露，否则泄漏轮询任务）。
+    """变化才推：status 按 sig=(phase, tick, updated_at, paused)；stream.log
+    追尾锚定最后一条 run_start（含，前端以此为清缓冲信号），新记录批量推。
+    推送顺序 stream 先于 status；终态（含 truncated）补发最后一批流后
+    close(1000)。查询为同步短读（SQLite WAL 跨进程读 + 文件增量读，毫秒级），
+    v1 直接在事件循环内调用。receive 竞速轮询间隔：本协议无客户端→服务端
+    消息，receive 任务仅为在两次轮询之间察觉客户端断连。
     """
     await websocket.accept()
     if not is_valid_run_id(run_id):
@@ -35,6 +46,7 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
         return
     base_dir = get_base_dir()
     last_sig: tuple | None = None
+    stream_offset: int | None = None   # None = 未锚定（锚定后为下一读起点）
     recv_task = asyncio.create_task(websocket.receive())
     try:
         while True:
@@ -54,6 +66,31 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
                 # paused——挂起/释放即使 phase/tick 不变也要推，前端换按钮
                 req = control.read_control(run_id, base_dir=base_dir)
                 paused = bool(req and req.get("action") == "pause")
+                # 流追尾：running 起锚定（库侧 run_start 先于 running phase
+                # 写入，见到 running 必已存在）；已锚定后每拍增量读
+                if st.phase == "running" and stream_offset is None:
+                    anchored = read_stream(run_id, offset=0, base_dir=base_dir)
+                    if anchored is not None:
+                        stream_offset = next(
+                            (r["off"] for r in reversed(anchored["records"])
+                             if r.get("type") == "run_start"),
+                            0,
+                        )
+                if stream_offset is not None:
+                    chunk = read_stream(run_id, offset=stream_offset, base_dir=base_dir)
+                    if chunk is not None:
+                        stream_offset = chunk["next_offset"]
+                        if chunk["records"]:
+                            try:
+                                await websocket.send_json({
+                                    "type": "stream",
+                                    "records": [
+                                        {k: v for k, v in r.items() if k != "off"}
+                                        for r in chunk["records"]
+                                    ],
+                                })
+                            except Exception:
+                                return
                 sig = (st.phase, st.tick, st.updated_at, paused)
                 if sig != last_sig:
                     last_sig = sig
@@ -69,6 +106,7 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
                             "error": st.error,
                             "updated_at": st.updated_at,
                             "paused": paused,
+                            "stream_mtime": _stream_mtime(base_dir, run_id),
                         })
                     except Exception:
                         return
