@@ -135,7 +135,7 @@ class TestResumeEndpoint:
         r = client.post("/api/runs/mini_graph/resume", json={
             "target": "1", "spec": {"topic": "改后的主题"}, "mock": True, "max_ticks": 50,
         })
-        assert r.status_code == 200
+        assert r.status_code == 202
         assert r.json() == {
             "started": True, "run_id": "mini_graph", "pid": 4321,
             "module": "mini_graph", "target": "1",
@@ -156,7 +156,7 @@ class TestResumeEndpoint:
         """module 缺省 = run_id（同图端点启发式）；target/spec/tasklist 全缺省。"""
         _seed_resumable(base)
         r = client.post("/api/runs/mini_graph/resume", json={})
-        assert r.status_code == 200
+        assert r.status_code == 202
         argv = stub_spawn[0]["argv"]
         assert argv[argv.index("--module") + 1] == "mini_graph"
         assert "--spec-file" not in argv and "--tasklist" not in argv
@@ -167,7 +167,7 @@ class TestResumeEndpoint:
         new_tl = {"Tasks": {"A": {"type": "script", "script": "A"}}, "Flow": "[A]"}
         r = client.post("/api/runs/mini_graph/resume",
                         json={"target": "manual:cp1", "tasklist": new_tl})
-        assert r.status_code == 200
+        assert r.status_code == 202
         argv = stub_spawn[0]["argv"]
         assert "manual:cp1" in argv
         tl_path = Path(argv[argv.index("--tasklist") + 1])
@@ -199,12 +199,12 @@ class TestResumeEndpoint:
         """force 逃生门：max_ticks 截断的残留 running 态可强制恢复。"""
         _seed_resumable(base, status={"module_id": "mini_graph", "phase": "running", "updated_at": 3.0})
         r = client.post("/api/runs/mini_graph/resume", json={"force": True, "mock": True})
-        assert r.status_code == 200
+        assert r.status_code == 202
         assert stub_spawn[0]["argv"][3] == "resume"
 
     def test_resume_409_double_spawn(self, base, client, stub_spawn):
         _seed_resumable(base)
-        assert client.post("/api/runs/mini_graph/resume", json={}).status_code == 200
+        assert client.post("/api/runs/mini_graph/resume", json={}).status_code == 202
         r = client.post("/api/runs/mini_graph/resume", json={})
         assert r.status_code == 409
         assert len(stub_spawn) == 1  # 第二次未 spawn
@@ -344,7 +344,7 @@ class TestTerminateEndpoint:
 
     def test_terminate_running_process(self, base, client, stub_spawn):
         _seed_resumable(base)
-        assert client.post("/api/runs/mini_graph/resume", json={}).status_code == 200
+        assert client.post("/api/runs/mini_graph/resume", json={}).status_code == 202
         r = client.post("/api/runs/mini_graph/process/terminate")
         assert r.status_code == 200
         d = r.json()

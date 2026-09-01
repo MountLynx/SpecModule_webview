@@ -211,7 +211,7 @@ def post_terminate(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
     return {"run_id": run_id, "terminated": True, "pid": proc.popen.pid}
 
 
-@router.post("/{run_id}/resume")
+@router.post("/{run_id}/resume", status_code=202)
 def post_resume(
     run_id: str, body: ResumeBody, base_dir: Path = Depends(get_base_dir)
 ) -> dict:
