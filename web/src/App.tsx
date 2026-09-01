@@ -241,6 +241,11 @@ export default function App() {
   const consumeResumeRequest = useCallback(() => setResumeRequest(null), []);
 
   const selectedNode = payload?.graph.nodes.find((n) => n.id === selected) ?? null;
+  // 选中节点的流式文本：仅 running 且流缓冲属于当前 run 时给出（终态后 outputs 接管）
+  const liveText =
+    statusView?.phase === "running" && streamState?.runId === runId && selectedNode
+      ? streamState.stream.text[selectedNode.id]
+      : undefined;
   const needModulePicker = error?.code === "module_unresolved";
 
   return (
@@ -347,6 +352,7 @@ export default function App() {
           runId={runId!}
           node={selectedNode}
           outputs={statusView?.outputs ?? {}}
+          liveText={liveText}
           onClose={() => setSelected(null)}
         />
       )}

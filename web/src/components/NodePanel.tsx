@@ -1,6 +1,6 @@
 // web/src/components/NodePanel.tsx
 // 节点面板：元信息 + 最新输出（实时）+ firing 历史（点击展开全文）。
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchNodeTimeline, type GraphNode, type TimelineEntry } from "../api";
 
 function pretty(v: unknown): string {
@@ -12,15 +12,23 @@ export function NodePanel({
   runId,
   node,
   outputs,
+  liveText,
   onClose,
 }: {
   runId: string;
   node: GraphNode;
   outputs: Record<string, unknown>;
+  /** 该节点当前执行的流式文本（phase=running 且有 token 时非空；终态后由 outputs 接管） */
+  liveText?: string;
   onClose: () => void;
 }) {
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [openTick, setOpenTick] = useState<number | null>(null);
+
+  const liveRef = useRef<HTMLPreElement | null>(null);
+  useEffect(() => {
+    if (liveRef.current) liveRef.current.scrollTop = liveRef.current.scrollHeight;
+  }, [liveText]);
 
   useEffect(() => {
     setEntries([]);
@@ -52,6 +60,28 @@ export function NodePanel({
         类型 {node.type}
         {node.is_start ? " · start" : ""} · 输入 {JSON.stringify(node.inputs)}
       </p>
+      {liveText ? (
+        <section>
+          <h4 style={{ margin: "12px 0 6px" }}>
+            实时输出<span style={{ color: "#2563eb", fontSize: 11 }}>（流式）</span>
+          </h4>
+          <pre
+            ref={liveRef}
+            style={{
+              background: "#eff6ff",
+              padding: 8,
+              borderRadius: 6,
+              fontSize: 12,
+              whiteSpace: "pre-wrap",
+              margin: 0,
+              maxHeight: 240,
+              overflowY: "auto",
+            }}
+          >
+            {liveText.slice(-10000)}
+          </pre>
+        </section>
+      ) : null}
       <section>
         <h4 style={{ margin: "12px 0 6px" }}>最新输出（实时）</h4>
         <pre
