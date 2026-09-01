@@ -25,7 +25,7 @@
 - Modify: `Lib/module_harness/tests/test_run_status.py`（翻转 325-343 行测试 + 新增续跑测试）
 - Modify: `Lib/docs/references/api.md`（48-49 行 phase 枚举 + 执行段落）
 
-- [ ] **Step 1: 翻转现有截断测试（先改测试）**
+- [x] **Step 1: 翻转现有截断测试（先改测试）**
 
 `Lib/module_harness/tests/test_run_status.py` 中 `test_max_ticks_cutoff_not_done`（325-343 行）整体替换为：
 
@@ -84,7 +84,7 @@
         assert self._read_status(tmp_path)["phase"] == "done"
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule"
@@ -93,7 +93,7 @@ python -m pytest module_harness/tests/test_run_status.py -q
 
 预期：`test_max_ticks_cutoff_truncated` FAIL（实际 phase == "running"）；`test_truncated_then_resume_done` FAIL。
 
-- [ ] **Step 3: 实现 truncated 映射**
+- [x] **Step 3: 实现 truncated 映射**
 
 `Lib/module_harness/module.py` 三处：
 
@@ -138,7 +138,7 @@ python -m pytest module_harness/tests/test_run_status.py -q
     phase: str                 # idle/translating/reviewing/building/ready/running/done/aborted/cancelled/truncated
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 ```bash
 python -m pytest module_harness/tests/test_run_status.py -q
@@ -147,7 +147,7 @@ python -m pytest module_harness/tests/ -q -m "not smoke"
 
 预期：全部 PASS（基线全绿，确认无其他测试依赖旧行为）。
 
-- [ ] **Step 5: api.md 补录**
+- [x] **Step 5: api.md 补录**
 
 `Lib/docs/references/api.md`：
 
@@ -165,7 +165,7 @@ running → done | aborted | cancelled | truncated`）
 监控方拿到可续跑的确定性信号，无需静默启发式。
 ```
 
-- [ ] **Step 6: 提交（Lib 仓库）**
+- [x] **Step 6: 提交（Lib 仓库）**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule"
@@ -182,7 +182,7 @@ git commit -m "feat: max_ticks 截断终态 truncated——监控方拿到可续
 - Modify: `Lib/module_harness/module.py`（imports 23 行、`__init__` 签名 77 行附近 + 属性、`_run_with_phases` 355-374 行、新增 `_open_stream_log`/`_close_stream_log`/`_on_stream_event`）
 - Test: `Lib/module_harness/tests/test_stream_log.py`（新建）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `Lib/module_harness/tests/test_stream_log.py`：
 
@@ -346,7 +346,7 @@ class TestModuleWiring:
         assert recs[0]["type"] == "run_start"
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule"
@@ -355,7 +355,7 @@ python -m pytest module_harness/tests/test_stream_log.py -q
 
 预期：全部 FAIL（`ModuleNotFoundError: module_harness.stream` / `Module` 无 `stream_log` 参数）。
 
-- [ ] **Step 3: 实现 stream.py**
+- [x] **Step 3: 实现 stream.py**
 
 新建 `Lib/module_harness/stream.py`：
 
@@ -427,7 +427,7 @@ class StreamLogWriter:
             self._fh = None
 ```
 
-- [ ] **Step 4: Module 接线**
+- [x] **Step 4: Module 接线**
 
 `Lib/module_harness/module.py` 五处：
 
@@ -541,7 +541,7 @@ from .stream import StreamLogWriter, stream_log_path
                      "reason": event.reason, "failure_type": event.failure_type})
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 ```bash
 python -m pytest module_harness/tests/test_stream_log.py module_harness/tests/test_run_status.py -q
@@ -550,7 +550,7 @@ python -m pytest module_harness/tests/ -q -m "not smoke"
 
 预期：全绿（含库基线——`stream_log` 默认开不破坏既有测试；`EventBus.null()` 场景只多 `run_start` 落盘）。
 
-- [ ] **Step 6: 提交（Lib 仓库）**
+- [x] **Step 6: 提交（Lib 仓库）**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule"
@@ -567,7 +567,7 @@ git commit -m "feat: LLM 流式落盘 stream.log——Module 内置订阅，跨�
 - Test: `Lib/module_harness/tests/test_stream_log.py`（追加 TestReadStream 类）
 - Modify: `Lib/docs/references/api.md`（query 表 + Module 构造块 + stream.log 说明）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `Lib/module_harness/tests/test_stream_log.py` 追加（imports 区补 `from module_harness.query import read_stream`）：
 
@@ -624,7 +624,7 @@ class TestReadStream:
         assert [x["type"] for x in r["records"]] == ["run_start"]
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule"
@@ -633,7 +633,7 @@ python -m pytest module_harness/tests/test_stream_log.py -q
 
 预期：`ImportError: cannot import name 'read_stream'`。
 
-- [ ] **Step 3: 实现 read_stream**
+- [x] **Step 3: 实现 read_stream**
 
 `Lib/module_harness/query.py`：
 
@@ -694,7 +694,7 @@ def read_stream(
     return {"records": records, "next_offset": start + nl + 1, "file_size": size}
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 ```bash
 python -m pytest module_harness/tests/test_stream_log.py -q
@@ -703,7 +703,7 @@ python -m pytest module_harness/tests/ -q -m "not smoke"
 
 预期：全绿。
 
-- [ ] **Step 5: api.md 补录**
+- [x] **Step 5: api.md 补录**
 
 `Lib/docs/references/api.md`：
 
@@ -727,7 +727,7 @@ LLM 流式输出经 EventBus 订阅落盘 `stream.log`（JSONL，append-only：`
 `EventBus.null()` 场景仅 `run_start`）；增量读走 `query.read_stream`。
 ```
 
-- [ ] **Step 6: 提交（Lib 仓库）**
+- [x] **Step 6: 提交（Lib 仓库）**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule"
@@ -743,7 +743,7 @@ git commit -m "feat: query.read_stream 共享读端——增量读/半行容忍/
 - Modify: `SpecModule_webview/server/ws.py`（整文件重写，89 → ~130 行）
 - Test: `SpecModule_webview/tests/test_ws.py`（追加 3 个测试 + 辅助函数）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `SpecModule_webview/tests/test_ws.py` 追加（`class TestStream` 内；文件头 imports 区补 `import json`）：
 
@@ -810,7 +810,7 @@ git commit -m "feat: query.read_stream 共享读端——增量读/半行容忍/
                 ws.receive_json()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"
@@ -819,7 +819,7 @@ python -m pytest tests/test_ws.py -q
 
 预期：新测试 FAIL（`stream_mtime` KeyError / truncated 未 close / stream 消息缺失）；既有 5 个 PASS。
 
-- [ ] **Step 3: 重写 server/ws.py**
+- [x] **Step 3: 重写 server/ws.py**
 
 整文件替换为：
 
@@ -953,7 +953,7 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
             recv_task.cancel()
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 ```bash
 python -m pytest tests/test_ws.py -q
@@ -962,7 +962,7 @@ python -m pytest tests/ -q
 
 预期：全绿（webview 全套不受影响）。
 
-- [ ] **Step 5: 提交（webview 仓库）**
+- [x] **Step 5: 提交（webview 仓库）**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"
@@ -980,7 +980,7 @@ git commit -m "feat(ws): stream.log 追尾推送 + truncated 终态 + stream_mti
 - Modify: `web/src/components/RunList.tsx`（4-9 行 PHASE_COLOR + 徽章标签）
 - Modify: `web/src/App.tsx`（303-305 行黄条文案）
 
-- [ ] **Step 1: api.ts 类型**
+- [x] **Step 1: api.ts 类型**
 
 (a) 3-4 行替换：
 
@@ -1020,7 +1020,7 @@ export interface StreamMsg {
   /** phase=running 也放行（进程被终止后的残留 running 态） */
 ```
 
-- [ ] **Step 2: ws.ts 整文件替换**
+- [x] **Step 2: ws.ts 整文件替换**
 
 ```ts
 // WS 客户端：首连即收当前状态；stream 记录按节点累积缓冲（run_start 清缓冲）；
@@ -1117,7 +1117,7 @@ export function useRunStream(runId: string | null): StreamState | null {
 
 注：stream 消息每批都会产生新 StreamState 对象（seq 自增）→ App 的停滞计时 effect（`[streamState, runId]`）随之推进——**存活检测由此零改动升级**。
 
-- [ ] **Step 3: RunList 徽章**
+- [x] **Step 3: RunList 徽章**
 
 `web/src/components/RunList.tsx` 4-9 行替换：
 
@@ -1147,7 +1147,7 @@ const PHASE_LABEL: Record<string, string> = {
 
 终态 ↻ 按钮无需改动（`TERMINAL_PHASES.has(r.phase)` 自动覆盖 truncated）。
 
-- [ ] **Step 4: App 黄条文案**
+- [x] **Step 4: App 黄条文案**
 
 `web/src/App.tsx` 303-305 行替换（截断已终态化，黄条只剩真失联语义）：
 
@@ -1157,7 +1157,7 @@ const PHASE_LABEL: Record<string, string> = {
             </span>
 ```
 
-- [ ] **Step 5: 构建门禁 + 提交**
+- [x] **Step 5: 构建门禁 + 提交**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview\web"
@@ -1180,7 +1180,7 @@ git commit -m "feat(web): 流消息缓冲 + truncated 终态集/徽章 + 黄条�
 - Modify: `web/src/components/NodePanel.tsx`（props + 实时区 + 自动滚底）
 - Modify: `web/src/App.tsx`（selectedNode 之后算 liveText + NodePanel 传参）
 
-- [ ] **Step 1: NodePanel 实时区**
+- [x] **Step 1: NodePanel 实时区**
 
 `web/src/components/NodePanel.tsx`：
 
@@ -1247,7 +1247,7 @@ export function NodePanel({
 
 （`slice(-10000)` 渲染上限：超长流式输出只显示尾部，防 DOM 卡顿；缓冲本身不动。）
 
-- [ ] **Step 2: App 接线**
+- [x] **Step 2: App 接线**
 
 `web/src/App.tsx`：`const selectedNode = ...`（243 行）之后加：
 
@@ -1265,7 +1265,7 @@ NodePanel 渲染（345-352 行）`outputs` 之后加 prop：
           liveText={liveText}
 ```
 
-- [ ] **Step 3: 构建门禁**
+- [x] **Step 3: 构建门禁**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview\web"
@@ -1274,7 +1274,7 @@ npm run build
 
 预期：通过。
 
-- [ ] **Step 4: 提交（webview 仓库）**
+- [x] **Step 4: 提交（webview 仓库）**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"
@@ -1290,7 +1290,7 @@ git commit -m "feat(web): NodePanel 实时输出区——LLM 流式显示"
 - Modify: `roadmap.md`（变更日志 + 缺口④ 根除记录）
 - Modify: `AGENTS.md`（phase 机器、WS 形状、产物清单）
 
-- [ ] **Step 1: roadmap.md 变更日志**
+- [x] **Step 1: roadmap.md 变更日志**
 
 「变更日志」节顶部插入条目（日期 2026-08-31）：
 
@@ -1311,7 +1311,7 @@ git commit -m "feat(web): NodePanel 实时输出区——LLM 流式显示"
     黄条只对进程真失联触发（流式心跳 + 终态关闭）。
 ```
 
-- [ ] **Step 2: AGENTS.md 更新**
+- [x] **Step 2: AGENTS.md 更新**
 
 (a) "Run lifecycle" 段 phase 机器更新：
 
@@ -1327,7 +1327,7 @@ the WS stream (`/api/runs/{id}/stream`) polls `query_run_status` + `control.read
 
 (c) 运行产物描述（架构图与 "Run artifacts" 目录项）把产物清单补为 `run.sqlite + status.json + stream.log`（LLM 流式 JSONL，`stream_log=False` 关闭）。
 
-- [ ] **Step 3: 全量验证（两仓库）**
+- [x] **Step 3: 全量验证（两仓库）**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"
@@ -1338,7 +1338,7 @@ cd web && npm run build
 
 预期：webview 全绿（≥70 tests）、库基线全绿（≥570 tests）、tsc + vite 通过。
 
-- [ ] **Step 4: 提交（webview 仓库）**
+- [x] **Step 4: 提交（webview 仓库）**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"

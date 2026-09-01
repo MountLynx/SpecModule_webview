@@ -299,3 +299,12 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   LlmCallCompleted/HarnessFailed` 五类 JSONL 记录 append 落盘）+ `query.read_stream`
   共享增量读端；webview WS 追尾推送（锚定最后一条 `run_start`）+ `stream_mtime`、
   NodePanel 实时输出区、truncated 终态按钮矩阵。库仓库独立提交 ×3（含 api.md 补录）。
+- 2026-09-01（审阅修复 + M2 实测）：resume 端点响应码对齐设计 **202**（实现/测试曾按
+  200，三方不一致销项）；库侧预检 `check_resume_compat_from_run` 缺省目标分支补快照
+  读取守卫（读失败归 `hard_errors`，不再静默降级，库 4db64dc）。M2（ppt_writer）真实
+  模块全链路 E2E 走查通过：CLI mock 双 run（done + truncated）→ 图/时间线/检查点/
+  快照/手动检查点 → preflight（target=1, executed=[Render]）→ resume **202** 存档缺省
+  续跑 done → WS 流锚定（stream 先于 status、仅新执行 run_start）/stream_mtime/
+  paused/close(1000) → terminate 硬终止 + 残留 running + force 恢复 → 产物 pptx 机器
+  校验。实测认知两条：resume 的 running 窗口仅 ~30ms（轮询不可捕获，E2E 用 pause 钉住）；
+  unpause 后中间态被 WS 1s 轮询合并进终态推送（变化才推的合并语义）。
