@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -222,6 +223,148 @@ class TestResumeEndpoint:
         r = client.post("/api/runs/mini_graph/resume", json={"target": "not-a-target"})
         assert r.status_code == 400
         assert "非法回退目标" in r.json()["error"]
+
+
+# ------------------------------------------------------------------
+# POST /api/runs（发起运行——子进程拉起 CLI run，spawn 桩）
+# ------------------------------------------------------------------
+
+
+class TestLaunchEndpoint:
+    def test_launch_spawns_cli_run(self, base, client, stub_spawn):
+        r = client.post("/api/runs", json={
+            "module": "mini_graph", "spec": {"topic": "新主题"},
+            "template": "t1", "run_id": "my_run", "max_ticks": 5, "mock": True,
+        })
+        assert r.status_code == 202
+        assert r.json() == {
+            "started": True, "run_id": "my_run", "pid": 4321, "module": "mini_graph",
+        }
+        call = stub_spawn[0]
+        argv = call["argv"]
+        assert argv[:4] == [control_api.sys.executable, "-m", "module_harness.cli", "run"]
+        assert argv[argv.index("--module") + 1] == "mini_graph"
+        assert argv[argv.index("--run-id") + 1] == "my_run"
+        assert argv[argv.index("--template") + 1] == "t1"
+        assert argv[argv.index("--max-ticks") + 1] == "5"
+        assert "--mock" in argv
+        spec_path = Path(argv[argv.index("--spec-file") + 1])
+        assert json.loads(spec_path.read_text(encoding="utf-8")) == {"topic": "新主题"}
+        assert call["cwd"] == str(base)
+        # run 目录先行创建 + 日志落盘位置（CLI 启动期失败可见）
+        assert (base / ".specmodule" / "runs" / "my_run" / "process.log").exists()
+
+    def test_launch_default_run_id_and_fallbacks(self, base, client, stub_spawn):
+        """run_id 缺省 = {module}_{6hex}；spec/template/mock 缺省不进 argv。"""
+        r = client.post("/api/runs", json={"module": "mini_graph"})
+        assert r.status_code == 202
+        body = r.json()
+        assert re.fullmatch(r"mini_graph_[0-9a-f]{6}", body["run_id"])
+        argv = stub_spawn[0]["argv"]
+        assert argv[argv.index("--run-id") + 1] == body["run_id"]
+        assert "--spec-file" not in argv  # CLI 回落 entry.default_spec
+        assert "--template" not in argv   # CLI 回落 default_template
+        assert "--mock" not in argv
+        assert argv[argv.index("--max-ticks") + 1] == "100"
+
+    def test_launch_404_module_unresolved(self, base, client, stub_spawn):
+        r = client.post("/api/runs", json={"module": "no_such_mod"})
+        assert r.status_code == 404
+        d = r.json()
+        assert d["code"] == "module_unresolved"
+        assert d["module"] == "no_such_mod"
+        assert stub_spawn == []  # 未 spawn
+        assert not (base / ".specmodule" / "runs").exists() or not any(
+            (base / ".specmodule" / "runs").iterdir()
+        )
+
+    def test_launch_400_load_failure(self, base, client, stub_spawn):
+        """模块可发现但加载失败（坏 pack 清单）→ ValueError → 400。"""
+        pack = base / "modules" / "broken_pack"
+        pack.mkdir(parents=True)
+        (pack / "module.json").write_text(
+            json.dumps({"name": "broken_pack"}), encoding="utf-8"
+        )
+        r = client.post("/api/runs", json={"module": "broken_pack"})
+        assert r.status_code == 400
+        assert "加载失败" in r.json()["error"]
+        assert stub_spawn == []
+
+    def test_launch_400_bad_run_id(self, base, client, stub_spawn):
+        r = client.post("/api/runs", json={"module": "mini_graph", "run_id": "bad id"})
+        assert r.status_code == 400
+        assert "非法 run_id" in r.json()["error"]
+        assert stub_spawn == []
+
+    def test_launch_409_run_dir_exists(self, base, client, stub_spawn):
+        """防覆盖既有历史：run 目录已存在 → 409。"""
+        run_dir = base / ".specmodule" / "runs" / "taken"
+        run_dir.mkdir(parents=True)
+        (run_dir / "status.json").write_text(
+            json.dumps({"module_id": "taken", "phase": "done", "updated_at": 1.0}),
+            encoding="utf-8",
+        )
+        r = client.post("/api/runs", json={"module": "mini_graph", "run_id": "taken"})
+        assert r.status_code == 409
+        assert "运行已存在" in r.json()["error"]
+        assert stub_spawn == []
+
+    def test_launch_409_active_process_in_registry(self, base, client, stub_spawn):
+        """注册表同 run_id 活进程 → 409（互斥对发起运行与 resume 同源）。"""
+        control_api._PROCS["busy_run"] = control_api._Proc(FakePopen(), [])
+        r = client.post("/api/runs", json={"module": "mini_graph", "run_id": "busy_run"})
+        assert r.status_code == 409
+        assert "已有运行进程" in r.json()["error"]
+        assert stub_spawn == []  # 未 spawn
+
+
+# ------------------------------------------------------------------
+# DELETE /api/runs/{id}（运行历史单条删除 + 活性防护）
+# ------------------------------------------------------------------
+
+
+class TestDeleteRunEndpoint:
+    def test_delete_terminal_run(self, base, client):
+        seed_run(base, "dead", status={"module_id": "dead", "phase": "done", "updated_at": 1.0})
+        r = client.delete("/api/runs/dead")
+        assert r.status_code == 200
+        assert r.json() == {"run_id": "dead", "deleted": True}
+        assert not (base / ".specmodule" / "runs" / "dead").exists()
+
+    def test_delete_404_unknown(self, client):
+        r = client.delete("/api/runs/ghost")
+        assert r.status_code == 404
+        assert r.json()["error"] == "无运行记录"
+
+    def test_delete_400_bad_run_id(self, client):
+        assert client.delete("/api/runs/bad%20id").status_code == 400
+
+    def test_delete_running_needs_force(self, base, client):
+        seed_run(base, "live", status={"module_id": "live", "phase": "running", "updated_at": 1.0})
+        r = client.delete("/api/runs/live")
+        assert r.status_code == 409
+        assert "运行进行中" in r.json()["error"]
+        assert (base / ".specmodule" / "runs" / "live").exists()
+        # force 二次确认通道：强制删除残留/失控态
+        r = client.delete("/api/runs/live", params={"force": "true"})
+        assert r.status_code == 200
+        assert not (base / ".specmodule" / "runs" / "live").exists()
+
+    def test_delete_live_process_blocked_even_with_force(self, base, client, stub_spawn):
+        """注册表有本 server 拉起的活子进程 → 不可删（force 也不例外）。"""
+        assert client.post(
+            "/api/runs", json={"module": "mini_graph", "run_id": "proc_run", "mock": True},
+        ).status_code == 202
+        r = client.delete("/api/runs/proc_run")
+        assert r.status_code == 409
+        assert "先终止" in r.json()["error"]
+        r = client.delete("/api/runs/proc_run", params={"force": "true"})
+        assert r.status_code == 409
+        # 子进程退出（惰性收割）后可删
+        control_api._PROCS["proc_run"].popen.exit_code = 0
+        r = client.delete("/api/runs/proc_run")
+        assert r.status_code == 200
+        assert not (base / ".specmodule" / "runs" / "proc_run").exists()
 
 
 # ------------------------------------------------------------------

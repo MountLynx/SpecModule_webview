@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import json
+
 from tests.conftest import seed_run
 
 
@@ -12,20 +14,56 @@ class TestRunsList:
         assert r.status_code == 200
         assert r.json() == {"runs": []}
 
-    def test_sorted_by_updated_at_desc(self, base, client):
+    def test_payload_shape_and_order(self, base, client):
+        """新载荷：query.list_runs 形状 + paused 叠加；updated_at 降序。"""
         seed_run(base, "r_old", status={"module_id": "r_old", "phase": "done", "updated_at": 1.0})
-        seed_run(base, "r_new", status={"module_id": "r_new", "phase": "running", "updated_at": 2.0})
+        seed_run(
+            base, "r_new",
+            firings=[{"tick": 1, "node": "A", "output": "a1"}],
+            snapshots={1: {"tick": 1, "status": "running", "fireable": ["B"], "fired": ["A"]}},
+            status={"module_id": "r_new", "module": "mini_graph",
+                    "phase": "running", "updated_at": 2.0},
+        )
+        # 仅 status.json 的失败 run（无 run.sqlite）——has_sqlite False
+        bare = base / ".specmodule" / "runs" / "r_bare"
+        bare.mkdir(parents=True)
+        (bare / "status.json").write_text(
+            json.dumps({"module_id": "r_bare", "phase": "aborted",
+                        "error": "boom", "updated_at": 3.0}),
+            encoding="utf-8",
+        )
         r = client.get("/api/runs")
         assert r.status_code == 200
         runs = r.json()["runs"]
-        assert [x["run_id"] for x in runs] == ["r_new", "r_old"]
-        assert runs[0]["phase"] == "running"
-        assert runs[0]["tick"] is None      # 无 run.sqlite → tick None
+        assert [x["run_id"] for x in runs] == ["r_bare", "r_new", "r_old"]
+        row = next(x for x in runs if x["run_id"] == "r_new")
+        assert set(row) == {
+            "run_id", "module", "phase", "tick", "error",
+            "updated_at", "has_sqlite", "paused",
+        }
+        # status.json 溯源字段 → module；sqlite 已落盘 → has_sqlite
+        assert row["module"] == "mini_graph"
+        assert row["has_sqlite"] is True
+        assert row["tick"] == 1
+        assert row["paused"] is False
+        # 旧 run 无 module 字段 → None（前端回落 run_id 启发式）
+        old = next(x for x in runs if x["run_id"] == "r_old")
+        assert old["module"] is None
+        # 无 sqlite 的失败 run：error 摘要透传 + has_sqlite False
+        bare_row = next(x for x in runs if x["run_id"] == "r_bare")
+        assert bare_row["has_sqlite"] is False
+        assert bare_row["error"] == "boom"
+        assert bare_row["tick"] is None
 
-    def test_skips_dirs_without_status(self, base, client):
+    def test_unknown_phase_run_included(self, base, client):
+        """status.json 缺失/损坏的 run 以 phase=unknown 收入不跳过（删除入口对坏目录可用）。"""
         (base / ".specmodule" / "runs" / "junk").mkdir(parents=True)
         r = client.get("/api/runs")
-        assert r.json() == {"runs": []}
+        runs = r.json()["runs"]
+        assert [x["run_id"] for x in runs] == ["junk"]
+        assert runs[0]["phase"] == "unknown"
+        assert runs[0]["module"] is None
+        assert runs[0]["updated_at"] == 0.0
 
 
 class TestRunStatus:

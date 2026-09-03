@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -22,26 +21,19 @@ def not_found(run_id: str) -> HTTPException:
 
 @router.get("")
 def list_runs(base_dir: Path = Depends(get_base_dir)) -> dict:
-    """运行列表：扫描 runs/ 目录 + query_run_status 摘要 + read_control paused 标志（updated_at 降序）。"""
-    runs_root = base_dir / ".specmodule" / "runs"
-    out: list[dict[str, Any]] = []
-    if runs_root.is_dir():
-        for d in runs_root.iterdir():
-            if not d.is_dir():
-                continue
-            st = query_run_status(d.name, base_dir=base_dir)
-            if st is None:
-                continue
-            req = control.read_control(d.name, base_dir=base_dir)
-            out.append({
-                "run_id": st.module_id,
-                "phase": st.phase,
-                "tick": st.tick,
-                "error": st.error,
-                "updated_at": st.updated_at,
-                "paused": bool(req and req.get("action") == "pause"),
-            })
-    out.sort(key=lambda r: r["updated_at"], reverse=True)
+    """运行列表：query.list_runs 枚举 + 逐 run read_control 叠加 paused（updated_at 降序）。
+
+    status.json 缺失/损坏的 run 以 phase="unknown" 收入不跳过（删除入口要对
+    坏目录可用）；module 记 status.json 溯源字段，旧 run 无 → None（前端回落
+    run_id 启发式）。
+    """
+    out = []
+    for row in query.list_runs(base_dir=base_dir):
+        req = control.read_control(row["run_id"], base_dir=base_dir)
+        out.append({
+            **row,
+            "paused": bool(req and req.get("action") == "pause"),
+        })
     return {"runs": out}
 
 

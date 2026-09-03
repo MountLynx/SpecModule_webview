@@ -1,13 +1,15 @@
 # server/api/control.py
-"""控制面端点：运行控制（cancel/pause/unpause）+ 恢复/回退 + 进程观测。
+"""控制面端点：运行控制（cancel/pause/unpause）+ 发起运行 + 恢复/回退 + 进程观测。
 
 - control 两端点 = 库 `control.request_control`/`read_control` 薄映射
   （控制文件协议，见库 api.md `module_harness.control`）。
 - `GET /inputs` = 库 `query.read_module_inputs` 薄映射（resume 预填）。
-- `POST /resume` = 子进程拉起官方 CLI（`specmodule resume`）：恢复是长任务，
-  且 spec/LLM/模块解析接线必须复用 CLI（消费端重复接线即违规）——server 只
-  负责传输级编排（spawn + 互斥 + 日志落盘）；进度监控走既有 WS（子进程写
-  status.json，同一数据源）。
+- `POST /runs` / `POST /resume` = 子进程拉起官方 CLI（`run` / `resume`）：运行
+  是长任务，且 spec/LLM/模块解析接线必须复用 CLI（消费端重复接线即违规）——
+  server 只负责传输级编排（spawn + 互斥 + 日志落盘）；进度监控走既有 WS
+  （子进程写 status.json，同一数据源）。
+- `DELETE /{run_id}` = 库 `query.delete_run` 薄映射 + 消费端活性防护（运行中
+  进程库侧不可知：注册表活子进程 409 / phase=running 须 force）。
 - 进程注册表：内存态 {run_id: Popen}，单写者防重入（同 run 双 resume → 409）；
   server 重启丢注册表不影响子进程继续跑（监控只依赖落盘产物）。
 - preflight = 恢复预检 dry-run（薄调库 check_resume_compat_from_run，不 spawn 不写状态）。
@@ -21,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +32,7 @@ from pydantic import BaseModel
 
 from module_harness import control, query, store
 from module_harness.status import query_run_status
-from server.deps import get_base_dir, validate_run_id
+from server.deps import get_base_dir, get_search_paths, validate_run_id
 
 router = APIRouter(prefix="/api/runs")
 
@@ -104,6 +107,114 @@ def get_inputs(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
         "spec": inputs.get("spec"),
         "tasklist": inputs.get("tasklist"),
     }
+
+
+# ------------------------------------------------------------------
+# 发起运行（子进程拉起 CLI run）+ 运行历史删除
+# ------------------------------------------------------------------
+
+
+class LaunchBody(BaseModel):
+    module: str
+    spec: dict[str, Any] | None = None   # None → CLI 回落 entry.default_spec
+    template: str | None = None          # None → CLI 回落 default_template
+    run_id: str | None = None            # 缺省 server 生成 {module}_{6hex}
+    max_ticks: int = 100
+    mock: bool = False
+
+
+@router.post("", status_code=202)
+def post_run(body: LaunchBody, base_dir: Path = Depends(get_base_dir)) -> dict:
+    """发起运行：子进程拉起官方 CLI `run`（完全镜像 post_resume 的 spawn 段）。
+
+    校验链：模块解析+加载（resolve_module_full；未找到 404 code=module_unresolved，
+    加载失败 ValueError 400）→ run_id 校验（复用 deps.validate_run_id，400）→
+    run 目录已存在 409（防覆盖既有历史）→ 注册表同 run_id 活进程 409。
+    spec 非 null 落临时文件走 --spec-file（Windows argv 长度限制）；两皆无由
+    CLI 落 process.log 报错（server 不重复校验）。新 run 的 status.json 由
+    子进程写出后即被既有 WS 流与 runs 列表覆盖（零额外管道）。
+    """
+    try:
+        resolved = store.resolve_module_full(body.module, search=get_search_paths(base_dir))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={"error": str(e), "module": body.module})
+    if resolved is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": f"模块 '{body.module}' 未找到",
+                "module": body.module,
+                "code": "module_unresolved",
+            },
+        )
+    run_id = body.run_id or f"{body.module}_{uuid.uuid4().hex[:6]}"
+    validate_run_id(run_id)
+    run_dir = base_dir / ".specmodule" / "runs" / run_id
+    if run_dir.exists():
+        raise HTTPException(
+            status_code=409,
+            detail={"error": f"运行已存在: {run_id}（防覆盖历史，请换 run_id）", "run_id": run_id},
+        )
+    if _reap(run_id) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "该 run_id 已有运行进程在跑", "run_id": run_id},
+        )
+
+    tmp_paths: list[Path] = []
+    argv = [sys.executable, "-m", "module_harness.cli", "run",
+            "--module", body.module, "--run-id", run_id]
+    if body.spec is not None:
+        fd, name = tempfile.mkstemp(prefix=f"webview_{run_id}_", suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(body.spec, fh, ensure_ascii=False)
+        tmp_paths.append(Path(name))
+        argv += ["--spec-file", name]
+    if body.template:
+        argv += ["--template", body.template]
+    argv += ["--max-ticks", str(body.max_ticks)]
+    if body.mock:
+        argv.append("--mock")
+
+    run_dir.mkdir(parents=True)
+    log_fh = (run_dir / "process.log").open("wb")
+    try:
+        popen = _spawn(argv, cwd=str(base_dir), log_fh=log_fh)
+    except OSError:
+        log_fh.close()
+        for p in tmp_paths:
+            p.unlink(missing_ok=True)
+        raise
+    _PROCS[run_id] = _Proc(popen, tmp_paths)
+    return {"started": True, "run_id": run_id, "pid": popen.pid, "module": body.module}
+
+
+@router.delete("/{run_id}")
+def delete_run(
+    run_id: str, force: bool = False, base_dir: Path = Depends(get_base_dir)
+) -> dict:
+    """运行历史单条删除：库 `query.delete_run` 薄映射 + 消费端活性防护。
+
+    运行中进程库侧不可知，活性防护是消费端职责：注册表有活子进程 → 409
+    （自己 spawn 的进程不可删，force 也不例外——进程仍在写该目录）；库读出
+    phase=running 且无 `?force=true` → 409「先取消或强制删除」（force 供
+    max_ticks 截断残留态等死目录强制清理）；目录不存在（库返回 False）→ 404。
+    """
+    validate_run_id(run_id)
+    if _reap(run_id) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "该 run 有本 server 启动的进程在跑——先终止再删除", "run_id": run_id},
+        )
+    st = query_run_status(run_id, base_dir=base_dir)
+    if st is not None and st.phase == "running" and not force:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "运行进行中——先取消或用 force=true 强制删除", "run_id": run_id},
+        )
+    if not query.delete_run(run_id, base_dir=base_dir):
+        raise _not_found(run_id)
+    return {"run_id": run_id, "deleted": True}
 
 
 # ------------------------------------------------------------------
@@ -237,7 +348,8 @@ def post_resume(
             detail={"error": "运行进行中——先取消/暂停再恢复", "run_id": run_id},
         )
     module_name = body.module or run_id
-    if store.resolve_module(module_name) is None:
+    # 显式 search（随 base_dir 锚定）——放运行根 modules/ 下的模块不被误判
+    if store.resolve_module(module_name, search=get_search_paths(base_dir)) is None:
         raise HTTPException(
             status_code=404,
             detail={
