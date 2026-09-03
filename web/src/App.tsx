@@ -1,48 +1,38 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ApiError,
-  fetchControl,
-  fetchGraph,
-  fetchModules,
-  fetchProcess,
-  fetchRuns,
-  fetchStatus,
-  postControl,
-  postTerminate,
-  TERMINAL_PHASES,
-  type ControlAction,
-  type GraphPayload,
-  type ModuleInfo,
-  type RunSummary,
-  type StatusCore,
-  type StatusResp,
-} from "./api";
-import { useRunStream } from "./ws";
-import { GraphView } from "./components/GraphView";
-import { NodePanel } from "./components/NodePanel";
-import { RunControls } from "./components/RunControls";
-import { RunList } from "./components/RunList";
+// App 壳层：顶部视图切换（模块库 / 运行历史 / 运行视图），useState 存视图名
+// （不引 router）。每个视图自包含组件，壳层只持有跨视图状态（当前 runId、
+// runs 轮询、恢复对话框请求）；视图组织形式后续可改而视图内部不动。
+import { useCallback, useEffect, useState } from "react";
+import type { CSSProperties } from "react";
+import { fetchRuns, postControl, type ControlAction, type LaunchResult, type RunSummary } from "./api";
+import { ModulesView } from "./components/ModulesView";
+import { RunView, type ResumeRequestMsg } from "./components/RunView";
+import { RunsView } from "./components/RunsView";
+
+type ViewName = "modules" | "runs" | "run";
+
+const NAV: { key: ViewName; label: string }[] = [
+  { key: "modules", label: "模块库" },
+  { key: "runs", label: "运行历史" },
+  { key: "run", label: "运行视图" },
+];
+
+const navBtn = (active: boolean): CSSProperties => ({
+  fontSize: 13,
+  padding: "4px 14px",
+  cursor: "pointer",
+  border: "none",
+  borderRadius: 6,
+  background: active ? "#eef2ff" : "transparent",
+  color: active ? "#4338ca" : "#374151",
+  fontWeight: active ? 700 : 400,
+});
 
 export default function App() {
+  const [view, setView] = useState<ViewName>("runs");
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
-  const [payload, setPayload] = useState<GraphPayload | null>(null);
-  const [initialStatus, setInitialStatus] = useState<StatusResp | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [error, setError] = useState<{ message: string; code: string | null } | null>(null);
-  const [moduleOverride, setModuleOverride] = useState<string | null>(null);
-  const [modules, setModules] = useState<ModuleInfo[]>([]);
-  const [paused, setPaused] = useState(false);
-  const [stalled, setStalled] = useState(false);
   // 打开恢复对话框的请求：带目标 runId（避免全局计数器泄漏到无关 run 的切换）+ seq 去重
-  const [resumeRequest, setResumeRequest] = useState<{ runId: string; seq: number } | null>(null);
-  const [procRunning, setProcRunning] = useState(false);
-  const lastMsgAtRef = useRef<number>(Date.now());
-  const liveRef = useRef(false);
-  const streamState = useRunStream(runId);
-  const stream = streamState?.msg ?? null;
-  // 已应用到 node_states 的 tick 基线（首条 WS 消息重放的是 /graph 初始载荷已计入的状态）
-  const appliedTickRef = useRef<number | null>(null);
+  const [resumeRequest, setResumeRequest] = useState<ResumeRequestMsg | null>(null);
 
   const refreshRuns = useCallback(() => {
     fetchRuns()
@@ -55,170 +45,23 @@ export default function App() {
     return () => clearInterval(t);
   }, [refreshRuns]);
 
-  // run 切换：清空全部派生状态（含 moduleOverride，避免上一个 run 的模块选择泄漏到下一个 run）
-  useEffect(() => {
-    if (!runId) return;
-    setPayload(null);
-    setSelected(null);
-    setError(null);
-    setInitialStatus(null);
-    setModuleOverride(null);
-    setPaused(false);
-    appliedTickRef.current = null;
-    lastMsgAtRef.current = Date.now();
-    setStalled(false);
-  }, [runId]);
-
-  // 暂停状态初值（control.json；此后由 WS paused 增量驱动）
-  useEffect(() => {
-    if (!runId) return;
-    let cancelled = false;
-    fetchControl(runId)
-      .then((c) => {
-        if (!cancelled) setPaused(c.paused);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [runId]);
-
-  // 加载：run/moduleOverride 变化即重新拉取；cancelled 防止切换后旧响应覆盖新 run 的状态
-  useEffect(() => {
-    if (!runId) return;
-    let cancelled = false;
-    fetchStatus(runId)
-      .then((s) => {
-        if (!cancelled) setInitialStatus(s);
-      })
-      .catch(() => {});
-    fetchGraph(runId, moduleOverride ?? undefined)
-      .then((p) => {
-        if (!cancelled) setPayload(p);
-      })
-      .catch((e: Error) => {
-        if (!cancelled) {
-          setError({
-            message: e.message,
-            code: e instanceof ApiError ? e.code : null,
-          });
-        }
-      });
-    fetchModules()
-      .then((m) => {
-        if (!cancelled) setModules(m);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [runId, moduleOverride]);
-
-  // WS 增量：tick 前进即本地累加 fired_count/last_tick（last_status 留待终态权威重取）；
-  // phase 到终态时重拉 /graph（快照/失败状态以库侧为准）
-  useEffect(() => {
-    // 陈旧流守卫：切 run 瞬间旧 run 的最后一条消息可能仍在 state（setState 批处理），
-    // 不校验会把基线初始化到旧 run 的 tick，压制新 run 的本地增量
-    if (!streamState || streamState.runId !== runId) return;
-    const stream = streamState.msg;
-    let cancelled = false;
-    if (stream.tick != null) {
-      if (appliedTickRef.current == null) {
-        // 首条消息重放当前状态——已含在 /graph 初始载荷里，只记基线不重复计数
-        appliedTickRef.current = stream.tick;
-      } else if (stream.tick > appliedTickRef.current) {
-        const tick = stream.tick;
-        const fired = stream.fired;
-        appliedTickRef.current = tick;
-        setPayload(
-          (prev) =>
-            prev && {
-              ...prev,
-              node_states: {
-                ...prev.node_states,
-                ...Object.fromEntries(
-                  Object.entries(prev.node_states).map(([id, ns]) =>
-                    fired.includes(id)
-                      ? [id, { ...ns, fired_count: ns.fired_count + 1, last_tick: tick }]
-                      : [id, ns],
-                  ),
-                ),
-              },
-            },
-        );
-      }
-    }
-    if (stream.paused != null) setPaused(stream.paused);
-    if (TERMINAL_PHASES.has(stream.phase)) {
-      setPaused(false);
-      fetchGraph(runId, moduleOverride ?? undefined)
-        .then((p) => {
-          if (!cancelled) setPayload(p);
-        })
-        .catch(() => {});
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [streamState, runId, moduleOverride]);
-
-  // 停滞计时基准：新消息即推进 + 自愈清黄条。独立于 WS 增量 effect——
-  // moduleOverride 变化会重跑后者，但那不是活性信号，不应重置停滞计时。
-  useEffect(() => {
-    if (!streamState || streamState.runId !== runId) return;
-    lastMsgAtRef.current = Date.now();
-    setStalled(false);
-  }, [streamState, runId]);
-
-  const statusView: StatusCore | null = stream ?? initialStatus;
-
-  // 停滞检测：running 且未暂停时，距最后一条 WS 消息超过 120s → 引导强制恢复。
-  // 阈值取宽：单 tick 含多次 LLM 调用，5-10 分钟 tick 间隔属常态，提示是引导信号。
-  useEffect(() => {
-    liveRef.current = statusView?.phase === "running" && !paused;
-  }, [statusView?.phase, paused]);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (liveRef.current && Date.now() - lastMsgAtRef.current > 120_000) {
-        setStalled(true);
-      }
-    }, 5_000);
-    return () => clearInterval(t);
+  // 打开 run：切运行视图（RunsView 行点击 / 查看按钮 / 发起运行成功共用）
+  const openRun = useCallback((id: string) => {
+    setRunId(id);
+    setView("run");
   }, []);
 
-  // ⑤ terminate 按钮：running 期间轮询 /process（只对本 server 拉起的恢复子进程可见）
-  useEffect(() => {
-    if (statusView?.phase !== "running") {
-      setProcRunning(false);
-      return;
-    }
-    let cancelled = false;
-    const poll = () =>
-      fetchProcess(runId!)
-        .then((p) => {
-          if (!cancelled) setProcRunning(p.running);
-        })
-        .catch(() => {});
-    poll();
-    const t = setInterval(poll, 3_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [runId, statusView?.phase]);
+  // RunsView 行内 ↻：切到目标 run 并请求打开恢复对话框（RunControls 按 runId + seq 守卫）
+  const handleListResume = useCallback((rid: string) => {
+    setRunId(rid);
+    setView("run");
+    setResumeRequest({ runId: rid, seq: Date.now() });
+  }, []);
 
-  const terminateProc = useCallback(async () => {
-    if (!runId) return;
-    try {
-      await postTerminate(runId);
-    } catch {
-      // 409（进程已退/注册表清空）等：静默，下一次 poll 自然纠正
-    }
-    refreshRuns();
-  }, [runId, refreshRuns]);
+  // 恢复请求已被 RunControls 消费（防 run 切换重挂载后陈旧请求重放误开对话框）
+  const consumeResumeRequest = useCallback(() => setResumeRequest(null), []);
 
-  // ⑦ RunList 行内控制：失败静默——列表 5s 轮询刷新后状态即真相
+  // RunsView 行内控制：失败静默——列表 5s 轮询刷新后状态即真相
   const handleListControl = useCallback(
     async (rid: string, action: ControlAction) => {
       try {
@@ -231,131 +74,73 @@ export default function App() {
     [refreshRuns],
   );
 
-  // 行内 ↻：切到目标 run 并请求打开恢复对话框（RunControls 按 runId + seq 守卫）
-  const handleListResume = useCallback((rid: string) => {
-    setRunId(rid);
-    setResumeRequest({ runId: rid, seq: Date.now() });
-  }, []);
+  // RunsView 删除成功：刷新列表；删的是当前打开的 run 则清 runId
+  const handleDeleted = useCallback(
+    (deletedId: string) => {
+      refreshRuns();
+      setRunId((cur) => (cur === deletedId ? null : cur));
+    },
+    [refreshRuns],
+  );
 
-  // 恢复请求已被 RunControls 消费（防 run 切换重挂载后陈旧请求重放误开对话框）
-  const consumeResumeRequest = useCallback(() => setResumeRequest(null), []);
-
-  const selectedNode = payload?.graph.nodes.find((n) => n.id === selected) ?? null;
-  // 选中节点的流式文本：仅 running 且流缓冲属于当前 run 时给出（终态后 outputs 接管）
-  const liveText =
-    statusView?.phase === "running" && streamState?.runId === runId && selectedNode
-      ? streamState.stream.text[selectedNode.id]
-      : undefined;
-  const needModulePicker = error?.code === "module_unresolved";
+  // 模块库发起运行成功（202）：切运行视图打开新 run
+  const handleLaunched = useCallback(
+    (r: LaunchResult) => {
+      refreshRuns();
+      openRun(r.run_id);
+    },
+    [refreshRuns, openRun],
+  );
 
   return (
-    <div style={{ display: "flex", height: "100%" }}>
-      <RunList
-        runs={runs}
-        current={runId}
-        onSelect={setRunId}
-        onControl={handleListControl}
-        onResume={handleListResume}
-      />
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <header
-          style={{
-            padding: "8px 14px",
-            borderBottom: "1px solid #e5e7eb",
-            fontSize: 13,
-            color: "#6b7280",
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
-          {runId ? (
-            <>
-              <span>
-                {`${runId} · ${statusView?.phase ?? payload?.phase ?? "…"}${
-                  statusView?.tick != null ? ` · tick ${statusView.tick}` : ""
-                }${statusView?.error ? ` · ${statusView.error}` : ""}`}
-              </span>
-              <RunControls
-                key={runId}
-                runId={runId}
-                phase={statusView?.phase ?? payload?.phase ?? null}
-                paused={paused}
-                moduleHint={moduleOverride}
-                onAction={refreshRuns}
-                resumeRequest={resumeRequest}
-                onResumeRequestConsumed={consumeResumeRequest}
-                procRunning={procRunning}
-                onTerminate={terminateProc}
-              />
-            </>
-          ) : (
-            "SpecModule 运行时图视图"
-          )}
-        </header>
-        {stalled && (
-          <div
-            style={{
-              padding: "6px 14px",
-              background: "#fef3c7",
-              color: "#92400e",
-              fontSize: 12,
-              display: "flex",
-              gap: 10,
-              alignItems: "center",
-            }}
-          >
-            <span>
-              进程长时间无输出——可能已失联/崩溃。若确认进程已退出，可强制恢复。
-            </span>
-            <button
-              style={{ fontSize: 12, cursor: "pointer" }}
-              onClick={() => setResumeRequest({ runId: runId!, seq: Date.now() })}
-            >
-              打开恢复/回退…
-            </button>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <nav
+        style={{
+          display: "flex",
+          gap: 4,
+          alignItems: "center",
+          padding: "6px 10px",
+          borderBottom: "1px solid #e5e7eb",
+        }}
+      >
+        {NAV.map((n) => (
+          <button key={n.key} style={navBtn(view === n.key)} onClick={() => setView(n.key)}>
+            {n.label}
+          </button>
+        ))}
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "#6b7280" }}>
+          SpecModule Webview
+        </span>
+      </nav>
+      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+        {view === "modules" && <ModulesView onLaunched={handleLaunched} />}
+        {view === "runs" && (
+          <div style={{ flex: 1, minWidth: 0, display: "flex" }}>
+            <RunsView
+              runs={runs}
+              current={runId}
+              onSelect={openRun}
+              onControl={handleListControl}
+              onResume={handleListResume}
+              onDeleted={handleDeleted}
+            />
           </div>
         )}
-        <div style={{ flex: 1, position: "relative" }}>
-          {error && (
-            <div style={{ padding: 12, color: "#b91c1c" }}>
-              图加载失败：{error.message}
-              {needModulePicker && (
-                <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                  <select onChange={(e) => setModuleOverride(e.target.value || null)} defaultValue="">
-                    <option value="">选择模块…</option>
-                    {modules.map((m) => (
-                      <option key={`${m.kind}:${m.name}`} value={m.name}>
-                        {m.name}（{m.kind}）
-                      </option>
-                    ))}
-                  </select>
-                  {moduleOverride && <span>已切换模块：{moduleOverride}</span>}
-                </div>
-              )}
-            </div>
-          )}
-          {payload ? (
-            <GraphView
-              payload={payload}
-              status={statusView}
-              selected={selected}
-              onSelect={setSelected}
+        {view === "run" &&
+          (runId ? (
+            <RunView
+              runId={runId}
+              resumeRequest={resumeRequest}
+              onResumeRequestConsumed={consumeResumeRequest}
+              onRequestResume={(rid) => setResumeRequest({ runId: rid, seq: Date.now() })}
+              onRefreshRuns={refreshRuns}
             />
           ) : (
-            !error && <div style={{ padding: 12 }}>选择左侧 run 开始查看</div>
-          )}
-        </div>
+            <div style={{ flex: 1, padding: 12, color: "#9ca3af" }}>
+              未打开任何 run——从「运行历史」选择或到「模块库」发起运行。
+            </div>
+          ))}
       </div>
-      {payload && selected && selectedNode && (
-        <NodePanel
-          runId={runId!}
-          node={selectedNode}
-          outputs={statusView?.outputs ?? {}}
-          liveText={liveText}
-          onClose={() => setSelected(null)}
-        />
-      )}
     </div>
   );
 }

@@ -5,11 +5,14 @@ export const TERMINAL_PHASES = new Set(["done", "aborted", "cancelled", "truncat
 
 export interface RunSummary {
   run_id: string;
+  /** 源模块名（status.json 溯源字段；旧 run 无 → null，前端回落 run_id 启发式） */
+  module: string | null;
   phase: string;
   tick: number | null;
   error: string | null;
-  paused: boolean;
   updated_at: number;
+  has_sqlite: boolean;
+  paused: boolean;
 }
 
 export interface GraphNode {
@@ -101,8 +104,8 @@ export class ApiError extends Error {
   }
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const r = await fetch(url);
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(url, init);
   const body = await r.json().catch(() => ({}));
   if (!r.ok) {
     const b = body as { error?: string; code?: string };
@@ -111,18 +114,16 @@ async function getJson<T>(url: string): Promise<T> {
   return body as T;
 }
 
+async function getJson<T>(url: string): Promise<T> {
+  return request<T>(url);
+}
+
 async function postJson<T>(url: string, payload: unknown): Promise<T> {
-  const r = await fetch(url, {
+  return request<T>(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const b = body as { error?: string; code?: string };
-    throw new ApiError(r.status, b.error ?? `HTTP ${r.status}`, b.code ?? null);
-  }
-  return body as T;
 }
 
 export const fetchRuns = () =>
@@ -146,8 +147,61 @@ export interface ModuleInfo {
   path: string;
 }
 
-export const fetchModules = () =>
-  getJson<{ modules: ModuleInfo[] }>("/api/modules").then((d) => d.modules);
+export interface ModulesPayload {
+  modules: ModuleInfo[];
+  /** 实际扫描目录（server 随 base_dir 锚定；排查「为什么看不到我的模块」） */
+  search_paths: string[];
+}
+
+export const fetchModules = () => getJson<ModulesPayload>("/api/modules");
+
+/** 模块详情（store.detail_to_dict 形状；templates/submodules 为排序出名列表） */
+export interface ModuleDetail {
+  name: string;
+  kind: string;
+  path: string;
+  version: string;
+  description: string;
+  default_template: string | null;
+  templates: string[];
+  default_spec: Record<string, unknown> | null;
+  spec_schema: Record<string, string> | null;
+  submodules: string[];
+}
+
+export const fetchModuleDetail = (name: string) =>
+  getJson<ModuleDetail>(`/api/modules/${encodeURIComponent(name)}`);
+
+// ------------------------------------------------------------------
+// 运行历史管理 + 发起运行
+// ------------------------------------------------------------------
+
+export const deleteRun = (runId: string, force = false) =>
+  request<{ run_id: string; deleted: boolean }>(
+    `/api/runs/${encodeURIComponent(runId)}${force ? "?force=true" : ""}`,
+    { method: "DELETE" },
+  );
+
+/** 发起运行 body（spec null → CLI 回落 entry.default_spec；template null → default_template） */
+export interface LaunchRequest {
+  module: string;
+  spec?: Record<string, unknown> | null;
+  template?: string | null;
+  run_id?: string | null;
+  max_ticks?: number;
+  mock?: boolean;
+}
+
+export interface LaunchResult {
+  started: boolean;
+  run_id: string;
+  pid: number;
+  module: string;
+}
+
+export const postLaunch = (body: LaunchRequest) =>
+  postJson<LaunchResult>("/api/runs", body);
+
 
 export const fetchNodeTimeline = (runId: string, node: string) =>
   getJson<{ entries: TimelineEntry[] }>(
