@@ -46,7 +46,17 @@
    节的模块溯源项正式移除。
 5. **CLI 补子命令** — `specmodule runs [--json]`（list_runs 列表展示）+
    `specmodule delete-run <run_id>`（删除并打印移除的目录；不存在报错退出非零）。
-6. **api.md 补录**以上全部（统一 API 原则条款）；库仓库独立提交（feat×2 +
+6. **模块发现锚定 base_dir（进程边界收编）** — 库的多来源搜索路径故意不写死
+   （`[cwd/modules]` + `$SPECMODULE_PATH` + `store/modules` + pip），但 server
+   进程的 cwd ≠ 运行根：`GET /api/modules` 用 server cwd 找 `cwd/modules` 会
+   漏掉运行根下的模块，而 spawn 子进程（`cwd=SPECMODULE_BASE`）又用
+   `base_dir/modules`——server 列表与子进程视图可不一致（resume 端点的
+   `resolve_module` 预检会误判 `module_unresolved`；E2E 曾被迫用
+   SPECMODULE_PATH 绕过即此坑）。收编：**`store.search_paths(base_dir=None)`**
+   ——`cwd/modules` 槽位改锚 `base_dir`（None = `Path.cwd()`，向后兼容）；
+   优先序不变。`list_modules`/`resolve_module`/新 `resolve_module_full` 均已
+   有 `search=` 透传口，无需再改签名。
+7. **api.md 补录**以上全部（统一 API 原则条款）；库仓库独立提交（feat×2 +
    docs）→ 发版 → 本仓库同步依赖。
 
 ## server 端（本仓库，全部薄映射）
@@ -81,6 +91,17 @@ body {module, spec?, template?, run_id?, max_ticks=100, mock=false}
   覆盖（零额外管道）；spawn 后图 404 窗口期（module_inputs 未归档）由前端
   失败区兜底（见前端节）。
 
+**模块搜索路径显式化（与 base_dir 同一纪律）**：server 启动时随 base_dir
+解析一次模块搜索路径 `store.search_paths(base_dir=BASE)`，所有模块枚举/
+解析调用显式传 `search=`——`GET /api/modules`（list_modules）、
+`GET /api/modules/{name}` 与 `POST /api/runs` 的模块解析（resolve_module_full）、
+resume 端点预检（resolve_module，改锚后误判消失）。效果：**server 模块视图
+≡ spawn 子进程 CLI 视图**（`base_dir/modules` + `$SPECMODULE_PATH` +
+store home + pip，优先序一致）。`GET /api/modules` 载荷附 `search_paths`
+（实际扫描目录列表），模块库 UI 透出「扫描来源」便于排查「为什么看不到我的
+模块」。E2E 不再需要 SPECMODULE_PATH 特殊处理（fixture 模块放
+`tmp_path/modules`，SPECMODULE_BASE 指过去即可）。
+
 ## 前端（web/，无新依赖）
 
 **App 壳层**：顶部视图切换（模块库 / 运行历史 / 运行视图），`useState` 存
@@ -88,7 +109,8 @@ body {module, spec?, template?, run_id?, max_ticks=100, mock=false}
 
 **ModulesView 模块库**：左列表（名称/kind 徽章/版本/描述）+ 右详情面板
 （描述、来源路径、模板列表 default 标注、spec_schema 字段表、default_spec
-预览）。头部「运行…」按钮 → RunDialog。
+预览）。列表尾部「扫描来源」行（payload 的 search_paths，只读展示）。
+头部「运行…」按钮 → RunDialog。
 
 **RunDialog 运行对话框**（交互模式镜像 ResumeDialog）：
 
