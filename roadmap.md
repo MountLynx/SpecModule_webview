@@ -340,7 +340,12 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   ValueError 400 / run 目录已存在 409 / 活进程 409）；**模块搜索路径显式化**（进程边界
   修复）：deps 增 `get_search_paths`（`store.search_paths(base_dir)`），`GET /api/modules`
   载荷附 `search_paths` 扫描来源、resume 预检 `resolve_module` 显式传 search——放运行根
-  `modules/` 下的模块不再被误判 module_unresolved，E2E 无需 SPECMODULE_PATH 绕过。
+  `modules/` 下的模块不再被误判 module_unresolved，E2E 无需 SPECMODULE_PATH 绕过；
+  graph 端点模块名解析序升级为 `?module=` > status.json `module` 溯源 > run_id 启发式
+  （`src=` 直通锚定解析，UI 发起的 `{module}_{hex}` run_id 免手动选模块）；preflight
+  module 缺省对齐同序。已知的残留库面缺口：`check_resume_compat_from_run` 内部建图与
+  `build_run_graph` 缺省路径仍按 cwd 锚定解析（graph 端点已经 `src=` 绕开）——库侧补
+  `search=` 透传记后排。
   前端（无新依赖）：App 壳层顶部视图切换（模块库/运行历史/运行视图，无 router）；
   ModulesView 左列表右详情（模板 default 标注/spec_schema 字段表/default_spec 预览/
   扫描来源行）；RunDialog + SpecForm（spec_schema/default_spec 驱动类型化表单 ⇄ JSON

@@ -233,7 +233,7 @@ class ResumeBody(BaseModel):
 
 
 class PreflightBody(BaseModel):
-    module: str | None = None      # 缺省 = run_id（同 resume 启发式）
+    module: str | None = None      # 缺省 = status.json 溯源 > run_id 启发式
     target: int | str | None = None
     tasklist: dict[str, Any] | None = None  # None = 归档 tasklist（纯续跑预检）
 
@@ -419,9 +419,12 @@ def post_preflight(
     """
     validate_run_id(run_id)
     _require_run(run_id, base_dir)
+    st = query_run_status(run_id, base_dir=base_dir)
+    # module 解析序对齐图端点：body.module > status.json 溯源 > run_id 启发式
+    module_name = body.module or (st.module if st is not None else None) or run_id
     try:
         result = query.check_resume_compat_from_run(
-            body.module or run_id, run_id,
+            module_name, run_id,
             new_tasklist=body.tasklist, target=body.target, base_dir=base_dir,
         )
     except ValueError as e:

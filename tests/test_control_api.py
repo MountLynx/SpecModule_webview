@@ -460,6 +460,21 @@ class TestPreflightEndpoint:
         r = client.post("/api/runs/bare/resume/preflight", json={})
         assert r.status_code == 404
 
+    def test_preflight_module_tracing_default(self, base, client):
+        """module 缺省解析序：status.json 溯源 > run_id 启发式（UI 后缀 run_id 免传 module）。"""
+        seed_run(
+            base, "mini_graph_ab12cd",
+            firings=[{"tick": 0, "node": "A", "output": "a1"}],
+            snapshots={1: {"tick": 1, "status": "running", "fireable": ["B"], "fired": ["A"],
+                           "marking": {"slots": {"B|A": True}, "armed_starts": ["A"]}}},
+            status={"module_id": "mini_graph_ab12cd", "module": "mini_graph",
+                    "phase": "done", "updated_at": 2.0},
+            inputs={"spec": {"topic": "demo"}, "tasklist": MINI_TASKLIST},
+        )
+        r = client.post("/api/runs/mini_graph_ab12cd/resume/preflight", json={})
+        assert r.status_code == 200
+        assert r.json()["target"] == "1"   # mini_graph 溯源命中（否则 400 module_unresolved）
+
     def test_preflight_unknown_run_404(self, client):
         assert client.post("/api/runs/ghost/resume/preflight",
                            json={}).status_code == 404

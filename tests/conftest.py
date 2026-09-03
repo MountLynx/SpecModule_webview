@@ -66,6 +66,15 @@ def base(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
+def base_no_search_env(tmp_path, monkeypatch):
+    """SPECMODULE_PATH 清空的隔离环境：模块发现只可能锚定 base_dir/modules。"""
+    monkeypatch.setenv("SPECMODULE_BASE", str(tmp_path))
+    monkeypatch.delenv("SPECMODULE_PATH", raising=False)
+    monkeypatch.setenv("SPECMODULE_HOME", str(tmp_path / "home"))
+    return tmp_path
+
+
+@pytest.fixture()
 def client(base):
     from server.app import app
 

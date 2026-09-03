@@ -76,6 +76,46 @@ class TestGraph:
         assert r.status_code == 200
         assert r.json()["module"] == "mini_graph"
 
+    def test_status_module_tracing_resolution(self, base, client):
+        """溯源解析序：?module= > status.json module 字段 > run_id 启发式。
+
+        UI 发起的 run_id 形如 {module}_{hex}，启发式永不命中——status.json 的
+        module 溯源字段使图视图免手动选模块。
+        """
+        seed_run(
+            base, "mini_graph_abc123",
+            status={"module_id": "mini_graph_abc123", "module": "mini_graph",
+                    "phase": "done", "updated_at": 1.0},
+            inputs={"spec": {}, "tasklist": MINI_TASKLIST},
+        )
+        r = client.get("/api/runs/mini_graph_abc123/graph")
+        assert r.status_code == 200
+        assert r.json()["module"] == "mini_graph"   # 溯源字段命中，无需 ?module=
+        # 显式参数优先级最高
+        r = client.get("/api/runs/mini_graph_abc123/graph", params={"module": "mini_graph"})
+        assert r.status_code == 200
+        assert r.json()["module"] == "mini_graph"
+
+    def test_module_resolved_via_base_dir_without_env_path(self, base_no_search_env, client):
+        """图重建的模块解析锚定 base_dir（src 直通），不依赖 SPECMODULE_PATH。"""
+        from tests.test_manage_api import BASE_MODULE_SRC
+
+        mods = base_no_search_env / "modules"
+        mods.mkdir()
+        # base_mod 无模板——图重建走 module_inputs 归档 tasklist 通道，不需模板
+        (mods / "base_mod.py").write_text(BASE_MODULE_SRC, encoding="utf-8")
+        seed_run(
+            base_no_search_env, "base_mod_run",
+            status={"module_id": "base_mod_run", "module": "base_mod",
+                    "phase": "done", "updated_at": 1.0},
+            inputs={"spec": {"topic": "x"},
+                    "tasklist": {"Tasks": {"A": {"type": "script", "script": "A"}},
+                                 "Flow": "[A]"}},
+        )
+        r = client.get("/api/runs/base_mod_run/graph")
+        assert r.status_code == 200
+        assert r.json()["module"] == "base_mod"
+
     def test_no_archive_404(self, base, client):
         seed_run(base, "mini_graph", status={"module_id": "mini_graph", "phase": "done", "updated_at": 1.0})
         r = client.get("/api/runs/mini_graph/graph")
