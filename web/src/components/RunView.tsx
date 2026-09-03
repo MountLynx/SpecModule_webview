@@ -1,7 +1,12 @@
 // 运行视图容器：图视图 + 头部控制条 + 停滞黄条 + 节点面板（自 App 壳层搬迁，
-// 功能不变）。增强：图加载失败区挂 process.log 尾部展示（3s 轮询 /process，
-// 仅错误区可见时）——新 run 无 module_inputs 归档的 404 窗口期与 CLI 启动期
-// 失败在此界面可见。
+// 功能不变）。
+//
+// 落盘等待门（materialized）：发起运行 202 → 子进程写出 status.json 有 ~1s
+// 窗口，期间 run 目录尚不存在——立即拉图会 404 黏住（无重试）、连 WS 会被
+// 服务端拒连并永久停止重连。故落盘前只轮询 /status（404 静默），成功即放行
+// WS 与图加载；120s 未落盘在错误区示错并挂 process.log（启动失败界面可见）。
+// 自愈：WS 已连后图仍处失败态（如 translating 期 module_inputs 未归档的 404），
+// phase 前进说明归档可能已写——按 phase 去抖各重拉一次 graph。
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
@@ -26,6 +31,9 @@ export interface ResumeRequestMsg {
   runId: string;
   seq: number;
 }
+
+/** 落盘等待上限：超过则示错（轮询不停止，落盘即自愈）。 */
+const MATERIALIZE_TIMEOUT_MS = 120_000;
 
 interface RunViewProps {
   runId: string;
@@ -54,12 +62,19 @@ export function RunView({
   const [procRunning, setProcRunning] = useState(false);
   // 图加载失败区的 process.log 尾（CLI 启动期失败界面可见）
   const [procLog, setProcLog] = useState<string | null>(null);
+  // 落盘等待门：false = run 尚未确认落盘（不连 WS、不拉图）
+  const [materialized, setMaterialized] = useState(false);
+  // 落盘等待超时示错（轮询不停止，落盘即自愈清零）
+  const [materialTimeout, setMaterialTimeout] = useState(false);
   const lastMsgAtRef = useRef<number>(Date.now());
   const liveRef = useRef(false);
-  const streamState = useRunStream(runId);
+  // 落盘后才连 WS（run 不存在时服务端拒连 + 前端永久停连，不可逆）
+  const streamState = useRunStream(materialized ? runId : null);
   const stream = streamState?.msg ?? null;
   // 已应用到 node_states 的 tick 基线（首条 WS 消息重放的是 /graph 初始载荷已计入的状态）
   const appliedTickRef = useRef<number | null>(null);
+  // 图失败自愈去抖：已重拉过的 phase（同一 phase 只重拉一次）
+  const retriedPhaseRef = useRef<string | null>(null);
 
   // run 切换：清空全部派生状态（含 moduleOverride，避免上一个 run 的模块选择泄漏到下一个 run）
   useEffect(() => {
@@ -70,13 +85,45 @@ export function RunView({
     setModuleOverride(null);
     setPaused(false);
     setProcLog(null);
+    setMaterialized(false);
+    setMaterialTimeout(false);
     appliedTickRef.current = null;
+    retriedPhaseRef.current = null;
     lastMsgAtRef.current = Date.now();
     setStalled(false);
   }, [runId]);
 
-  // 暂停状态初值（control.json；此后由 WS paused 增量驱动）
+  // 落盘等待门：每 1s 轮询 /status，404（子进程 spawn→首写窗口）静默继续；
+  // 成功 → status 初值 + 放行。120s 未落盘示错（轮询不停止，落盘即自愈）。
   useEffect(() => {
+    if (materialized) return;
+    let cancelled = false;
+    const started = Date.now();
+    const poll = () => {
+      fetchStatus(runId)
+        .then((s) => {
+          if (cancelled) return;
+          setInitialStatus(s);
+          setMaterialTimeout(false);
+          setMaterialized(true);
+        })
+        .catch(() => {
+          if (!cancelled && Date.now() - started > MATERIALIZE_TIMEOUT_MS) {
+            setMaterialTimeout(true);
+          }
+        });
+    };
+    poll();
+    const t = setInterval(poll, 1_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [runId, materialized]);
+
+  // 暂停状态初值（control.json；此后由 WS paused 增量驱动）——同样以落盘为门
+  useEffect(() => {
+    if (!materialized) return;
     let cancelled = false;
     fetchControl(runId)
       .then((c) => {
@@ -86,10 +133,11 @@ export function RunView({
     return () => {
       cancelled = true;
     };
-  }, [runId]);
+  }, [runId, materialized]);
 
-  // 加载：run/moduleOverride 变化即重新拉取；cancelled 防止切换后旧响应覆盖新 run 的状态
+  // 加载：落盘后 / run/moduleOverride 变化即重新拉取；cancelled 防止切换后旧响应覆盖新 run 的状态
   useEffect(() => {
+    if (!materialized) return;
     let cancelled = false;
     fetchStatus(runId)
       .then((s) => {
@@ -119,7 +167,7 @@ export function RunView({
     return () => {
       cancelled = true;
     };
-  }, [runId, moduleOverride]);
+  }, [runId, moduleOverride, materialized]);
 
   // WS 增量：tick 前进即本地累加 fired_count/last_tick（last_status 留待终态权威重取）；
   // phase 到终态时重拉 /graph（快照/失败状态以库侧为准）
@@ -169,6 +217,29 @@ export function RunView({
     };
   }, [streamState, runId, moduleOverride]);
 
+  // 图失败自愈：图处于加载失败态且 WS status 的 phase 变化 → 重拉一次 graph。
+  // 覆盖 translating 期 module_inputs 未归档的 404 窗口（phase 前进后归档已写）；
+  // 同一 phase 只重拉一次（ref 去抖，避免 1s 推送节奏下的重试风暴）。
+  useEffect(() => {
+    if (!streamState || streamState.runId !== runId) return;
+    if (error == null) return;
+    const phase = streamState.msg.phase;
+    if (phase == null || retriedPhaseRef.current === phase) return;
+    retriedPhaseRef.current = phase;
+    let cancelled = false;
+    fetchGraph(runId, moduleOverride ?? undefined)
+      .then((p) => {
+        if (!cancelled) {
+          setPayload(p);
+          setError(null);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [streamState, runId, error, moduleOverride]);
+
   // 停滞计时基准：新消息即推进 + 自愈清黄条。独立于 WS 增量 effect——
   // moduleOverride 变化会重跑后者，但那不是活性信号，不应重置停滞计时。
   useEffect(() => {
@@ -215,10 +286,10 @@ export function RunView({
     };
   }, [runId, statusView?.phase]);
 
-  // 图加载失败区：process.log 尾 3s 轮询（仅错误区可见时）——CLI 启动期失败
-  // （模块解析/模板翻译错误等）只有日志里有，界面必须能看见
+  // process.log 尾 3s 轮询：图加载失败 或 落盘等待超时（CLI 启动期失败界面可见）
+  const showProcLog = error != null || (!materialized && materialTimeout);
   useEffect(() => {
-    if (!error) {
+    if (!showProcLog) {
       setProcLog(null);
       return;
     }
@@ -235,7 +306,7 @@ export function RunView({
       cancelled = true;
       clearInterval(t);
     };
-  }, [runId, error]);
+  }, [runId, showProcLog]);
 
   const terminateProc = useCallback(async () => {
     try {
@@ -253,6 +324,29 @@ export function RunView({
       ? streamState.stream.text[selectedNode.id]
       : undefined;
   const needModulePicker = error?.code === "module_unresolved";
+  const waitingMaterial = !materialized && materialTimeout;
+
+  const procLogView = procLog && (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 12, color: "#6b7280" }}>process.log 尾部：</div>
+      <pre
+        style={{
+          fontFamily: "monospace",
+          fontSize: 12,
+          background: "#f9fafb",
+          border: "1px solid #e5e7eb",
+          borderRadius: 6,
+          padding: 8,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+          maxHeight: 260,
+          overflowY: "auto",
+        }}
+      >
+        {procLog}
+      </pre>
+    </div>
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
@@ -325,27 +419,13 @@ export function RunView({
                 {moduleOverride && <span>已切换模块：{moduleOverride}</span>}
               </div>
             )}
-            {procLog && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>process.log 尾部：</div>
-                <pre
-                  style={{
-                    fontFamily: "monospace",
-                    fontSize: 12,
-                    background: "#f9fafb",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 6,
-                    padding: 8,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-all",
-                    maxHeight: 260,
-                    overflowY: "auto",
-                  }}
-                >
-                  {procLog}
-                </pre>
-              </div>
-            )}
+            {procLogView}
+          </div>
+        )}
+        {waitingMaterial && (
+          <div style={{ padding: 12, color: "#b45309" }}>
+            运行迟迟未落盘——可能启动失败，见下方日志
+            {procLogView}
           </div>
         )}
         {payload ? (
@@ -356,7 +436,7 @@ export function RunView({
             onSelect={setSelected}
           />
         ) : (
-          !error && <div style={{ padding: 12 }}>图加载中…</div>
+          !error && !waitingMaterial && <div style={{ padding: 12 }}>图加载中…</div>
         )}
       </div>
       {payload && selected && selectedNode && (
