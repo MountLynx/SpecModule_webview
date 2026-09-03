@@ -72,8 +72,15 @@ SpecModule_webview/
 
 ### 阶段 2 —— 可视化管理
 
-- [ ] 模块列表（store.list_modules）
-- [ ] 运行列表/选择器 + 检查点管理（列表、命名）——含手动检查点创建 UI 入口
+- [x] 模块列表 + 模块详情（2026-09-03 落地，见「变更日志」）：`GET /api/modules`
+  （搜索路径显式锚定 base_dir + 载荷附 `search_paths` 扫描来源）+ `GET /api/modules/{name}`
+  （`resolve_module_full`/`detail_to_dict` 详情面）——前端 ModulesView + RunDialog/SpecForm
+- [x] 运行历史管理（2026-09-03 落地）：`GET /api/runs` 改 `query.list_runs`
+  （module/has_sqlite 溯源载荷）+ `DELETE /api/runs/{id}`（`query.delete_run` +
+  running/活子进程活性防护）——前端 RunsView 全宽历史
+- [x] 发起运行（2026-09-03 落地）：`POST /api/runs`（子进程拉官方 CLI `run`，
+  完全镜像 resume 的 spawn 机制）——前端 RunDialog（SpecForm 表单⇄JSON 填表）
+- [x] 运行列表/选择器 + 检查点管理（列表、命名）——含手动检查点创建 UI 入口
   （`POST /checkpoints` 端点阶段 0 已备，界面无入口，见「控制功能缺口盘点」①）
 - [x] 运行控制（2026-08-31 落地，设计见「运行控制设计」节）：运行中取消/暂停/继续
   （跨进程 control.json 通道）+ 结束后恢复/回退（spec/tasklist 可改重传，子进程拉官方 CLI）
@@ -92,6 +99,15 @@ SpecModule_webview/
 
 - [ ] 图编辑（拖拽节点，graph/render 往返验证）
 - [ ] 无 run 直渲染端点（POST /api/graph/render，库函数已留 tasklist 通道）
+
+### 后排清单（2026-09-03 盘点，等真实使用中疼了再动）
+
+- store 生命周期管理界面（install/uninstall/update/publish）
+- init 脚手架入口（`modules/<name>.py` 实例骨架生成）
+- run 重命名
+- 复跑（同 spec 重启新 run）
+- 中间快照复跑入口（RunsView 直达 resume 对话框并预选快照目标）
+- 批量删除运行历史
 
 ## 数据契约与错误处理
 
@@ -133,8 +149,10 @@ CLI 在别处启动 run ──► <base_dir>/.specmodule/runs/<run_id>/{status.j
 - **`registry=None` 纯产物解析路线已否决**（实证）：tickflow `_validate` 对每条 guard 边查
   `reg.has_guard`，空 registry 即 `ParseError`——必须构建真实 registry，故图渲染依赖模块可解析。
 - run→模块名映射：v1 启发式 `module = run_id`（CLI 缺省 run_id 即模块名），`?module=` 可覆盖；
-  解析失败前端弹模块选择器（数据 `/api/modules`）。模块名入 status.json 的彻底溯源记为
-  后续上游改进，本轮不做（偏差已记录）。
+  解析失败前端弹模块选择器（数据 `/api/modules`）。~~模块名入 status.json 的彻底溯源记为
+  后续上游改进，本轮不做（偏差已记录）~~ **已销项（2026-09-03）**：库 0bdf171 落地
+  status.json `module` 溯源字段（`entry.build_module` 自动传入，旧 run → None），
+  runs 列表消费该字段回落启发式。
 
 ### 节点徽章语义
 
@@ -308,3 +326,27 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   paused/close(1000) → terminate 硬终止 + 残留 running + force 恢复 → 产物 pptx 机器
   校验。实测认知两条：resume 的 running 窗口仅 ~30ms（轮询不可捕获，E2E 用 pause 钉住）；
   unpause 后中间态被 WS 1s 轮询合并进终态推送（变化才推的合并语义）。
+- **2026-09-03 完整前端：模块库 + 运行历史管理 + 发起运行**（spec：
+  2026-09-03-module-run-history-design.md，统一 API 原则全量兑现）。库侧收编 3 笔
+  （c16c54e `query.list_runs`/`delete_run` + CLI `runs`/`delete-run`；0bdf171
+  `store.ResolvedModule`/`resolve_module_full`/`detail_to_dict` + `search_paths(base_dir)`
+  发现锚定 + status.json `module` 溯源字段；c5e64c3 api.md 补录）——roadmap「已知偏差」
+  的模块溯源项正式销项。本仓库 server：`GET /api/runs` 改 `list_runs` 薄映射（删除自扫
+  目录代码，载荷增 module/has_sqlite；unknown 态收入不跳过）；新端点
+  `GET /api/modules/{name}`（未找到 404 / 加载失败 400）、`DELETE /api/runs/{id}`
+  （不存在 404 / running 无 force 409 / 注册表活子进程 409——force 也不豁免）、
+  `POST /api/runs`（spawn 官方 CLI `run`，完全镜像 resume 的 spawn 段：spec 临时文件
+  `--spec-file`、run_id 缺省 `{module}_{6hex}`、202 载荷；module_unresolved 404 /
+  ValueError 400 / run 目录已存在 409 / 活进程 409）；**模块搜索路径显式化**（进程边界
+  修复）：deps 增 `get_search_paths`（`store.search_paths(base_dir)`），`GET /api/modules`
+  载荷附 `search_paths` 扫描来源、resume 预检 `resolve_module` 显式传 search——放运行根
+  `modules/` 下的模块不再被误判 module_unresolved，E2E 无需 SPECMODULE_PATH 绕过。
+  前端（无新依赖）：App 壳层顶部视图切换（模块库/运行历史/运行视图，无 router）；
+  ModulesView 左列表右详情（模板 default 标注/spec_schema 字段表/default_spec 预览/
+  扫描来源行）；RunDialog + SpecForm（spec_schema/default_spec 驱动类型化表单 ⇄ JSON
+  双模式双向同步、字段级 JSON 子编辑器失焦校验、spec 空且无 default_spec 提交禁用）；
+  RunsView 升格全宽历史（module 名溯源回落启发式、phase 徽章、错误摘要、行内查看/
+  删除——running 先取消可 force 强删二次确认）；运行视图图加载失败区挂 process.log 尾
+  （3s 轮询，CLI 启动期失败界面可见）。AGENTS.md 端点表同步三行 + base_dir 纪律补
+  搜索锚定。测试：本仓库 84 项全绿；后排新增清单（store 生命周期界面/init 脚手架/
+  run 重命名/复跑/中间快照复跑入口/批量删除）。

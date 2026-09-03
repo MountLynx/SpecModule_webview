@@ -20,18 +20,21 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 
 | Endpoint | Library call | Shape |
 |---|---|---|
-| `GET /api/runs` | `store.list_modules` 无关；run 枚举：扫描 `runs/` 目录 + `query_run_status` 摘要 | `[{run_id, phase, tick, error, updated_at, paused}]` |
+| `GET /api/runs` | `query.list_runs(base_dir=None) -> list[dict]`（库共享 run 枚举，updated_at 降序）+ 逐 run `control.read_control` 叠加 `paused` | `[{run_id, module, phase, tick, error, updated_at, has_sqlite, paused}]`；`module` = status.json 溯源字段（旧 run → None，前端回落 run_id 启发式）；status.json 缺失/损坏 → `phase="unknown"` 收入不跳过（删除入口对坏目录可用） |
 | `GET /api/runs/{id}/status` | `query_run_status(module_id, base_dir=None) -> ModuleStatus \| None` | `{module_id, phase, status, tick, fireable, fired, outputs, node_states, error, updated_at}` |
 | `GET /api/runs/{id}/timeline` | `build_timeline` + `timeline_to_dict`; filters `filter_failed/filter_tick/filter_node` | `{module_id, latest_tick, entries: [{tick, node, status, output, error}]}`; entry status `ok\|failed\|aborted` |
 | `GET /api/runs/{id}/checkpoints` | `build_checkpoints` + `checkpoints_to_dict` | `{module_id, checkpoints: [{target, tick, kind, fired, label}]}`; `target` = direct resume arg (`"<tick>"` or `"manual:<label>"`) |
 | `GET /api/runs/{id}/snapshot` | `load_snapshot_summary(module_id, *, tick=None, base_dir=None) -> dict \| None` | `{tick, status, fireable, fired, outputs}`（outputs = 各节点最新值） |
 | `GET /api/runs/{id}/feed` | `query_run_status` + `build_timeline` + `build_checkpoints` 组合（镜像 feed.py 的 JSON 组合） | feed.py 兼容结构：`{run_id, status, timeline, checkpoints}` — v1 前端基准 |
 | `POST /api/runs/{id}/checkpoints` | `create_checkpoint(module_id, label, *, tick=None, base_dir=None) -> dict` | `{label, tick, overwritten}`；label 自动补 `manual:` 前缀；无运行/无快照/tick 不存在 → `KeyError` 带可用清单 |
-| `GET /api/modules` | `store.list_modules(search=None, include_pip=True) -> dict[str, list[ModuleSource]]` | `{name, kind: entry\|packed\|pip, version, description, path}` |
+| `GET /api/modules` | `store.list_modules(search=store.search_paths(base_dir), include_pip=True)`（搜索路径显式锚定 base_dir） | `{modules: [{name, kind: entry\|packed\|pip, version, description, path}], search_paths: [str]}`（实际扫描目录，UI 透出「扫描来源」） |
+| `GET /api/modules/{name}` | `store.resolve_module_full(name, search=...) -> ResolvedModule \| None` + `store.detail_to_dict` | `{name, kind, path, version, description, default_template, templates: [名], default_spec, spec_schema, submodules: [名]}`；未找到 → 404；加载失败（ValueError）→ 400 带 str(e) |
 | `GET /api/runs/{id}/graph?module=` | `build_run_graph(module_name, run_id, *, base_dir=None, ...) -> (Graph, Tasklist) \| None`（module_inputs 归档重建，零 LLM）+ `graph_to_dict` 序列化（均库共享层） | `{run_id, module, phase, tick, graph: {nodes: [{id, label, type, is_start, join, inputs}], edges: [{from, to, guard}], starts}, node_states: {id: {fired_count, last_status, last_tick, running}}}`；`module` 缺省 = run_id 启发式，解析失败 404 带 `ValueError` 消息；无直渲染通道（`POST /api/graph/render` 推迟阶段 3） |
 | `GET /api/runs/{id}/control` | `control.read_control(module_id, base_dir=None) -> dict \| None` | `{run_id, control: {action, reason, requested_at} \| null, paused}`；`paused` = `control.action == "pause"`；未知 run → 404 |
 | `POST /api/runs/{id}/control` | `control.request_control(module_id, action, *, reason=None, base_dir=None) -> dict`（action ∈ `cancel\|pause\|unpause`） | 写 control.json（运行进程 tick 边界协作消费）→ 同 GET 形状；非法 action → 400；未知 run → 404 |
 | `GET /api/runs/{id}/inputs` | `query.read_module_inputs(module_id, base_dir=None) -> dict \| None` | `{run_id, spec \| null, tasklist \| null}`（module_inputs 存档；恢复对话框预填上次输入） |
+| `POST /api/runs` | **子进程拉起官方 CLI**：`[sys.executable, -m module_harness.cli, run, --module M, --run-id id, (--spec-file f), (--template t), --max-ticks N, (--mock)]`，`cwd=SPECMODULE_BASE`，stdout → `<run_dir>/process.log`（复用 resume 的 spawn 机制/注册表） | body `{module, spec?, template?, run_id?, max_ticks?=100, mock?=false}` → 202 `{started, run_id, pid, module}`；`run_id` 缺省 server 生成 `{module}_{6hex}`；模块未解析 → 404 `code=module_unresolved`、加载失败（ValueError）→ 400、非法 run_id → 400、run 目录已存在 → 409（防覆盖历史）、注册表同 run_id 活进程 → 409 |
+| `DELETE /api/runs/{id}` | `query.delete_run(run_id, base_dir=None) -> bool` + 消费端活性防护 | `{run_id, deleted: true}`；不存在 → 404；`phase=running` 且无 `?force=true` → 409「先取消或强制删除」；注册表有活子进程 → 409（force 也不例外——进程仍在写该目录） |
 | `POST /api/runs/{id}/resume` | **子进程拉起官方 CLI**：`[sys.executable, -m module_harness.cli, resume, target?, --module M, --run-id id, (--spec-file f)\|(--tasklist f), --max-ticks N, (--mock)]`，`cwd=SPECMODULE_BASE` | body `{module?, target?, spec?, tasklist?, max_ticks?=100, mock?=false}` → 202 `{started, run_id, pid, module, target}`；无 status.json → 404、无 run.sqlite → 400、运行中/已有恢复进程 → 409、模块未解析 → 404 `code=module_unresolved`、非法 target → 400 |
 | `GET /api/runs/{id}/process` | server 内存进程注册表 + `process.log` 尾（8KB） | `{run_id, running, pid, started_at, log}`（resume 子进程观测；CLI 启动期失败只在此可见） |
 | `POST /api/runs/{id}/resume/preflight` | `query.check_resume_compat_from_run(module, run_id, new_tasklist=..., target=..., base_dir=...)`（库共享组合函数） | `{target, target_tick, executed_nodes, hard_errors, warnings}`；不 spawn 不写状态；兼容性 hard_errors 是 200 载荷；无 run.sqlite → 404、tasklist 非法/建图失败（ValueError）→ 400 |
@@ -44,7 +47,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 **Monitoring.** Progress rides runner hooks `hooks={"on_tick_start": cb(tick, fireable), "on_fire": cb(NodeState), …}` and `EventBus` typed events. Persistence is file-based and cross-process readable: `run.sqlite` (tables `snapshots`, `firings`, `checkpoints`, `module_inputs`; WAL) + `status.json`.
 
 **Key constraints**
-- `base_dir` defaults to `cwd` — a server process's cwd differs from the user's run root; pass `base_dir` explicitly and consistently (one runs root per server, via `SPECMODULE_BASE` env, default cwd).
+- `base_dir` defaults to `cwd` — a server process's cwd differs from the user's run root; pass `base_dir` explicitly and consistently (one runs root per server, via `SPECMODULE_BASE` env, default cwd). **模块搜索锚定同一纪律**：所有模块枚举/解析调用（`list_modules`/`resolve_module`/`resolve_module_full`）显式传 `search=store.search_paths(base_dir)`（`server/deps.py get_search_paths`）——server 模块视图 ≡ spawn 子进程 CLI 视图，放运行根 `modules/` 下的模块不被误判 module_unresolved；`GET /api/modules` 载荷附 `search_paths` 透出实际扫描目录。
 - Failed runs write only `status.json` (no `run.sqlite`) — status/timeline endpoints must tolerate a run dir without sqlite (query layer returns `None` — map to 404, never raise).
 - Single-writer per `run_id` (WAL) — serialize any cross-process operations touching the same run.
 - `run_id`: Module default `mod_<8hex>`, SubModule `{name}_<6hex>`; consumers may supply their own (CLI `--run-id`). Webview treats `run_id` as opaque path segment.
@@ -56,8 +59,8 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 ## Key Directories
 
 - repo root — this repo:
-  - `server/` — FastAPI thin layer: `app.py` (entry: CORS + router wiring), `deps.py` (base_dir resolution + run_id validation), `api/runs.py` (runtime read endpoints), `api/graph.py` (run 图重建：`build_run_graph`/`graph_to_dict` 薄调用 + 每节点运行摘要叠加), `api/manage.py` (module/run 枚举 + checkpoint 写操作), `api/control.py` (运行控制 cancel/pause/unpause + inputs 预填 + resume 子进程编排 + 进程观测), `ws.py` (tick 流实时推送)
-  - `web/` — Vite + React + TS + React Flow + dagre SPA：`src/App.tsx`（run 选择 → 图加载 → WS 增量基线 + paused 状态）、`src/ws.ts`（WS 客户端，消息按 runId 打包防陈旧流）+ `components/`（GraphView/StatusNode 图与徽章、NodePanel 节点面板、RunList 运行列表、RunControls 控制条 + 恢复对话框）、`src/api.ts`（端点载荷类型）
+  - `server/` — FastAPI thin layer: `app.py` (entry: CORS + router wiring), `deps.py` (base_dir/搜索路径解析 + run_id 校验), `api/runs.py` (runtime read endpoints), `api/graph.py` (run 图重建：`build_run_graph`/`graph_to_dict` 薄调用 + 每节点运行摘要叠加), `api/manage.py` (模块枚举 + 模块详情), `api/control.py` (运行控制 cancel/pause/unpause + 发起运行/删除 run + inputs 预填 + resume 子进程编排 + 进程观测), `ws.py` (tick 流实时推送)
+  - `web/` — Vite + React + TS + React Flow + dagre SPA：`src/App.tsx`（壳层：顶部视图切换 模块库/运行历史/运行视图 + 跨视图状态 runId/runs 轮询/恢复请求）、`src/ws.ts`（WS 客户端，消息按 runId 打包防陈旧流）+ `components/`（ModulesView 模块库 + RunDialog/SpecForm 填表发起、RunsView 运行历史 + 删除、RunView 运行视图容器、GraphView/StatusNode 图与徽章、NodePanel 节点面板、RunControls 控制条 + 恢复对话框）、`src/api.ts`（端点载荷类型）
   - `tests/` — pytest + httpx TestClient
   - `roadmap.md` — the plan: architecture, endpoint list, phase breakdown, acceptance criteria. Re-read before implementing.
 - `../SpecModule/` — the consumed library (read-only for this repo):
