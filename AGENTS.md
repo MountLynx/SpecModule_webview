@@ -6,7 +6,7 @@
 
 **Thin layer, zero business logic.** The library's query functions map 1:1 to HTTP endpoints; `module_harness/infra/query.py` was explicitly designed as the shared query layer for CLI/MCP/Web consumers. Import it, never reimplement. Anything that looks like logic belongs upstream in the library repo (see 统一 API 原则 below).
 
-**Current state: 阶段 0 HTTP 后端层 + 阶段 1 运行时图视图 + 运行控制（cancel/pause/resume/rollback）已落地**（2026-08-29 / 2026-08-31 实施，设计定稿见 roadmap「运行时图视图设计」「运行控制设计」节）：`server/` FastAPI 薄层（运行读端点 + 图端点 + 控制面端点 + WS 流）与 `web/` SPA（Vite + React + React Flow + dagre）均已实现、测试全绿；后续切片（状态面板/审阅时间线/产出对比/管理面）按 roadmap 阶段 1/2 推进。Acceptance target: M1 + M2 modules fully wired — runtime visualization + output comparison.
+**Current state: 阶段 0 HTTP 后端层 + 阶段 1 运行时图视图 + 运行控制（cancel/pause/resume/rollback）已落地**（2026-08-29 / 2026-08-31 实施，设计定稿见 roadmap「运行时图视图设计」「运行控制设计」节）：`server/` FastAPI 薄层（运行读端点 + 图端点 + 控制面端点 + WS 流）与 `web/` SPA（Vite + React + Tailwind + React Flow + dagre）均已实现、测试全绿；后续切片（状态面板/审阅时间线/产出对比/管理面）按 roadmap 阶段 1/2 推进。Acceptance target: M1 + M2 modules fully wired — runtime visualization + output comparison.
 
 ## Architecture & Data Flow
 
@@ -60,7 +60,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 
 - repo root — this repo:
   - `server/` — FastAPI thin layer: `app.py` (entry: CORS + router wiring), `deps.py` (base_dir/搜索路径解析 + run_id 校验), `api/runs.py` (runtime read endpoints), `api/graph.py` (run 图重建：`build_run_graph`/`graph_to_dict` 薄调用 + 每节点运行摘要叠加), `api/manage.py` (模块枚举 + 模块详情), `api/control.py` (运行控制 cancel/pause/unpause + 发起运行/删除 run + inputs 预填 + resume 子进程编排 + 进程观测), `ws.py` (tick 流实时推送)
-  - `web/` — Vite + React + TS + React Flow + dagre SPA：`src/App.tsx`（壳层：顶部视图切换 模块库/运行历史/运行视图 + 跨视图状态 runId/runs 轮询/恢复请求）、`src/ws.ts`（WS 客户端，消息按 runId 打包防陈旧流）+ `components/`（ModulesView 模块库 + RunDialog/SpecForm 填表发起、RunsView 运行历史 + 删除、RunView 运行视图容器、GraphView/StatusNode 图与徽章、NodePanel 节点面板、RunControls 控制条 + 恢复对话框）、`src/api.ts`（端点载荷类型）
+  - `web/` — Vite + React + TS + Tailwind + React Flow + dagre SPA（VSCode 式壳：活动栏 + 侧边栏导航 + 主区）：`src/App.tsx`（壳层：页签/打开的模块与 run/runs 轮询/恢复请求）+ `src/ws.ts`（WS 客户端，消息按 runId 打包防陈旧流）+ `components/`（ActivityBar 活动栏、ModuleList/ModuleDetail 模块库（发起表单内嵌主区）、RunList 运行历史侧栏、RunView 运行视图容器、GraphView/StatusNode 图与徽章、NodePanel 节点面板、RunControls 控制条 + 恢复对话框、dialogTheme 对话框共享类、ui/ 基件）+ `src/api.ts`（端点载荷类型）+ `src/lib/utils.ts`（cn/relativeTime）+ `src/lib/json.ts`
   - `tests/` — pytest + httpx TestClient
   - `roadmap.md` — the plan: architecture, endpoint list, phase breakdown, acceptance criteria. Re-read before implementing.
 - `../SpecModule/` — the consumed library (read-only for this repo):

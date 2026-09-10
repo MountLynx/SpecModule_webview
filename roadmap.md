@@ -355,3 +355,12 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   （3s 轮询，CLI 启动期失败界面可见）。AGENTS.md 端点表同步三行 + base_dir 纪律补
   搜索锚定。测试：本仓库 84 项全绿；后排新增清单（store 生命周期界面/init 脚手架/
   run 重命名/复跑/中间快照复跑入口/批量删除）。
+- 2026-09-10 **TreeChat 整合第一期：壳层重组**——web/ 引入 Tailwind + shadcn neutral
+  主题（TreeChat webui 基建移植：cn/ui 基件/ActivityBar 结构），App 重写为 VSCode 式
+  三段壳（活动栏 + 侧边栏 280px + 主区），侧栏导航范式：运行历史压缩为 RunList 侧栏
+  常驻、模块库拆 ModuleList/ModuleDetail（发起表单内嵌主区，RunDialog 退役）、亮暗
+  主题跟随系统（localStorage `specmodule-webview.theme` 覆盖）。`server/`/api.ts/ws.ts/
+  dagre.ts 零改动。设计：
+  `docs/superpowers/specs/2026-09-10-treechat-integration-phase1-shell-design.md`；
+  计划：`docs/superpowers/plans/2026-09-10-treechat-integration-phase1-shell.md`。
+  二期将并入 TreeChat 对话引擎（对话/树/卡片页签 + 服务层挂载）。
