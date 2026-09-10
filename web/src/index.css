@@ -1,3 +1,89 @@
-* { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
-body { font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; color: #111827; }
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* shadcn neutral 调色板（移植自 TreeChat webui：中性灰阶 + 暖调边框/侧栏）
+   + 运行 phase 语义色（沿用旧 PHASE_COLOR 现值，供亮暗两态共用） */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 3% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 3% 12%;
+    --primary: 240 4% 16%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 4% 16%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 240 5% 96%;
+    --accent-foreground: 240 4% 16%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 40 8% 90.5%;
+    --input: 40 8% 90.5%;
+    --ring: 240 4% 16%;
+    --radius: 0.4375rem;
+    --sidebar: 40 8% 96.8%;
+    --sidebar-selected: 40 1% 89.4%;
+    --activitybar: 40 6% 92%;
+    --activitybar-foreground: 240 4% 30%;
+
+    --ph-running: #2563eb;
+    --ph-done: #16a34a;
+    --ph-aborted: #dc2626;
+    --ph-cancelled: #d97706;
+    --ph-truncated: #b45309;
+  }
+
+  .dark {
+    --background: 0 0% 19%;
+    --foreground: 0 0% 93%;
+    --card: 0 0% 22%;
+    --card-foreground: 0 0% 93%;
+    --primary: 240 5% 98%;
+    --primary-foreground: 240 4% 16%;
+    --secondary: 0 0% 26%;
+    --secondary-foreground: 0 0% 93%;
+    --muted: 0 0% 26%;
+    --muted-foreground: 0 0% 63%;
+    --accent: 0 0% 26%;
+    --accent-foreground: 0 0% 93%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 28%;
+    --input: 0 0% 28%;
+    --ring: 0 0% 80%;
+    --sidebar: 0 0% 17%;
+    --sidebar-selected: 0 0% 29.8%;
+    --activitybar: 0 0% 14%;
+    --activitybar-foreground: 0 0% 70%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    overflow: hidden;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.15);
+  }
+}
+
+/* 细滚动条（应用式布局） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
