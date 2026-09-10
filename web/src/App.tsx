@@ -1,36 +1,37 @@
-// App 壳层：顶部视图切换（模块库 / 运行历史 / 运行视图），useState 存视图名
-// （不引 router）。每个视图自包含组件，壳层只持有跨视图状态（当前 runId、
-// runs 轮询、恢复对话框请求）；视图组织形式后续可改而视图内部不动。
+// App 壳层：VSCode 式三段布局（活动栏 + 侧边栏 + 主区）——侧栏导航范式：
+// 列表常驻侧边栏，主区内容随选择变化（模块详情/发起、运行图），不再互斥切换。
+// 壳层持有跨视图状态：当前页签、打开的模块/run、runs 轮询、恢复对话框请求。
+// 不引 router（useState 范式，与 TreeChat webui 一致）。
 import { useCallback, useEffect, useState } from "react";
-import type { CSSProperties } from "react";
-import { fetchRuns, postControl, type ControlAction, type LaunchResult, type RunSummary } from "./api";
-import { ModulesView } from "./components/ModulesView";
+import {
+  fetchRuns,
+  postControl,
+  type ControlAction,
+  type LaunchResult,
+  type RunSummary,
+} from "./api";
+import { ActivityBar, type Tab } from "./components/ActivityBar";
+import { ModuleDetail } from "./components/ModuleDetail";
+import { ModuleList } from "./components/ModuleList";
+import { RunList } from "./components/RunList";
 import { RunView, type ResumeRequestMsg } from "./components/RunView";
-import { RunsView } from "./components/RunsView";
 
-type ViewName = "modules" | "runs" | "run";
-
-const NAV: { key: ViewName; label: string }[] = [
-  { key: "modules", label: "模块库" },
-  { key: "runs", label: "运行历史" },
-  { key: "run", label: "运行视图" },
-];
-
-const navBtn = (active: boolean): CSSProperties => ({
-  fontSize: 13,
-  padding: "4px 14px",
-  cursor: "pointer",
-  border: "none",
-  borderRadius: 6,
-  background: active ? "#eef2ff" : "transparent",
-  color: active ? "#4338ca" : "#374151",
-  fontWeight: active ? 700 : 400,
-});
+/** 主区空态（两页签同构落点） */
+function EmptyState({ icon, title, hint }: { icon: string; title: string; hint: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-1.5 text-muted-foreground">
+      <div className="text-[34px]">{icon}</div>
+      <div className="text-[13.5px]">{title}</div>
+      <div className="text-[11.5px] opacity-70">{hint}</div>
+    </div>
+  );
+}
 
 export default function App() {
-  const [view, setView] = useState<ViewName>("runs");
+  const [tab, setTab] = useState<Tab>("runs");
   const [runs, setRuns] = useState<RunSummary[]>([]);
-  const [runId, setRunId] = useState<string | null>(null);
+  const [openModuleName, setOpenModuleName] = useState<string | null>(null);
+  const [openRunId, setOpenRunId] = useState<string | null>(null);
   // 打开恢复对话框的请求：带目标 runId（避免全局计数器泄漏到无关 run 的切换）+ seq 去重
   const [resumeRequest, setResumeRequest] = useState<ResumeRequestMsg | null>(null);
 
@@ -45,23 +46,22 @@ export default function App() {
     return () => clearInterval(t);
   }, [refreshRuns]);
 
-  // 打开 run：切运行视图（RunsView 行点击 / 查看按钮 / 发起运行成功共用）
+  // 打开 run：主区换内容（侧栏列表常驻，不再切走）
   const openRun = useCallback((id: string) => {
-    setRunId(id);
-    setView("run");
+    setOpenRunId(id);
   }, []);
 
-  // RunsView 行内 ↻：切到目标 run 并请求打开恢复对话框（RunControls 按 runId + seq 守卫）
+  // RunList 行内 ↻：打开目标 run 并请求恢复对话框（RunControls 按 runId + seq 守卫）
   const handleListResume = useCallback((rid: string) => {
-    setRunId(rid);
-    setView("run");
+    setTab("runs");
+    setOpenRunId(rid);
     setResumeRequest({ runId: rid, seq: Date.now() });
   }, []);
 
   // 恢复请求已被 RunControls 消费（防 run 切换重挂载后陈旧请求重放误开对话框）
   const consumeResumeRequest = useCallback(() => setResumeRequest(null), []);
 
-  // RunsView 行内控制：失败静默——列表 5s 轮询刷新后状态即真相
+  // RunList 行内控制：失败静默——列表 5s 轮询刷新后状态即真相
   const handleListControl = useCallback(
     async (rid: string, action: ControlAction) => {
       try {
@@ -74,73 +74,70 @@ export default function App() {
     [refreshRuns],
   );
 
-  // RunsView 删除成功：刷新列表；删的是当前打开的 run 则清 runId
+  // 删除成功：刷新列表；删的是当前打开的 run 则清空主区回空态
   const handleDeleted = useCallback(
     (deletedId: string) => {
       refreshRuns();
-      setRunId((cur) => (cur === deletedId ? null : cur));
+      setOpenRunId((cur) => (cur === deletedId ? null : cur));
     },
     [refreshRuns],
   );
 
-  // 模块库发起运行成功（202）：切运行视图打开新 run
+  // 模块库发起运行成功（202）：切「运行历史」页签并打开新 run
   const handleLaunched = useCallback(
     (r: LaunchResult) => {
       refreshRuns();
-      openRun(r.run_id);
+      setTab("runs");
+      setOpenRunId(r.run_id);
     },
-    [refreshRuns, openRun],
+    [refreshRuns],
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <nav
-        style={{
-          display: "flex",
-          gap: 4,
-          alignItems: "center",
-          padding: "6px 10px",
-          borderBottom: "1px solid #e5e7eb",
-        }}
-      >
-        {NAV.map((n) => (
-          <button key={n.key} style={navBtn(view === n.key)} onClick={() => setView(n.key)}>
-            {n.label}
-          </button>
-        ))}
-        <span style={{ marginLeft: "auto", fontSize: 12, color: "#6b7280" }}>
-          SpecModule Webview
-        </span>
-      </nav>
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        {view === "modules" && <ModulesView onLaunched={handleLaunched} />}
-        {view === "runs" && (
-          <div style={{ flex: 1, minWidth: 0, display: "flex" }}>
-            <RunsView
-              runs={runs}
-              current={runId}
-              onSelect={openRun}
-              onControl={handleListControl}
-              onResume={handleListResume}
-              onDeleted={handleDeleted}
-            />
-          </div>
+    <div className="flex h-full w-full overflow-hidden">
+      <ActivityBar tab={tab} onTab={setTab} />
+
+      {/* 侧边栏（页签内容） */}
+      <aside className="flex h-full w-[280px] shrink-0 flex-col border-r bg-sidebar">
+        {tab === "modules" ? (
+          <ModuleList selected={openModuleName} onSelect={setOpenModuleName} />
+        ) : (
+          <RunList
+            runs={runs}
+            current={openRunId}
+            onSelect={openRun}
+            onControl={handleListControl}
+            onResume={handleListResume}
+            onDeleted={handleDeleted}
+          />
         )}
-        {view === "run" &&
-          (runId ? (
-            <RunView
-              runId={runId}
-              resumeRequest={resumeRequest}
-              onResumeRequestConsumed={consumeResumeRequest}
-              onRequestResume={(rid) => setResumeRequest({ runId: rid, seq: Date.now() })}
-              onRefreshRuns={refreshRuns}
-            />
+      </aside>
+
+      {/* 主区（内容随选择变化） */}
+      <main className="flex h-full min-w-0 flex-1 flex-col bg-background">
+        {tab === "modules" ? (
+          openModuleName ? (
+            <ModuleDetail key={openModuleName} name={openModuleName} onLaunched={handleLaunched} />
           ) : (
-            <div style={{ flex: 1, padding: 12, color: "#9ca3af" }}>
-              未打开任何 run——从「运行历史」选择或到「模块库」发起运行。
-            </div>
-          ))}
-      </div>
+            <EmptyState icon="📦" title="未选择模块" hint="从左侧模块库选择，查看详情并发起运行" />
+          )
+        ) : openRunId ? (
+          <RunView
+            key={openRunId}
+            runId={openRunId}
+            resumeRequest={resumeRequest}
+            onResumeRequestConsumed={consumeResumeRequest}
+            onRequestResume={(rid) => setResumeRequest({ runId: rid, seq: Date.now() })}
+            onRefreshRuns={refreshRuns}
+          />
+        ) : (
+          <EmptyState
+            icon="🧭"
+            title="未打开任何 run"
+            hint="从左侧运行历史选择，或到「模块库」发起一个运行"
+          />
+        )}
+      </main>
     </div>
   );
 }
