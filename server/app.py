@@ -11,6 +11,8 @@ from server.api import runs
 from server.api import manage
 from server.api import graph
 from server.api import control
+from server.chat import mount_chat
+from server.deps import get_base_dir
 from server.ws import router as ws_router
 
 app = FastAPI(title="SpecModule Webview", version="0.1.0")
@@ -33,3 +35,5 @@ app.include_router(manage.router)
 app.include_router(graph.router)
 app.include_router(control.router)
 app.include_router(ws_router)
+# TreeChat 对话服务（/treechat/api/*）：treechat 未安装时自动跳过，其余不受影响
+mount_chat(app, get_base_dir())
