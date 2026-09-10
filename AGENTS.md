@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-`SpecModule_webview` is the **visualization consumption channel** for the SpecModule LLM framework: an independent frontend SPA + FastAPI thin backend that visualizes and manages specmodule runs. The library lives in the sibling repo [SpecModule](https://github.com/MountLynx/SpecModule) (PyPI package `specmodule`). The library's own stdlib visualization switch (`module_harness/feed.py`, zero-dependency http.server) only provides the minimal "see it running" form; **all rich interaction lives here**.
+`SpecModule_webview` is the **visualization consumption channel** for the SpecModule LLM framework: an independent frontend SPA + FastAPI thin backend that visualizes and manages specmodule runs. The library lives in the sibling repo [SpecModule](https://github.com/MountLynx/SpecModule) (PyPI package `specmodule`). The library's own stdlib visualization switch (`module_harness/orchestrate/feed.py`, zero-dependency http.server) only provides the minimal "see it running" form; **all rich interaction lives here**.
 
-**Thin layer, zero business logic.** The library's query functions map 1:1 to HTTP endpoints; `module_harness/query.py` was explicitly designed as the shared query layer for CLI/MCP/Web consumers. Import it, never reimplement. Anything that looks like logic belongs upstream in the library repo (see 统一 API 原则 below).
+**Thin layer, zero business logic.** The library's query functions map 1:1 to HTTP endpoints; `module_harness/infra/query.py` was explicitly designed as the shared query layer for CLI/MCP/Web consumers. Import it, never reimplement. Anything that looks like logic belongs upstream in the library repo (see 统一 API 原则 below).
 
 **Current state: 阶段 0 HTTP 后端层 + 阶段 1 运行时图视图 + 运行控制（cancel/pause/resume/rollback）已落地**（2026-08-29 / 2026-08-31 实施，设计定稿见 roadmap「运行时图视图设计」「运行控制设计」节）：`server/` FastAPI 薄层（运行读端点 + 图端点 + 控制面端点 + WS 流）与 `web/` SPA（Vite + React + React Flow + dagre）均已实现、测试全绿；后续切片（状态面板/审阅时间线/产出对比/管理面）按 roadmap 阶段 1/2 推进。Acceptance target: M1 + M2 modules fully wired — runtime visualization + output comparison.
 
@@ -42,7 +42,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 
 **Run lifecycle.** `Module.run()` is a coroutine that completes when the run finishes — in-process cancel = cancel the asyncio task; `max_ticks` (default 100) is the only run limit. `status.json` phase machine: `idle → translating → reviewing → building → ready → running → done | aborted | cancelled | truncated`（truncated = max_ticks 耗尽，终态可 resume）。 `status.json` is written atomically by the Module at every phase; `run.sqlite` gets a snapshot every tick (persist mode). The `feed.py` polling pattern (`GET /feed.json?run_id=` composing status+timeline+checkpoints) is the reference for both the compat endpoint and the WS stream design.
 
-**Run control (cross-process).** cancel/pause ride the library `control.json` protocol (`module_harness/control.py`; library hooks consume requests at tick boundaries — **cancel is consumed at `on_tick_end`**: the engine rewrites `runner.status` at every tick end, so a CANCELLED set at tick_start is clobbered; pause holds at tick_start until unpause/cancel). `Module(control=False)` disables. Requests are one-shot (delete-on-consume) and `run()/resume()` clears stale requests at start. Resume/rollback after end = the library `Module.resume(rollback_to)` semantics (tick / `manual:<label>` / latest, with compat hard-checks), executed by the server **spawning the official CLI** (`specmodule resume`) as a subprocess — CLI wiring (spec resolution, LLM client, module resolution) is reused wholesale, never duplicated in server code; spec/tasklist go through temp files (`--spec-file`/`--tasklist`, Windows argv length limits). The child writes `status.json`/`run.sqlite` → the existing WS stream monitors it with zero extra plumbing. An in-memory registry (`{run_id: Popen}`) enforces single-writer (409 on double spawn); server restart loses the registry but the child keeps running (monitoring only depends on artifacts).
+**Run control (cross-process).** cancel/pause ride the library `control.json` protocol (`module_harness/infra/control.py`; library hooks consume requests at tick boundaries — **cancel is consumed at `on_tick_end`**: the engine rewrites `runner.status` at every tick end, so a CANCELLED set at tick_start is clobbered; pause holds at tick_start until unpause/cancel). `Module(control=False)` disables. Requests are one-shot (delete-on-consume) and `run()/resume()` clears stale requests at start. Resume/rollback after end = the library `Module.resume(rollback_to)` semantics (tick / `manual:<label>` / latest, with compat hard-checks), executed by the server **spawning the official CLI** (`specmodule resume`) as a subprocess — CLI wiring (spec resolution, LLM client, module resolution) is reused wholesale, never duplicated in server code; spec/tasklist go through temp files (`--spec-file`/`--tasklist`, Windows argv length limits). The child writes `status.json`/`run.sqlite` → the existing WS stream monitors it with zero extra plumbing. An in-memory registry (`{run_id: Popen}`) enforces single-writer (409 on double spawn); server restart loses the registry but the child keeps running (monitoring only depends on artifacts).
 
 **Monitoring.** Progress rides runner hooks `hooks={"on_tick_start": cb(tick, fireable), "on_fire": cb(NodeState), …}` and `EventBus` typed events. Persistence is file-based and cross-process readable: `run.sqlite` (tables `snapshots`, `firings`, `checkpoints`, `module_inputs`; WAL) + `status.json`.
 
@@ -122,11 +122,11 @@ Python ≥3.10 (library dev'd on 3.13). No lint/format/type tooling in this ecos
 ## Important Files
 
 - `roadmap.md` — the plan: architecture, endpoint list, data contracts, phase breakdown, change log. Re-read before implementing.
-- `../SpecModule/module_harness/query.py` — the shared query layer to import (timeline/checkpoint dict shapes).
-- `../SpecModule/module_harness/feed.py` — reference JSON composition + polling pattern for the compat endpoint and WS stream.
-- `../SpecModule/module_harness/status.py` — `ModuleStatus` fields + phase machine.
-- `../SpecModule/module_harness/graph_builder.py`, `translator.py` — graph render backend (tickflow `Graph` output); 序列化 `query.graph_to_dict` 与归档重建 `query.build_run_graph` 均在库共享层（`server/api/graph.py` 只薄调用 + 状态叠加）。
-- `../SpecModule/module_harness/store.py` — `list_modules` for the management surface.
+- `../SpecModule/module_harness/infra/query.py` — the shared query layer to import (timeline/checkpoint dict shapes).
+- `../SpecModule/module_harness/orchestrate/feed.py` — reference JSON composition + polling pattern for the compat endpoint and WS stream.
+- `../SpecModule/module_harness/infra/status.py` — `ModuleStatus` fields + phase machine.
+- `../SpecModule/module_harness/orchestrate/graph_builder.py`, `translator.py` — graph render backend (tickflow `Graph` output); 序列化 `query.graph_to_dict` 与归档重建 `query.build_run_graph` 均在库共享层（`server/api/graph.py` 只薄调用 + 状态叠加）。
+- `../SpecModule/module_harness/infra/store.py` — `list_modules` for the management surface.
 - `../SpecModule/docs/references/api.md` — 库面编程 API 参考（按消费增量生长，本仓库消费新 API 必须同步补录）；`cli-usage.md` — parameter semantics for every operation.
 - `../SpecModule/AGENTS.md` — sibling guidelines (architecture rules, gotchas); mirror its conventions.
 

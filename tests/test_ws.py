@@ -48,7 +48,7 @@ class TestStream:
 
     def test_paused_flag_from_control(self, base, client):
         """暂停中（control.json pause 挂起）→ 首推带 paused=True。"""
-        from module_harness.control import request_control
+        from module_harness.infra.control import request_control
 
         seed_run(base, "ws_paused", status={"module_id": "ws_paused", "phase": "running", "updated_at": 1.0})
         request_control("ws_paused", "pause", base_dir=base)

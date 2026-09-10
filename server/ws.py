@@ -8,10 +8,10 @@ import os
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from module_harness import control
-from module_harness.query import read_stream
-from module_harness.status import query_run_status
-from module_harness.stream import stream_log_path
+from module_harness.infra import control
+from module_harness.infra.query import read_stream
+from module_harness.infra.status import query_run_status
+from module_harness.infra.stream import stream_log_path
 from server.deps import get_base_dir, is_valid_run_id
 
 router = APIRouter()

@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from module_harness import query, store
-from module_harness.status import query_run_status
+from module_harness.infra.status import query_run_status
 from server.deps import get_base_dir, get_search_paths, validate_run_id
 
 router = APIRouter(prefix="/api/runs")

@@ -8,8 +8,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from module_harness import control, query
-from module_harness.status import query_run_status
+from module_harness.infra import control, query
+from module_harness.infra.status import query_run_status
 from server.deps import get_base_dir, validate_run_id
 
 router = APIRouter(prefix="/api/runs")

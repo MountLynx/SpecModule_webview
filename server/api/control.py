@@ -2,7 +2,7 @@
 """控制面端点：运行控制（cancel/pause/unpause）+ 发起运行 + 恢复/回退 + 进程观测。
 
 - control 两端点 = 库 `control.request_control`/`read_control` 薄映射
-  （控制文件协议，见库 api.md `module_harness.control`）。
+  （控制文件协议，见库 api.md `module_harness.infra.control`）。
 - `GET /inputs` = 库 `query.read_module_inputs` 薄映射（resume 预填）。
 - `POST /runs` / `POST /resume` = 子进程拉起官方 CLI（`run` / `resume`）：运行
   是长任务，且 spec/LLM/模块解析接线必须复用 CLI（消费端重复接线即违规）——
@@ -30,8 +30,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from module_harness import control, query, store
-from module_harness.status import query_run_status
+from module_harness.infra import control, query, store
+from module_harness.infra.status import query_run_status
 from server.deps import get_base_dir, get_search_paths, validate_run_id
 
 router = APIRouter(prefix="/api/runs")

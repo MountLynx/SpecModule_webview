@@ -7,9 +7,9 @@ import json
 
 # 最小 entry 模块源码：只依赖库自身（可放任意 modules/ 目录被发现）
 BASE_MODULE_SRC = '''"""运行根 modules/ 锚定测试模块（零第三方依赖）。"""
-from module_harness.entry import ModuleEntry
-from module_harness.events import EventBus
-from module_harness.registry import HarnessRegistry
+from module_harness.cli.entry import ModuleEntry
+from module_harness.infra.events import EventBus
+from module_harness.core.registry import HarnessRegistry
 
 
 def _registry_for(llm_client, template_name, event_bus):

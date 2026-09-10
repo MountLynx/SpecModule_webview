@@ -33,7 +33,7 @@ def seed_run(
     inputs: dict | None = None,
 ) -> Path:
     """造最小 fixture run：run.sqlite（firings/snapshots/module_inputs）+ status.json。"""
-    from module_harness.checkpoint import ModuleInputStore
+    from module_harness.infra.checkpoint import ModuleInputStore
     from tickflow.persistence import SqliteBackend
     from tickflow.state import NodeState
 
