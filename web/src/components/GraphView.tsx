@@ -18,6 +18,12 @@ import { Button } from "./ui/button";
 
 const nodeTypes: NodeTypes = { status: StatusNode };
 
+/** 与 index.html 初始化同优先级：localStorage 覆盖 > 跟随系统 */
+function themeColorMode(): "light" | "dark" | "system" {
+  const t = localStorage.getItem("specmodule-webview.theme");
+  return t === "dark" || t === "light" ? t : "system";
+}
+
 type Props = {
   payload: GraphPayload;
   status: StatusCore | null;
@@ -27,6 +33,7 @@ type Props = {
 
 function GraphCanvas({ payload, status, selected, onSelect }: Props) {
   const { fitView } = useReactFlow();
+  const colorMode = useMemo(() => themeColorMode(), []);
   const followRef = useRef(true); // 跟随模式（默认开；用户拖动即关）
   const fitLockRef = useRef(false); // 程序化 fitView 期间不误判为手动
 
@@ -118,7 +125,7 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
         onMoveStart={onMoveStart}
         onNodeClick={(_, n) => onSelect(n.id)}
         onPaneClick={() => onSelect(null)}
-        colorMode="system"
+        colorMode={colorMode}
         fitView
         minZoom={0.2}
         maxZoom={2}

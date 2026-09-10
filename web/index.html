@@ -5,10 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
       (function () {
+        var mql = window.matchMedia("(prefers-color-scheme: dark)");
         var t = localStorage.getItem("specmodule-webview.theme");
-        if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
-          document.documentElement.classList.add("dark");
-        }
+        var apply = function () {
+          document.documentElement.classList.toggle("dark", t === "dark" || (!t && mql.matches));
+        };
+        apply();
+        if (!t && mql.addEventListener) mql.addEventListener("change", apply);
       })();
     </script>
     <title>SpecModule Webview</title>

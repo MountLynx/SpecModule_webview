@@ -45,7 +45,13 @@ export function NodePanel({
     <aside className="w-[380px] shrink-0 overflow-y-auto border-l bg-sidebar">
       <header className="flex items-center justify-between px-3.5 py-2.5">
         <h3 className="m-0 text-[13px] font-bold">{node.id}</h3>
-        <button className="text-muted-foreground hover:text-foreground" onClick={onClose}>×</button>
+        <button
+          aria-label="关闭面板"
+          className="rounded-[5px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={onClose}
+        >
+          ×
+        </button>
       </header>
       <div className="px-3.5 pb-3.5 text-[11.5px]">
         <p className="m-0 text-muted-foreground">

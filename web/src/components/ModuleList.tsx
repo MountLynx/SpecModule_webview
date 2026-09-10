@@ -7,7 +7,7 @@ import { cn } from "../lib/utils";
 /** kind 徽章底色（沿用旧 KIND_COLOR 现值） */
 /* 与 ModuleDetail 的 KIND_BADGE 保持同步（List/Detail 两处小映射，暂不提取共享） */
 const KIND_BADGE: Record<string, string> = {
-  entry: "bg-[#2563eb]",
+  entry: "bg-[var(--ph-running)]",
   packed: "bg-[#7c3aed]",
   pip: "bg-[#0891b2]",
 };

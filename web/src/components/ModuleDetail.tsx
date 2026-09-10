@@ -22,7 +22,7 @@ function randHex6(): string {
 
 /* 与 ModuleList 的 KIND_BADGE 保持同步（List/Detail 两处小映射，暂不提取共享） */
 const KIND_BADGE: Record<string, string> = {
-  entry: "bg-[#2563eb]",
+  entry: "bg-[var(--ph-running)]",
   packed: "bg-[#7c3aed]",
   pip: "bg-[#0891b2]",
 };

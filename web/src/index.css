@@ -60,6 +60,12 @@
     --sidebar-selected: 0 0% 29.8%;
     --activitybar: 0 0% 14%;
     --activitybar-foreground: 0 0% 70%;
+
+    --ph-running: #60a5fa;
+    --ph-done: #4ade80;
+    --ph-aborted: #f87171;
+    --ph-cancelled: #fcd34d;
+    --ph-truncated: #fbbf24;
   }
 
   * {
