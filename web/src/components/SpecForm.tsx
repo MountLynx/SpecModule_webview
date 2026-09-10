@@ -11,13 +11,13 @@
 //   default_spec 回落）。
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { jsonFieldError } from "./dialogStyles";
+import { jsonFieldError } from "../lib/json";
 
 const labelStyle: CSSProperties = { fontWeight: 600, marginBottom: 2 };
 const inputStyle: CSSProperties = { width: "100%", boxSizing: "border-box" };
 const monoStyle: CSSProperties = { fontFamily: "monospace" };
-const errStyle: CSSProperties = { color: "#b91c1c", fontSize: 12 };
-const badOutline: CSSProperties = { outline: "2px solid #dc2626" };
+const errStyle: CSSProperties = { color: "hsl(var(--destructive))", fontSize: 12 };
+const badOutline: CSSProperties = { outline: "2px solid hsl(var(--destructive))" };
 
 /** schema 类型名 → 归一控件类型（未知类型串按 JSON 子编辑器处理）。 */
 function normType(t: string): "str" | "int" | "float" | "bool" | "json" {
@@ -124,7 +124,7 @@ export function SpecForm({ schema, defaultSpec, onChange }: SpecFormProps) {
   const report = (next: Record<string, unknown> | null, touched?: boolean) => {
     onChange(next, touched ?? touchedRef.current);
   };
-  // 初值上报（RunDialog 以此驱动提交禁用逻辑）
+  // 初值上报（ModuleDetail 内嵌表单以此驱动提交禁用逻辑）
   const reportedRef = useRef(false);
   useEffect(() => {
     if (!reportedRef.current) {
@@ -217,7 +217,7 @@ export function SpecForm({ schema, defaultSpec, onChange }: SpecFormProps) {
             <div key={`${key}:${fieldEpoch}`}>
               <div style={labelStyle}>
                 {key}
-                <span style={{ fontWeight: 400, color: "#6b7280" }}>（{type}）</span>
+                <span style={{ fontWeight: 400, color: "hsl(var(--muted-foreground))" }}>（{type}）</span>
               </div>
               {type === "str" ? (
                 typeof v === "string" && (v.length > 60 || v.includes("\n")) ? (

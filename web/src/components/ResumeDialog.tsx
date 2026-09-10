@@ -8,7 +8,10 @@ import {
   type CheckpointTarget,
   type PreflightResult,
 } from "../api";
-import { btnStyle, dialogStyle, fieldLabel, jsonFieldError, overlayStyle } from "./dialogStyles";
+import { jsonFieldError } from "../lib/json";
+import { cn } from "../lib/utils";
+import { Button } from "./ui/button";
+import { badOutlineCls, errTextCls, fieldCls, labelCls, okTextCls, overlayCls, panelCls, warnTextCls } from "./dialogTheme";
 
 interface ResumeDialogProps {
   runId: string;
@@ -174,20 +177,18 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
     }
   };
 
-  const badTextarea: React.CSSProperties = { outline: "2px solid #dc2626" };
-
   return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div style={dialogStyle} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontWeight: 700, fontSize: 14 }}>
+    <div className={overlayCls} onClick={onClose}>
+      <div className={panelCls} onClick={(e) => e.stopPropagation()}>
+        <div className="text-[13.5px] font-bold">
           恢复 / 回退：<code>{runId}</code>
         </div>
         <div>
-          <div style={fieldLabel}>回退目标（缺省 = 最新快照续跑）</div>
+          <div className={labelCls}>回退目标（缺省 = 最新快照续跑）</div>
           <select
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            style={{ width: "100%" }}
+            className={fieldCls}
           >
             <option value="">最新快照（续跑）</option>
             {(targets ?? []).map((c) => (
@@ -200,22 +201,22 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
             const sel = (targets ?? []).find((c) => c.target === target);
             const fired = sel ? firedOf(sel, targets) : [];
             return fired.length > 0 ? (
-              <div style={{ fontSize: 11, color: "#6b7280" }}>
+              <div className="text-[11px] text-muted-foreground">
                 目标时点已执行：{fired.join("、")}
               </div>
             ) : null;
           })()}
         </div>
         <div>
-          <div style={fieldLabel}>模块名（须与先前 run 一致）</div>
+          <div className={labelCls}>模块名（须与先前 run 一致）</div>
           <input
             value={module}
             onChange={(e) => setModule(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box" }}
+            className="w-full"
           />
         </div>
         <div>
-          <div style={fieldLabel}>
+          <div className={labelCls}>
             spec（JSON，可改后重传；留空 = 用模块缺省 spec）
           </div>
           <textarea
@@ -226,17 +227,12 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
             }}
             rows={8}
             spellCheck={false}
-            style={{
-              width: "100%",
-              fontFamily: "monospace",
-              boxSizing: "border-box",
-              ...(specErr ? badTextarea : {}),
-            }}
+            className={cn("w-full font-mono", specErr && badOutlineCls)}
           />
-          {specErr && <div style={{ color: "#b91c1c", fontSize: 12 }}>spec {specErr}</div>}
+          {specErr && <div className={errTextCls}>spec {specErr}</div>}
         </div>
         <div>
-          <div style={fieldLabel}>
+          <div className={labelCls}>
             tasklist（JSON，可改后重传；留空 = 用归档/模块缺省流程；与模板通道互斥）
           </div>
           <textarea
@@ -248,15 +244,10 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
             rows={8}
             spellCheck={false}
             placeholder="留空使用归档 tasklist；或从文件载入"
-            style={{
-              width: "100%",
-              fontFamily: "monospace",
-              boxSizing: "border-box",
-              ...(tasklistErr ? badTextarea : {}),
-            }}
+            className={cn("w-full font-mono", tasklistErr && badOutlineCls)}
           />
-          {tasklistErr && <div style={{ color: "#b91c1c", fontSize: 12 }}>tasklist {tasklistErr}</div>}
-          <div style={{ marginTop: 4 }}>
+          {tasklistErr && <div className={errTextCls}>tasklist {tasklistErr}</div>}
+          <div className="mt-1">
             <input
               type="file"
               accept=".json,application/json"
@@ -264,7 +255,7 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
             />
           </div>
         </div>
-        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+        <div className="flex flex-wrap items-center gap-4">
           <label>
             <input
               type="checkbox"
@@ -295,41 +286,41 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
           )}
         </div>
         <div>
-          <div style={fieldLabel}>
+          <div className={labelCls}>
             兼容性预检
-            {preflightBusy && <span style={{ fontWeight: 400, color: "#6b7280" }}>（检查中…）</span>}
+            {preflightBusy && <span className="font-normal text-muted-foreground">（检查中…）</span>}
           </div>
-          {preflightErr && <div style={{ color: "#b45309", fontSize: 12 }}>预检不可用：{preflightErr}</div>}
+          {preflightErr && <div className={warnTextCls}>预检不可用：{preflightErr}</div>}
           {preflight && (
             <>
               {preflight.hard_errors.length > 0 && (
-                <div style={{ color: "#b91c1c", fontSize: 12 }}>
+                <div className={errTextCls}>
                   {preflight.hard_errors.map((e, i) => <div key={i}>✗ {e}</div>)}
                 </div>
               )}
               {preflight.warnings.length > 0 && (
-                <div style={{ color: "#b45309", fontSize: 12 }}>
+                <div className={warnTextCls}>
                   {preflight.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
                 </div>
               )}
               {preflight.hard_errors.length === 0 && preflight.warnings.length === 0 && (
-                <div style={{ color: "#16a34a", fontSize: 12 }}>✓ 未发现兼容性问题（回退目标 tick {preflight.target_tick}）</div>
+                <div className={okTextCls}>✓ 未发现兼容性问题（回退目标 tick {preflight.target_tick}）</div>
               )}
             </>
           )}
         </div>
-        {err && <div style={{ color: "#b91c1c" }}>{err}</div>}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button style={btnStyle} onClick={onClose} disabled={busy}>
+        {err && <div className="text-[12.5px] text-destructive">{err}</div>}
+        <div className="mt-1 flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
             取消
-          </button>
-          <button
-            style={btnStyle}
+          </Button>
+          <Button
+            size="sm"
             onClick={submit}
             disabled={busy || (preflight != null && preflight.hard_errors.length > 0)}
           >
             {busy ? "启动中…" : "启动恢复"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

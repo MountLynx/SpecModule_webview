@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { ApiError, postCheckpoint } from "../api";
-import { btnStyle, dialogStyle, fieldLabel, overlayStyle } from "./dialogStyles";
+import { cn } from "../lib/utils";
+import { Button } from "./ui/button";
+import { labelCls, overlayCls, panelCls, panelNarrowCls } from "./dialogTheme";
 
 interface CheckpointDialogProps {
   runId: string;
@@ -40,9 +42,9 @@ function CheckpointDialog({ runId, onClose, onCreated }: CheckpointDialogProps) 
   };
 
   return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div style={{ ...dialogStyle, width: 420 }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontWeight: 700, fontSize: 14 }}>
+    <div className={overlayCls} onClick={onClose}>
+      <div className={cn(panelCls, panelNarrowCls)} onClick={(e) => e.stopPropagation()}>
+        <div className="text-[13.5px] font-bold">
           存手动检查点：<code>{runId}</code>
         </div>
         {done ? (
@@ -51,36 +53,36 @@ function CheckpointDialog({ runId, onClose, onCreated }: CheckpointDialogProps) 
               已保存 <code>{done.label}</code>（tick {done.tick}）
               {done.overwritten && "（覆盖同名旧检查点）"}
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button style={btnStyle} onClick={onClose}>关闭</button>
+            <div className="mt-1 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={onClose}>关闭</Button>
             </div>
           </>
         ) : (
           <>
             <div>
-              <div style={fieldLabel}>label（回退目标形如 manual:&lt;label&gt;）</div>
+              <div className={labelCls}>label（回退目标形如 manual:&lt;label&gt;）</div>
               <input
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder="如 before-policy-change"
-                style={{ width: "100%", boxSizing: "border-box" }}
+                className="w-full"
               />
             </div>
             <div>
-              <div style={fieldLabel}>tick（缺省 = 最新快照）</div>
+              <div className={labelCls}>tick（缺省 = 最新快照）</div>
               <input
                 value={tickText}
                 onChange={(e) => setTickText(e.target.value)}
                 placeholder="留空 = 最新"
-                style={{ width: "100%", boxSizing: "border-box" }}
+                className="w-full"
               />
             </div>
-            {err && <div style={{ color: "#b91c1c" }}>{err}</div>}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button style={btnStyle} onClick={onClose} disabled={busy}>取消</button>
-              <button style={btnStyle} onClick={submit} disabled={busy}>
+            {err && <div className="text-[12.5px] text-destructive">{err}</div>}
+            <div className="mt-1 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>取消</Button>
+              <Button size="sm" onClick={submit} disabled={busy}>
                 {busy ? "保存中…" : "保存检查点"}
-              </button>
+              </Button>
             </div>
           </>
         )}

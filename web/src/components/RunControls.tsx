@@ -1,6 +1,8 @@
+// 头部控制条：phase 感知的运行控制（暂停/继续/取消/终止恢复进程）+ 存检查点 +
+// 终态恢复/回退入口。控制逻辑（含 resumeRequest runId+seq 守卫）不变，仅换皮。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { postControl, TERMINAL_PHASES, type ControlAction } from "../api";
-import { btnStyle } from "./dialogStyles";
+import { Button } from "./ui/button";
 import { ResumeDialog } from "./ResumeDialog";
 import { CheckpointDialog } from "./CheckpointDialog";
 
@@ -21,7 +23,6 @@ interface RunControlsProps {
   onTerminate: () => void;
 }
 
-/** 头部控制条：phase 感知的运行控制（暂停/继续/取消/终止恢复进程）+ 存检查点 + 终态恢复/回退入口。 */
 export function RunControls({
   runId,
   phase,
@@ -72,37 +73,41 @@ export function RunControls({
   }, [resumeRequest, runId, onResumeRequestConsumed]);
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+    <div className="ml-auto flex items-center gap-2">
       {paused && (
-        <span style={{ color: "#b45309", fontWeight: 600 }}>⏸ 已暂停</span>
+        <span className="text-[12.5px] font-semibold text-[var(--ph-cancelled)]">⏸ 已暂停</span>
       )}
       {running && !paused && (
-        <button style={btnStyle} disabled={busy} onClick={() => act("pause")}>
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => act("pause")}>
           暂停
-        </button>
+        </Button>
       )}
       {running && paused && (
-        <button style={btnStyle} disabled={busy} onClick={() => act("unpause")}>
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => act("unpause")}>
           继续
-        </button>
+        </Button>
       )}
       {running && (
-        <button
-          style={{ ...btnStyle, color: "#b91c1c" }}
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-destructive"
           disabled={busy}
           onClick={() => {
             if (window.confirm("取消该运行？（已落盘，可稍后恢复/回退）")) act("cancel");
           }}
         >
           取消
-        </button>
+        </Button>
       )}
-      <button style={btnStyle} disabled={busy} onClick={() => setCpOpen(true)}>
+      <Button variant="outline" size="sm" disabled={busy} onClick={() => setCpOpen(true)}>
         存检查点…
-      </button>
+      </Button>
       {procRunning && (
-        <button
-          style={{ ...btnStyle, color: "#b91c1c" }}
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-destructive"
           disabled={busy}
           onClick={() => {
             if (window.confirm("硬终止恢复子进程？（不写终态，status 停留 running；之后可强制恢复）")) {
@@ -111,14 +116,14 @@ export function RunControls({
           }}
         >
           终止进程
-        </button>
+        </Button>
       )}
       {resumable && (
-        <button style={btnStyle} disabled={busy} onClick={() => setDialogOpen(true)}>
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => setDialogOpen(true)}>
           恢复 / 回退…
-        </button>
+        </Button>
       )}
-      {err && <span style={{ color: "#b91c1c" }}>{err}</span>}
+      {err && <span className="text-[12px] text-destructive">{err}</span>}
       {dialogOpen && (
         <ResumeDialog
           runId={runId}
