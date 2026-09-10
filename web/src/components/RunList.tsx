@@ -28,6 +28,7 @@ const PHASE_LABEL: Record<string, string> = {
 };
 
 /** 行内小控制钮统一规格 */
+// 不含 rounded：twMerge 不识别自定义 rounded 键，与 size=sm 的 rounded-control 合并不会去重
 const ctlBtn = "h-5 px-1.5 text-[10.5px]";
 
 interface RunListProps {
@@ -79,7 +80,11 @@ export function RunList({
       <div className="flex items-center gap-2 px-3.5 pb-2 pt-2.5 text-[12.5px] font-bold">
         运行历史
         <span className="font-normal text-muted-foreground">{runs.length} 条</span>
-        {err && <span className="truncate font-normal text-[11.5px] text-destructive">{err}</span>}
+        {err && (
+          <span title={err} className="truncate font-normal text-[11.5px] text-destructive">
+            {err}
+          </span>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
         {runs.map((r) => {
@@ -88,9 +93,17 @@ export function RunList({
           return (
             <div
               key={r.run_id}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect(r.run_id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelect(r.run_id);
+                }
+              }}
               className={cn(
-                "mb-px cursor-pointer rounded-[7px] px-2.5 py-[7px] hover:bg-accent",
+                "mb-px cursor-pointer rounded-[7px] px-2.5 py-[7px] hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                 r.run_id === current && "bg-sidebar-selected",
               )}
             >
