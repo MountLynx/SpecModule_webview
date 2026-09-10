@@ -1,12 +1,16 @@
-// 最左活动栏（VSCode 式，结构移植自 TreeChat webui）：图标 = 侧边栏页签；
-// 底部设置占位。二期对话功能（对话/对话树/卡片）在此之上追加图标。
+// 最左活动栏（VSCode 式，结构移植自 TreeChat webui）：图标 = 侧边栏页签切换。
+// 二期页签制语义：chat/tree/cards 中 tree/cards 是「页签配套功能」（内容随激活
+// chat 页签切换）；chat/modules/runs/settings 是「全局功能」（不随页签变）。
 import type { ComponentType } from "react";
-import { Boxes, List, Settings } from "lucide-react";
+import { Boxes, GitFork, Layers, List, MessageSquare, Settings } from "lucide-react";
 import { cn } from "../lib/utils";
 
-export type Tab = "modules" | "runs";
+export type Tab = "chat" | "tree" | "cards" | "modules" | "runs" | "settings";
 
 const TABS: { key: Tab; label: string; icon: ComponentType<{ className?: string }> }[] = [
+  { key: "chat", label: "对话", icon: MessageSquare },
+  { key: "tree", label: "对话树（随激活对话页签）", icon: GitFork },
+  { key: "cards", label: "卡片（随激活对话页签）", icon: Layers },
   { key: "modules", label: "模块库", icon: Boxes },
   { key: "runs", label: "运行历史", icon: List },
 ];
@@ -38,13 +42,7 @@ export function ActivityBar({ tab, onTab }: Props) {
     <nav className="flex h-full w-12 shrink-0 flex-col items-center bg-activitybar text-activitybar-foreground">
       <div className="flex w-full flex-col">{TABS.map((t) => item(t.key, t.label, t.icon))}</div>
       <div className="flex-1" />
-      <button
-        title="设置（占位）"
-        disabled
-        className="flex h-12 w-full cursor-default items-center justify-center text-activitybar-foreground/50"
-      >
-        <Settings className="h-5 w-5" />
-      </button>
+      {item("settings", "设置", Settings)}
     </nav>
   );
 }
