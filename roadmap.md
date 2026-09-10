@@ -364,3 +364,20 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   `docs/superpowers/specs/2026-09-10-treechat-integration-phase1-shell-design.md`；
   计划：`docs/superpowers/plans/2026-09-10-treechat-integration-phase1-shell.md`。
   二期将并入 TreeChat 对话引擎（对话/树/卡片页签 + 服务层挂载）。
+- 2026-09-10 **TreeChat 整合第二期：对话引擎并入 + 顶部页签制**——server 增
+  `chat.py mount_chat`：`treechat/webapp create_app` 整树挂载于 `/treechat`（统一 API
+  原则——库自带服务层零重复接线），`client_factory` 锚定 `project_root=base_dir` 复用
+  SpecModule 配置回退链（与 run 侧共用 config/env/llm 客户端），会话数据落
+  `<base_dir>/.treechat`（`TREECHAT_DATA_DIR` 可覆盖），treechat 未安装自动降级跳过；
+  测试 `tests/test_chat_mount.py` 7 例（健康/生命周期/stub 轮次/502 契约/非法 sid）。
+  前端（新增 Radix dialog/dropdown-menu/alert-dialog + react-markdown + remark-gfm）：
+  壳层重写为**顶部页签制**——📦 模块库固定页签 + chat 会话/run 视图动态页签多实例
+  共存（点选侧栏列表项=开/激活页签，关闭激活页签回落相邻→模块库）；活动栏追加
+  💬对话/🌿对话树/🗂卡片/⚙设置，**侧边栏语义**：对话树/卡片为「页签配套功能」（内容
+  随激活 chat 页签切换），对话列表/模块库/运行历史/设置为「全局功能」（不随页签变，
+  只变选中高亮）；会话状态升级按 sid 多实例（convs + 随行 UI 态缓存，切页签不丢）；
+  TreeChat 前端移植于 `src/chat/`（api 锚 `/treechat` 前缀；ChatList/Tree/Cards/Settings
+  由 webui tabs 改造为面板，conv 可空判空内聚）；vite proxy 追加 `/treechat`。
+  对话⇄run 联动留三期。设计：
+  `docs/superpowers/specs/2026-09-10-treechat-integration-phase2-chat-tabs-design.md`；
+  计划：`docs/superpowers/plans/2026-09-10-treechat-integration-phase2-chat-tabs.md`。

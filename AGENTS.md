@@ -6,7 +6,7 @@
 
 **Thin layer, zero business logic.** The library's query functions map 1:1 to HTTP endpoints; `module_harness/infra/query.py` was explicitly designed as the shared query layer for CLI/MCP/Web consumers. Import it, never reimplement. Anything that looks like logic belongs upstream in the library repo (see 统一 API 原则 below).
 
-**Current state: 阶段 0 HTTP 后端层 + 阶段 1 运行时图视图 + 运行控制（cancel/pause/resume/rollback）已落地**（2026-08-29 / 2026-08-31 实施，设计定稿见 roadmap「运行时图视图设计」「运行控制设计」节）：`server/` FastAPI 薄层（运行读端点 + 图端点 + 控制面端点 + WS 流）与 `web/` SPA（Vite + React + Tailwind + React Flow + dagre）均已实现、测试全绿；后续切片（状态面板/审阅时间线/产出对比/管理面）按 roadmap 阶段 1/2 推进。Acceptance target: M1 + M2 modules fully wired — runtime visualization + output comparison.
+**Current state: 阶段 0 HTTP 后端层 + 阶段 1 运行时图视图 + 运行控制（cancel/pause/resume/rollback）已落地**（2026-08-29 / 2026-08-31 实施，设计定稿见 roadmap「运行时图视图设计」「运行控制设计」节）：`server/` FastAPI 薄层（运行读端点 + 图端点 + 控制面端点 + WS 流）与 `web/` SPA（Vite + React + Tailwind + React Flow + dagre）均已实现、测试全绿；**TreeChat 整合一/二期已落地**（2026-09-10，见 docs/superpowers：一期壳层重组 + 二期对话引擎并入与顶部页签制——`server/chat.py` 整树挂载 `treechat/webapp` 于 `/treechat`，前端页签制壳多实例共存 chat/run）；后续（对话⇄run 联动三期、状态面板/审阅时间线/产出对比/管理面）按 roadmap 推进。Acceptance target: M1 + M2 modules fully wired — runtime visualization + output comparison.
 
 ## Architecture & Data Flow
 
@@ -39,6 +39,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 | `GET /api/runs/{id}/process` | server 内存进程注册表 + `process.log` 尾（8KB） | `{run_id, running, pid, started_at, log}`（resume 子进程观测；CLI 启动期失败只在此可见） |
 | `POST /api/runs/{id}/resume/preflight` | `query.check_resume_compat_from_run(module, run_id, new_tasklist=..., target=..., base_dir=...)`（库共享组合函数） | `{target, target_tick, executed_nodes, hard_errors, warnings}`；不 spawn 不写状态；兼容性 hard_errors 是 200 载荷；无 run.sqlite → 404、tasklist 非法/建图失败（ValueError）→ 400；`module` 缺省 = status.json 溯源 > run_id 启发式（注：库内部建图仍按 cwd 锚定解析，base_dir/modules 独有模块的预检需 SPECMODULE_PATH，残留缺口记后排） |
 | `POST /api/runs/{id}/process/terminate` | server 注册表 `Popen.terminate()`（Windows=硬杀） | `{run_id, terminated: true, pid}`；注册表无活进程 → 409（CLI 手起 run 不在观测范围）；不代写终态——status 残留 running 由前端停滞提示引导强制恢复 |
+| `/treechat/api/*`（整树挂载） | `treechat/webapp create_app`（treechat 库自带服务层，`server/chat.py mount_chat` 零重复接线） | 会话 CRUD/轮次/卡片/健康——REST 非流式，变更接口全量回流 ConvState；LLM 失败 → 502 `{error, state}`（user 节点已落盘可重试）；`client_factory` 锚定 `project_root=base_dir`（与 SpecModule 共用配置链/env/llm 客户端）；会话数据 `<base_dir>/.treechat`（`TREECHAT_DATA_DIR` 可覆盖）；treechat 未安装 → 跳过挂载，其余端点不受影响 |
 
 **Run lifecycle.** `Module.run()` is a coroutine that completes when the run finishes — in-process cancel = cancel the asyncio task; `max_ticks` (default 100) is the only run limit. `status.json` phase machine: `idle → translating → reviewing → building → ready → running → done | aborted | cancelled | truncated`（truncated = max_ticks 耗尽，终态可 resume）。 `status.json` is written atomically by the Module at every phase; `run.sqlite` gets a snapshot every tick (persist mode). The `feed.py` polling pattern (`GET /feed.json?run_id=` composing status+timeline+checkpoints) is the reference for both the compat endpoint and the WS stream design.
 
@@ -59,8 +60,8 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 ## Key Directories
 
 - repo root — this repo:
-  - `server/` — FastAPI thin layer: `app.py` (entry: CORS + router wiring), `deps.py` (base_dir/搜索路径解析 + run_id 校验), `api/runs.py` (runtime read endpoints), `api/graph.py` (run 图重建：`build_run_graph`/`graph_to_dict` 薄调用 + 每节点运行摘要叠加), `api/manage.py` (模块枚举 + 模块详情), `api/control.py` (运行控制 cancel/pause/unpause + 发起运行/删除 run + inputs 预填 + resume 子进程编排 + 进程观测), `ws.py` (tick 流实时推送)
-  - `web/` — Vite + React + TS + Tailwind + React Flow + dagre SPA（VSCode 式壳：活动栏 + 侧边栏导航 + 主区）：`src/App.tsx`（壳层：页签/打开的模块与 run/runs 轮询/恢复请求）+ `src/ws.ts`（WS 客户端，消息按 runId 打包防陈旧流）+ `components/`（ActivityBar 活动栏、ModuleList/ModuleDetail 模块库（发起表单内嵌主区）、RunList 运行历史侧栏、RunView 运行视图容器、GraphView/StatusNode 图与徽章、NodePanel 节点面板、RunControls 控制条 + 恢复对话框、dialogTheme 对话框共享类、ui/ 基件）+ `src/api.ts`（端点载荷类型）+ `src/lib/utils.ts`（cn/relativeTime）+ `src/lib/json.ts`
+  - `server/` — FastAPI thin layer: `app.py` (entry: CORS + router wiring), `deps.py` (base_dir/搜索路径解析 + run_id 校验), `api/runs.py` (runtime read endpoints), `api/graph.py` (run 图重建：`build_run_graph`/`graph_to_dict` 薄调用 + 每节点运行摘要叠加), `api/manage.py` (模块枚举 + 模块详情), `api/control.py` (运行控制 cancel/pause/unpause + 发起运行/删除 run + inputs 预填 + resume 子进程编排 + 进程观测), `chat.py` (TreeChat 整树挂载 `/treechat`——base_dir 锚定配置链与会话数据目录，treechat 缺席自动降级), `ws.py` (tick 流实时推送)
+  - `web/` — Vite + React + TS + Tailwind + React Flow + dagre SPA（页签制壳：顶部页签栏 + 活动栏 + 侧边栏）：`src/App.tsx`（壳层：顶部页签模型（modules 固定 + chat/run 多实例）/runs 轮询/按 sid 多实例会话状态/恢复请求）+ `src/ws.ts`（WS 客户端，消息按 runId 打包防陈旧流）+ `components/`（TabBar 顶部页签栏、ActivityBar 活动栏（chat/tree/cards/modules/runs/settings）、ModuleList/ModuleDetail 模块库（发起表单内嵌主区）、RunList 运行历史侧栏、RunView 运行视图容器、GraphView/StatusNode 图与徽章、NodePanel 节点面板、RunControls 控制条 + 恢复对话框、dialogTheme 对话框共享类、ui/ 基件含 Radix dialog/dropdown-menu/alert-dialog）+ `src/chat/`（TreeChat 移植：types/api（锚 `/treechat` 前缀）/treelayout/Markdown/ChatView/Composer + ChatListPanel/TreePanel/CardsPanel/SettingsPanel 侧栏面板）+ `src/api.ts`（端点载荷类型）+ `src/lib/utils.ts`（cn/relativeTime）+ `src/lib/json.ts`
   - `tests/` — pytest + httpx TestClient
   - `roadmap.md` — the plan: architecture, endpoint list, phase breakdown, acceptance criteria. Re-read before implementing.
 - `../SpecModule/` — the consumed library (read-only for this repo):
@@ -77,6 +78,9 @@ pip install specmodule
 # or editable against the sibling checkout
 pip install -e "../SpecModule"
 
+# TreeChat 对话服务（可选依赖：未安装则 /treechat 不挂载，运行管理不受影响）
+pip install -e "../Treechat"
+
 # install this repo's dev deps (fastapi + uvicorn + httpx)
 pip install -e .[dev]   # or: pip install fastapi uvicorn httpx
 
@@ -91,7 +95,7 @@ uvicorn server.app:app --reload --port 8000
 SPECMODULE_BASE=<运行根目录> uvicorn server.app:app --port 8000
 
 # frontend (web/ only; node_modules/ and dist/ are gitignored)
-cd web && npm install && npm run dev   # dev server on :5173, /api proxied to :8000 (WS too)
+cd web && npm install && npm run dev   # dev server on :5173, /api 与 /treechat 代理到 :8000（WS 走 /api）
 npm run build                          # tsc --noEmit + vite build (acceptance gate)
 ```
 
@@ -133,7 +137,7 @@ Python ≥3.10 (library dev'd on 3.13). No lint/format/type tooling in this ecos
 ## Runtime/Tooling Preferences
 
 - **Python ≥3.10**, pip + setuptools; package manager: pip only (no uv/poetry in ecosystem).
-- Runtime deps: `specmodule` (pulls `tickflow-py` — imported as `tickflow`; import name ≠ package name) + `fastapi` + `uvicorn` (本项目依赖, per roadmap); test dep: `httpx`.
+- Runtime deps: `specmodule` (pulls `tickflow-py` — imported as `tickflow`; import name ≠ package name) + `fastapi` + `uvicorn` (本项目依赖, per roadmap); test dep: `httpx`; 对话服务可选依赖 `treechat`（`pip install -e "../Treechat"`，缺席自动降级）。
 - No formatter/linter/type-checker configs anywhere in the ecosystem; keep it that way (stdlib + pytest only).
 - API keys live in `.env` (gitignored); `config.json` never stores secrets. The webview backend itself needs no API keys (it only reads run artifacts) — keys matter only for tests that exercise real `Module.run`.
 - Sibling consumer repos (`SpecModule_tui/`, `SpecModule_mcp/`) are the precedent for this repo's thin-consumer shape; `SpecModule_mcp/AGENTS.md` is the closest structural model for this file.
