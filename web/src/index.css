@@ -6,6 +6,7 @@
    + 运行 phase 语义色（沿用旧 PHASE_COLOR 现值，供亮暗两态共用） */
 @layer base {
   :root {
+    color-scheme: light;
     --background: 0 0% 100%;
     --foreground: 240 3% 12%;
     --card: 0 0% 100%;
@@ -37,6 +38,7 @@
   }
 
   .dark {
+    color-scheme: dark;
     --background: 0 0% 19%;
     --foreground: 0 0% 93%;
     --card: 0 0% 22%;

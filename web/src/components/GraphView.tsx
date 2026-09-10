@@ -14,6 +14,7 @@ import "@xyflow/react/dist/style.css";
 import { layoutGraph } from "../dagre";
 import type { GraphPayload, StatusCore } from "../api";
 import { StatusNode, type StatusFlowNode, type StatusNodeData } from "./StatusNode";
+import { Button } from "./ui/button";
 
 const nodeTypes: NodeTypes = { status: StatusNode };
 
@@ -98,16 +99,18 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <button
+      <Button
+        variant="outline"
+        size="sm"
+        className="absolute left-2 top-2 z-10"
         onClick={() => {
           followRef.current = true;
           const ids = fireableInView();
           if (ids.length) centerOn(ids);
         }}
-        style={{ position: "absolute", top: 8, left: 8, zIndex: 10 }}
       >
         回到当前
-      </button>
+      </Button>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -115,6 +118,7 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
         onMoveStart={onMoveStart}
         onNodeClick={(_, n) => onSelect(n.id)}
         onPaneClick={() => onSelect(null)}
+        colorMode="system"
         fitView
         minZoom={0.2}
         maxZoom={2}

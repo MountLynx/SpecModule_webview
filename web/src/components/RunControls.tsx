@@ -5,6 +5,7 @@ import { postControl, TERMINAL_PHASES, type ControlAction } from "../api";
 import { Button } from "./ui/button";
 import { ResumeDialog } from "./ResumeDialog";
 import { CheckpointDialog } from "./CheckpointDialog";
+import { errTextCls } from "./dialogTheme";
 
 interface RunControlsProps {
   runId: string;
@@ -123,7 +124,7 @@ export function RunControls({
           恢复 / 回退…
         </Button>
       )}
-      {err && <span className="text-[12px] text-destructive">{err}</span>}
+      {err && <span className={errTextCls}>{err}</span>}
       {dialogOpen && (
         <ResumeDialog
           runId={runId}

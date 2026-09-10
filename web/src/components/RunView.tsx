@@ -26,6 +26,7 @@ import { useRunStream } from "../ws";
 import { GraphView } from "./GraphView";
 import { NodePanel } from "./NodePanel";
 import { RunControls } from "./RunControls";
+import { Button } from "./ui/button";
 
 export interface ResumeRequestMsg {
   runId: string;
@@ -37,7 +38,7 @@ const MATERIALIZE_TIMEOUT_MS = 120_000;
 
 interface RunViewProps {
   runId: string;
-  /** 打开恢复对话框的请求（RunsView/黄条发起；带目标 runId + seq 去重） */
+  /** 打开恢复对话框的请求（RunList/黄条发起；带目标 runId + seq 去重） */
   resumeRequest: ResumeRequestMsg | null;
   onResumeRequestConsumed: () => void;
   onRequestResume: (runId: string) => void;
@@ -327,41 +328,18 @@ export function RunView({
   const waitingMaterial = !materialized && materialTimeout;
 
   const procLogView = procLog && (
-    <div style={{ marginTop: 10 }}>
-      <div style={{ fontSize: 12, color: "#6b7280" }}>process.log 尾部：</div>
-      <pre
-        style={{
-          fontFamily: "monospace",
-          fontSize: 12,
-          background: "#f9fafb",
-          border: "1px solid #e5e7eb",
-          borderRadius: 6,
-          padding: 8,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
-          maxHeight: 260,
-          overflowY: "auto",
-        }}
-      >
+    <div className="mt-2.5">
+      <div className="text-[12px] text-muted-foreground">process.log 尾部：</div>
+      <pre className="mt-1 max-h-[260px] overflow-y-auto whitespace-pre-wrap break-all rounded-md border bg-secondary p-2 font-mono text-[12px]">
         {procLog}
       </pre>
     </div>
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
-      <header
-        style={{
-          padding: "8px 14px",
-          borderBottom: "1px solid #e5e7eb",
-          fontSize: 13,
-          color: "#6b7280",
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
-        <span>
+    <div className="flex min-w-0 flex-1 flex-col">
+      <header className="flex items-center gap-3 border-b px-3.5 py-2 text-[12.5px] text-muted-foreground">
+        <span className="truncate font-mono">
           {`${runId} · ${statusView?.phase ?? payload?.phase ?? "…"}${
             statusView?.tick != null ? ` · tick ${statusView.tick}` : ""
           }${statusView?.error ? ` · ${statusView.error}` : ""}`}
@@ -380,35 +358,26 @@ export function RunView({
         />
       </header>
       {stalled && (
-        <div
-          style={{
-            padding: "6px 14px",
-            background: "#fef3c7",
-            color: "#92400e",
-            fontSize: 12,
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-          }}
-        >
+        <div className="flex items-center gap-2.5 bg-[color-mix(in_srgb,var(--ph-truncated)_14%,transparent)] px-3.5 py-1.5 text-[12px] text-[var(--ph-truncated)]">
           <span>
             进程长时间无输出——可能已失联/崩溃。若确认进程已退出，可强制恢复。
           </span>
-          <button
-            style={{ fontSize: 12, cursor: "pointer" }}
-            onClick={() => onRequestResume(runId)}
-          >
+          <Button variant="outline" size="sm" onClick={() => onRequestResume(runId)}>
             打开恢复/回退…
-          </button>
+          </Button>
         </div>
       )}
-      <div style={{ flex: 1, position: "relative", overflowY: "auto" }}>
+      <div className="relative min-h-0 flex-1 overflow-y-auto">
         {error && (
-          <div style={{ padding: 12, color: "#b91c1c" }}>
+          <div className="p-3 text-[12.5px] text-destructive">
             图加载失败：{error.message}
             {needModulePicker && (
-              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                <select onChange={(e) => setModuleOverride(e.target.value || null)} defaultValue="">
+              <div className="mt-2 flex items-center gap-2">
+                <select
+                  onChange={(e) => setModuleOverride(e.target.value || null)}
+                  defaultValue=""
+                  className="rounded-control border border-input bg-transparent px-2 py-1 text-[12.5px]"
+                >
                   <option value="">选择模块…</option>
                   {modules.map((m) => (
                     <option key={`${m.kind}:${m.name}`} value={m.name}>
@@ -423,7 +392,7 @@ export function RunView({
           </div>
         )}
         {waitingMaterial && (
-          <div style={{ padding: 12, color: "#b45309" }}>
+          <div className="p-3 text-[12.5px] text-[var(--ph-truncated)]">
             运行迟迟未落盘——可能启动失败，见下方日志
             {procLogView}
           </div>
@@ -436,7 +405,7 @@ export function RunView({
             onSelect={setSelected}
           />
         ) : (
-          !error && !waitingMaterial && <div style={{ padding: 12 }}>图加载中…</div>
+          !error && !waitingMaterial && <div className="p-3 text-[12.5px]">图加载中…</div>
         )}
       </div>
       {payload && selected && selectedNode && (

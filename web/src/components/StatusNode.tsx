@@ -1,4 +1,5 @@
-// 自定义节点：名称 + 类型 + 状态色边框 + ×N 次数徽章。
+// 自定义节点：名称 + 类型 + 状态色边框 + ×N 次数徽章。配色读 index.css 主题
+// 变量——亮暗主题自动生效。
 import { memo } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { NodeState } from "../api";
@@ -13,11 +14,11 @@ export type StatusNodeData = {
 export type StatusFlowNode = Node<StatusNodeData, "status">;
 
 const BORDER: Record<string, string> = {
-  running: "#2563eb",
-  failed: "#dc2626",
-  aborted: "#dc2626",
-  done: "#16a34a",
-  idle: "#9ca3af",
+  running: "var(--ph-running)",
+  failed: "var(--ph-aborted)",
+  aborted: "var(--ph-aborted)",
+  done: "var(--ph-done)",
+  idle: "hsl(var(--muted-foreground))",
 };
 
 export function badgeOf(state?: NodeState): string {
@@ -38,8 +39,9 @@ function StatusNodeInner({ data }: NodeProps<StatusFlowNode>) {
         borderRadius: 8,
         padding: "6px 10px",
         minWidth: 150,
-        background: "#fff",
-        boxShadow: badge === "running" ? `0 0 0 4px ${color}33` : undefined,
+        background: "hsl(var(--card))",
+        color: "hsl(var(--card-foreground))",
+        boxShadow: badge === "running" ? `0 0 0 4px color-mix(in srgb, ${color} 20%, transparent)` : undefined,
       }}
     >
       <Handle type="target" position={Position.Left} />
@@ -48,13 +50,19 @@ function StatusNodeInner({ data }: NodeProps<StatusFlowNode>) {
         {data.state && data.state.fired_count > 0 && (
           <span
             title="运行次数"
-            style={{ fontSize: 11, background: "#eef2ff", borderRadius: 8, padding: "0 6px" }}
+            style={{
+              fontSize: 11,
+              background: "hsl(var(--secondary))",
+              color: "hsl(var(--secondary-foreground))",
+              borderRadius: 8,
+              padding: "0 6px",
+            }}
           >
             ×{data.state.fired_count}
           </span>
         )}
       </div>
-      <div style={{ fontSize: 11, color: "#6b7280" }}>
+      <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }}>
         {data.type}
         {data.isStart ? " · start" : ""}
         {badge === "running" ? " · 运行中" : ""}
