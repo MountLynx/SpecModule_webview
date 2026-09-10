@@ -1,5 +1,6 @@
 // 模块详情主区面板：detail_to_dict 全量 + 发起运行表单（原 RunDialog 逻辑内嵌，
 // 弹窗退役）。按 name 自取详情；发起成功经 onLaunched 上抛壳层（切运行页签开 run）。
+// 壳层契约：须以 key={name} 使用（切模块即重挂载，双保险防串态）。
 import { useEffect, useState } from "react";
 import {
   fetchModuleDetail,
@@ -7,6 +8,7 @@ import {
   type LaunchResult,
   type ModuleDetail as ModuleDetailData,
 } from "../api";
+import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { SpecForm } from "./SpecForm";
@@ -18,6 +20,7 @@ function randHex6(): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 }
 
+/* 与 ModuleList 的 KIND_BADGE 保持同步（List/Detail 两处小映射，暂不提取共享） */
 const KIND_BADGE: Record<string, string> = {
   entry: "bg-[#2563eb]",
   packed: "bg-[#7c3aed]",
@@ -50,6 +53,8 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
     setDetailErr(null);
     setErr(null);
     setBusy(false);
+    setMaxTicks(100);
+    setMock(false);
     fetchModuleDetail(name)
       .then((d) => {
         if (cancelled) return;
@@ -113,7 +118,10 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
         <div className="flex items-center gap-2">
           <span className="text-[16px] font-bold">{detail.name}</span>
           <span
-            className={`rounded-full px-1.5 text-[9.5px] leading-4 text-white ${KIND_BADGE[detail.kind] ?? "bg-muted-foreground"}`}
+            className={cn(
+              "rounded-full px-1.5 text-[9.5px] leading-4 text-white",
+              KIND_BADGE[detail.kind] ?? "bg-muted-foreground",
+            )}
           >
             {detail.kind}
           </span>

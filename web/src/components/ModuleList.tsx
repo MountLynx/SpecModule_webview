@@ -5,6 +5,7 @@ import { fetchModules, type ModuleInfo } from "../api";
 import { cn } from "../lib/utils";
 
 /** kind 徽章底色（沿用旧 KIND_COLOR 现值） */
+/* 与 ModuleDetail 的 KIND_BADGE 保持同步（List/Detail 两处小映射，暂不提取共享） */
 const KIND_BADGE: Record<string, string> = {
   entry: "bg-[#2563eb]",
   packed: "bg-[#7c3aed]",
@@ -38,16 +39,26 @@ export function ModuleList({ selected, onSelect }: ModuleListProps) {
         模块库
         <span className="font-normal text-muted-foreground">{modules.length} 个</span>
         {loadErr && (
-          <span className="truncate font-normal text-[11.5px] text-destructive">{loadErr}</span>
+          <span title={loadErr} className="truncate font-normal text-[11.5px] text-destructive">
+            {loadErr}
+          </span>
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
         {modules.map((m) => (
           <div
             key={`${m.kind}:${m.name}`}
+            role="button"
+            tabIndex={0}
             onClick={() => onSelect(m.name)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(m.name);
+              }
+            }}
             className={cn(
-              "mb-px cursor-pointer rounded-[7px] px-2.5 py-[7px] hover:bg-accent",
+              "mb-px cursor-pointer rounded-[7px] px-2.5 py-[7px] hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
               m.name === selected && "bg-sidebar-selected",
             )}
           >
