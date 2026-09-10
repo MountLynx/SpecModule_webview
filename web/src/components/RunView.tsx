@@ -349,7 +349,10 @@ export function RunView({
           runId={runId}
           phase={statusView?.phase ?? payload?.phase ?? null}
           paused={paused}
-          moduleHint={moduleOverride}
+          // 恢复对话框模块名预填：优先图载荷的已解析模块名（status.json 溯源 >
+          // run_id 启发式的服务端解析结果），图未加载时退回模块选择器覆盖值——
+          // 不能直接用 runId 预填，否则预检必然 module_unresolved
+          moduleHint={payload?.module ?? moduleOverride}
           onAction={onRefreshRuns}
           resumeRequest={resumeRequest}
           onResumeRequestConsumed={onResumeRequestConsumed}
