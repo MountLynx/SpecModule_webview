@@ -1,4 +1,4 @@
-import type { ConvState, Health, LibraryCard, SessionSummary } from "./types";
+import type { ConvState, Health, LibraryCard, Mode, SessionSummary, SseEvent } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -39,8 +39,9 @@ export const health = () => req<Health>("/treechat/api/health");
 
 // ── 会话管理 ──
 
-export const createSession = (name: string, system: string) =>
-  req<SessionSummary>("/treechat/api/sessions", json("POST", { name, system }));
+export const createSession = (name: string, system: string, category = "") =>
+  req<SessionSummary>("/treechat/api/sessions", json("POST", { name, system, category }));
+export const listModes = () => req<Mode[]>("/treechat/api/modes");
 export const deleteSession = (sid: string) =>
   req<void>(`/treechat/api/sessions/${encodeURIComponent(sid)}`, { method: "DELETE" });
 export const getState = (sid: string) =>
@@ -54,29 +55,72 @@ export const setArchived = (sid: string, archived: boolean) =>
 export const renameNode = (sid: string, seq: number, label: string) =>
   req<ConvState>(`/treechat/api/sessions/${encodeURIComponent(sid)}/nodes/${seq}/rename`, json("POST", { label }));
 
-// ── 轮次 ──
+// ── 轮次（SSE 流式）──
 
-export interface TurnResult {
-  error?: string;
-  state: ConvState;
-}
-/** turn 特殊处理：LLM 失败返回 502 {error, state}——user 节点已落盘，前端要更新状态 */
-export async function turn(
-  sid: string,
-  body: { text: string; parent?: number; leaf?: boolean },
-): Promise<TurnResult> {
-  const res = await fetch(`/treechat/api/sessions/${encodeURIComponent(sid)}/turn`, {
+/** POST 流式端点：逐帧解析 SSE（event:/data:），onEvent 每事件回调 */
+async function streamSse(url: string, body: unknown,
+                         onEvent: (e: SseEvent) => void): Promise<void> {
+  const res = await fetch(url, {
     headers: { "Content-Type": "application/json" },
     method: "POST",
     body: JSON.stringify(body),
   });
-  const data = await res.json();
-  if (res.status === 502) return { error: data.error, state: data.state };
-  if (!res.ok) throw new ApiError(data?.error ?? res.statusText, res.status);
-  return { state: data as ConvState };
+  if (!res.ok || !res.body) {
+    let msg = res.statusText;
+    try {
+      const b = await res.json();
+      if (b?.error) msg = b.error;
+    } catch {
+      /* 非 JSON 错误体 */
+    }
+    throw new ApiError(msg, res.status);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let sawTerminal = false;
+  /** dispatch 一帧；返回是否终帧（done/error）。onEvent 异常正常上抛，不静默 */
+  const dispatch = (frame: string): boolean => {
+    let event = "";
+    let dataRaw = "";
+    for (const line of frame.split("\n")) {
+      if (line.startsWith("event: ")) event = line.slice(7);
+      else if (line.startsWith("data: ")) dataRaw += line.slice(6);
+    }
+    if (!event) return false;
+    let data: unknown;
+    try {
+      data = JSON.parse(dataRaw);
+    } catch {
+      return false; /* 残帧忽略 */
+    }
+    onEvent({ event, data });
+    return event === "done" || event === "error";
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      if (dispatch(buf.slice(0, idx))) sawTerminal = true;
+      buf = buf.slice(idx + 2);
+    }
+  }
+  if (buf && dispatch(buf)) sawTerminal = true; /* 末帧被截断（无 \n\n 结尾）补发，仍以 sawTerminal 判定 */
+  if (!sawTerminal) throw new ApiError("连接中断", 0);
 }
-export const retry = (sid: string) =>
-  req<ConvState>(`/treechat/api/sessions/${encodeURIComponent(sid)}/retry`, json("POST", {}));
+
+export function turn(
+  sid: string,
+  body: { text: string; parent?: number; leaf?: boolean },
+  onEvent: (e: SseEvent) => void,
+): Promise<void> {
+  return streamSse(`/treechat/api/sessions/${encodeURIComponent(sid)}/turn`, body, onEvent);
+}
+export function retry(sid: string, onEvent: (e: SseEvent) => void): Promise<void> {
+  return streamSse(`/treechat/api/sessions/${encodeURIComponent(sid)}/retry`, {}, onEvent);
+}
 
 // ── 卡片 ──
 

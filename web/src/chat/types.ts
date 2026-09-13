@@ -56,6 +56,44 @@ export type LibraryCard = Card & {
   sessionName: string;
 };
 
+/** 对话模式（GET /api/modes） */
+export interface Mode {
+  key: string;
+  displayName: string;
+  description: string;
+}
+
+/** SSE 事件（POST /turn、/retry 流式响应） */
+export interface SseEvent {
+  event: string;
+  data: any;
+}
+
+/** node_end 的卡片引用（链接片） */
+export interface CardRef {
+  type: "card";
+  cardId: string;
+  title: string;
+}
+
+/** 回合运行迹（webui 瞬态：done 后保留链接片，新回合/刷新即清） */
+export interface RunTrace {
+  userSeq: number;
+  module: string;
+  nodes: RunNodeState[];
+  finished: boolean;
+  /** error 帧收口标记 */
+  errored?: boolean;
+}
+
+export interface RunNodeState {
+  key: string;
+  label: string;
+  text: string;
+  outcome: "running" | "ok" | "failed";
+  refs: CardRef[];
+}
+
 /** 侧边栏页签 */
 export type Tab = "chat" | "tree" | "cards" | "settings";
 
