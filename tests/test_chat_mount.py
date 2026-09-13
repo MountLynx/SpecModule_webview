@@ -4,8 +4,13 @@
 隔离：不依赖全局 app——mount_chat 注入 tmp base_dir，会话文件落在
 tmp/.treechat/sessions；LLM 客户端替换走子应用 registry（app.state.chat_registry，
 对齐 treechat 自家 conftest 的假客户端模式）。treechat 缺席时整模块跳过。
+
+三期（chat as modules）：回合契约升级为 SSE 流式（start 预告 → 逐 token/节点进度 →
+done/error 终帧；REST 非流式退役），LLM 失败经 SSE error 帧回传。
 """
 from __future__ import annotations
+
+import json
 
 import pytest
 from fastapi import FastAPI
@@ -19,25 +24,55 @@ from server.chat import mount_chat  # noqa: E402
 
 
 class FakeChatClient:
-    """带 chat() 的假客户端：固定回复 / 可选失败（对齐 treechat conftest）。"""
+    """带 complete() 的假客户端：固定回复 / 可选失败（对齐 treechat conftest）。
+
+    module 回合路径走 complete(on_token=...)——on_token 真实回调（三等分发射），
+    驱动 SSE token 事件。
+    """
 
     def __init__(self, reply: str = "mock reply", fail: bool = False) -> None:
         self.reply, self.fail = reply, fail
         self.config = type("Config", (), {"model": "fake-model"})()
 
-    async def chat(self, messages):
+    async def complete(self, **kwargs):
         if self.fail:
             raise LLMError("模拟基础设施故障")
+        on_token = kwargs.get("on_token")
+        if on_token:
+            step = max(1, len(self.reply) // 3)
+            for i in range(0, len(self.reply), step):
+                on_token(self.reply[i:i + step])
         return LLMResponse(content=self.reply,
                            usage={"input_tokens": 1, "output_tokens": 2})
 
 
 @pytest.fixture
 def env(tmp_path):
-    """隔离挂载的三元组：(TestClient, base_dir, 子应用 registry)。"""
+    """隔离挂载的三元组：(TestClient, base_dir, 子应用 registry)。
+
+    with 形式：整个测试期共享同一 portal/事件循环（lifespan 启动），
+    registry 的 asyncio.Lock 跨请求存续才有真实锁语义（SSE 回合流必需）。
+    """
     app = FastAPI()
     assert mount_chat(app, base_dir=tmp_path) is True
-    return TestClient(app), tmp_path, app.state.chat_registry
+    with TestClient(app) as c:
+        yield c, tmp_path, app.state.chat_registry
+
+
+def sse_events(client, url, **kwargs):
+    """POST 流式端点 → [(event, data)]（帧解析，对齐 treechat test_webapp）。"""
+    events = []
+    with client.stream("POST", url, **kwargs) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        event = None
+        for line in resp.iter_lines():
+            if line.startswith("event: "):
+                event = line[len("event: "):]
+            elif line.startswith("data: ") and event is not None:
+                events.append((event, json.loads(line[len("data: "):])))
+                event = None
+    return events
 
 
 # ── 健康 / 挂载 ──
@@ -114,9 +149,13 @@ def test_turn_success(env):
     c, _, reg = env
     c.post("/treechat/api/sessions", json={"name": "t"})
     _reopen_with(reg, "t", FakeChatClient(reply="这是回复"))
-    r = c.post("/treechat/api/sessions/t/turn", json={"text": "你好"})
-    assert r.status_code == 200
-    st = r.json()
+    events = sse_events(c, "/treechat/api/sessions/t/turn", json={"text": "你好"})
+    kinds = [e for e, _ in events]
+    # SSE 序列：start 预告 → 节点事件（含逐 token）→ done 终帧
+    assert kinds[0] == "start"
+    assert "node_start" in kinds and "token" in kinds
+    assert kinds[-1] == "done"
+    st = events[-1][1]["state"]
     assert [n["role"] for n in st["nodes"]] == ["user", "assistant"]
     assert st["nodes"][1]["text"] == "这是回复"
     assert st["nodes"][1]["model"] == "fake-model"
@@ -126,24 +165,37 @@ def test_turn_success(env):
 
 
 def test_turn_llm_failure_contract(env):
-    """LLM 失败 → 502 {error, state}：user 节点已落盘（悬而未答），前端据此更新。"""
+    """LLM 失败 → SSE error 帧（REST 502 契约退役）：user 节点已落盘（悬而未答）。"""
     c, _, reg = env
     c.post("/treechat/api/sessions", json={"name": "f"})
     _reopen_with(reg, "f", FakeChatClient(fail=True))
-    r = c.post("/treechat/api/sessions/f/turn", json={"text": "你好"})
-    assert r.status_code == 502
-    body = r.json()
-    assert "模拟基础设施故障" in body["error"]
-    st = body["state"]
+    events = sse_events(c, "/treechat/api/sessions/f/turn", json={"text": "你好"})
+    assert events[-1][0] == "error"
+    assert "模拟基础设施故障" in events[-1][1]["error"]
+    st = events[-1][1]["state"]
     assert [n["role"] for n in st["nodes"]] == ["user"]
     assert st["unansweredUser"] == st["nodes"][0]["seq"]
-    # 重试换好客户端 → 补 assistant，问题不丢不重复
+    # 重试换好客户端 → done 帧补 assistant，问题不丢不重复
     _reopen_with(reg, "f", FakeChatClient(reply="补上了"))
-    r = c.post("/treechat/api/sessions/f/retry")
-    assert r.status_code == 200
-    st = r.json()
+    events = sse_events(c, "/treechat/api/sessions/f/retry")
+    assert events[-1][0] == "done"
+    st = events[-1][1]["state"]
     assert [n["role"] for n in st["nodes"]] == ["user", "assistant"]
     assert st["nodes"][0]["text"] == "你好"
+
+
+def test_modes_endpoint_and_categorized_session(env):
+    """模式枚举透传（BUILT_IN：direct/grilling——grilling 已吸收 domain-modeling）
+    + 分类创建会话（三期模式入口的挂载级契约）。"""
+    c, _, _ = env
+    modes = c.get("/treechat/api/modes").json()
+    assert [m["key"] for m in modes] == ["direct", "grilling"]
+    assert modes[0]["displayName"] == "直答"
+    assert modes[1]["displayName"] == "拷问"
+    assert modes[1]["description"]
+    r = c.post("/treechat/api/sessions", json={"name": "g", "category": "grilling"})
+    assert r.status_code == 200 and r.json()["category"] == "grilling"
+    assert c.get("/treechat/api/sessions/g").json()["category"] == "grilling"
 
 
 def test_retry_without_pending_conflict(env):
