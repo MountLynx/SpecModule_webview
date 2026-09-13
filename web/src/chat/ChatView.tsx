@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Card, ConvState, Node } from "./types";
+import type { Card, ConvState, Node, RunTrace } from "./types";
 import { activePath } from "./types";
 import { cn } from "../lib/utils";
 import { Markdown } from "./Markdown";
@@ -8,7 +8,9 @@ interface Props {
   conv: ConvState;
   busy: boolean;
   error: string | null;
+  run: RunTrace | null;
   onRetry: () => void;
+  onOpenCards: () => void;
 }
 
 /** 主区聊天视图：活跃路径（path_to 指针）消息流 */
@@ -38,6 +40,7 @@ export function ChatView(p: Props) {
         {path.map((n) => (
           <MessageItem key={n.seq} node={n} cards={cardsBySeq.get(n.seq) ?? []} />
         ))}
+        {p.run && <RunBlock run={p.run} onOpenCards={p.onOpenCards} />}
         {p.busy && (
           <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
             <span className="flex gap-1">
@@ -105,5 +108,41 @@ function Dot({ delay }: { delay: string }) {
   return (
     <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60"
           style={{ animationDelay: delay }} />
+  );
+}
+
+/** 回合运行块：节点预告 → 逐 token 全文 → 收口（文档节点折叠为卡片链接片）。 */
+function RunBlock({ run, onOpenCards }: { run: RunTrace; onOpenCards: () => void }) {
+  return (
+    <div className="rounded-panel border border-border/60 bg-sidebar px-3 py-2">
+      <div className="pb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+        {run.errored ? "回合失败" : run.finished ? "回合完成" : "回合运行中"} · {run.module}
+      </div>
+      <div className="flex flex-col gap-2.5">
+        {run.nodes.map((n) => (
+          <div key={n.key}>
+            <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+              <span>{n.outcome === "failed" ? "✗" : n.outcome === "ok" ? "✓" : "◌"}</span>
+              <span className={n.outcome === "failed" ? "text-destructive" : ""}>{n.label}</span>
+            </div>
+            {n.outcome === "running" && n.text && <Markdown text={n.text} />}
+            {n.outcome === "ok" && n.refs.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-1">
+                {n.refs.map((r) => (
+                  <button key={r.cardId} onClick={onOpenCards}
+                          className="rounded-full border border-border px-2 py-px text-[11.5px]
+                                     text-muted-foreground hover:bg-foreground/[0.05]">
+                    📄 {r.title} → 已更新到卡片
+                  </button>
+                ))}
+              </div>
+            )}
+            {n.outcome === "ok" && n.refs.length === 0 && !run.finished && n.text && (
+              <Markdown text={n.text} />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
