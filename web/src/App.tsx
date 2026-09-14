@@ -3,7 +3,10 @@
 // chat 页签切换）；chat/modules/runs/settings 为「全局功能」（不随页签变，只变
 // 列表选中高亮）。会话状态按 sid 多实例（一期 TreeChat webui 为单活动会话）。
 // 不引 router（useState 范式，两仓库一致）。
-import { useCallback, useEffect, useState } from "react";
+// 三期（chat as modules）：回合升级 SSE 流式——回调闭包绑定发起 sid，按 sid 多实例
+// 写入运行迹（后台页签的会话持续流式更新是多实例共存的题中之义，无需 active-tab 守卫）；
+// 模式 = 对话型 module（创建选择/徽章显示名/设置只读，全走 GET /api/modes 动态清单）。
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchRuns,
   postControl,
@@ -12,7 +15,7 @@ import {
   type RunSummary,
 } from "./api";
 import * as chatApi from "./chat/api";
-import type { ConvState, Health, SessionSummary } from "./chat/types";
+import type { ConvState, Health, Mode, RunTrace, SessionSummary, SseEvent } from "./chat/types";
 import { CardsPanel } from "./chat/CardsPanel";
 import { ChatListPanel } from "./chat/ChatListPanel";
 import { ChatView } from "./chat/ChatView";
@@ -46,10 +49,12 @@ interface ChatUi {
   cardGenOpen: boolean;
   busy: boolean;
   error: string | null;
+  /** 回合运行迹（SSE 流式瞬态；done/error 后保留收口，新回合即清） */
+  run: RunTrace | null;
 }
 const EMPTY_CHAT_UI: ChatUi = {
   branchParent: null, leafMode: false, selectedSeq: null,
-  cardSeqs: [], cardGenOpen: false, busy: false, error: null,
+  cardSeqs: [], cardGenOpen: false, busy: false, error: null, run: null,
 };
 
 /** 动态页签：kind + 原始 key（sid / runId）；页签 id = `${kind}:${key}` */
@@ -70,6 +75,11 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [chatServiceUp, setChatServiceUp] = useState<boolean | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
+  const [modes, setModes] = useState<Mode[]>([]);
+  // 已删会话的流事件兜底：后端 delete 与轮次共用 registry 锁（删除必排在在飞轮次后），
+  // 此 ref 只兜异常路径（断流竞态等），对齐 webui 单会话守卫的意图；finally 移除，
+  // 同名 sid 重建会话不受影响。
+  const deletedSids = useRef(new Set<string>());
   const [convs, setConvs] = useState<Record<string, ConvState>>({});
   const [chatUi, setChatUi] = useState<Record<string, ChatUi>>({});
 
@@ -77,6 +87,12 @@ export default function App() {
     (sid: string): ChatUi => chatUi[sid] ?? EMPTY_CHAT_UI, [chatUi]);
   const updUi = useCallback((sid: string, patch: Partial<ChatUi>) => {
     setChatUi((prev) => ({ ...prev, [sid]: { ...(prev[sid] ?? EMPTY_CHAT_UI), ...patch } }));
+  }, []);
+  const updRun = useCallback((sid: string, fn: (r: RunTrace | null) => RunTrace | null) => {
+    setChatUi((prev) => {
+      const ui = prev[sid] ?? EMPTY_CHAT_UI;
+      return { ...prev, [sid]: { ...ui, run: fn(ui.run) } };
+    });
   }, []);
 
   const refreshRuns = useCallback(() => {
@@ -102,6 +118,7 @@ export default function App() {
       .catch((e) => {
         if (e instanceof chatApi.ApiError && e.status === 404) setChatServiceUp(false);
       });
+    chatApi.listModes().then(setModes).catch(() => setModes([]));
   }, [refreshSessions]);
 
   // ── 页签开/关 ──
@@ -145,18 +162,23 @@ export default function App() {
 
   // ── 对话操作（对齐 TreeChat webui App 接线，状态升级为按 sid）──
 
-  const createSession = async (name: string, system: string) => {
-    await chatApi.createSession(name, system);
+  const createSession = async (name: string, system: string, category: string) => {
+    await chatApi.createSession(name, system, category);
     refreshSessions();
     openChat(name); // sid = 创建名（rename 只改显示名）
   };
 
   const deleteSession = async (sid: string) => {
-    await chatApi.deleteSession(sid);
-    closeTab(`chat:${sid}`);
-    setConvs((prev) => { const n = { ...prev }; delete n[sid]; return n; });
-    setChatUi((prev) => { const n = { ...prev }; delete n[sid]; return n; });
-    refreshSessions();
+    deletedSids.current.add(sid);
+    try {
+      await chatApi.deleteSession(sid);
+      closeTab(`chat:${sid}`);
+      setConvs((prev) => { const n = { ...prev }; delete n[sid]; return n; });
+      setChatUi((prev) => { const n = { ...prev }; delete n[sid]; return n; });
+      refreshSessions();
+    } finally {
+      deletedSids.current.delete(sid);
+    }
   };
 
   const mutateConv = async (sid: string, fn: (s: string) => Promise<ConvState>) => {
@@ -165,16 +187,46 @@ export default function App() {
     refreshSessions();
   };
 
+  // ── 轮次（SSE 流式；回调闭包绑定发起 sid，按 sid 多实例写入）──
+
+  const handleEvent = useCallback((sid: string, ev: SseEvent) => {
+    if (deletedSids.current.has(sid)) return; // 会话已删：丢弃残余流事件
+    const d = ev.data;
+    if (ev.event === "start") {
+      updRun(sid, () => ({
+        userSeq: d.userSeq, module: d.module, finished: false,
+        nodes: d.nodes.map((n: { key: string; label: string }) => (
+          { ...n, text: "", outcome: "running" as const, refs: [] })),
+      }));
+    } else if (ev.event === "node_start") {
+      updRun(sid, (r) => r && { ...r, nodes: r.nodes.map((n) =>
+        n.key === d.key ? { ...n, outcome: "running" as const } : n) });
+    } else if (ev.event === "token") {
+      updRun(sid, (r) => r && { ...r, nodes: r.nodes.map((n) =>
+        n.key === d.key ? { ...n, text: n.text + d.text } : n) });
+    } else if (ev.event === "node_end") {
+      updRun(sid, (r) => r && { ...r, nodes: r.nodes.map((n) =>
+        n.key === d.key ? { ...n, outcome: d.outcome, refs: d.refs ?? [] } : n) });
+    } else if (ev.event === "done") {
+      setConvs((prev) => ({ ...prev, [sid]: d.state }));
+      updRun(sid, (r) => r && { ...r, finished: true });
+      updUi(sid, { error: null });
+      refreshSessions();
+    } else if (ev.event === "error") {
+      if (d.state) setConvs((prev) => ({ ...prev, [sid]: d.state }));
+      updRun(sid, (r) => r && { ...r, finished: true, errored: true });
+      updUi(sid, { error: d.error });
+    }
+  }, [updRun, updUi, refreshSessions]);
+
   const send = async (sid: string, text: string) => {
     const ui = getChatUi(sid);
     if (ui.busy) return;
     const parent = ui.branchParent ?? undefined;
     const leaf = ui.leafMode || undefined;
-    updUi(sid, { busy: true, error: null, branchParent: null, leafMode: false });
+    updUi(sid, { busy: true, error: null, branchParent: null, leafMode: false, run: null });
     try {
-      const r = await chatApi.turn(sid, { text, parent, leaf });
-      setConvs((prev) => ({ ...prev, [sid]: r.state }));
-      if (r.error) updUi(sid, { error: r.error });
+      await chatApi.turn(sid, { text, parent, leaf }, (ev) => handleEvent(sid, ev));
       refreshSessions();
     } catch (e) {
       updUi(sid, { error: e instanceof Error ? e.message : String(e) });
@@ -185,11 +237,9 @@ export default function App() {
 
   const retry = async (sid: string) => {
     if (getChatUi(sid).busy) return;
-    updUi(sid, { busy: true });
+    updUi(sid, { busy: true, error: null, run: null });
     try {
-      const st = await chatApi.retry(sid);
-      setConvs((prev) => ({ ...prev, [sid]: st }));
-      updUi(sid, { error: null });
+      await chatApi.retry(sid, (ev) => handleEvent(sid, ev));
       refreshSessions();
     } catch (e) {
       updUi(sid, { error: e instanceof Error ? e.message : String(e) });
@@ -286,6 +336,7 @@ export default function App() {
           <ChatListPanel
             serviceAvailable={chatServiceUp !== false}
             sessions={sessions}
+            modes={modes}
             activeSid={activeChatSid}
             onOpen={openChat}
             onCreate={createSession}
@@ -345,7 +396,7 @@ export default function App() {
           />
         )}
         {sidebarTab === "settings" && (
-          <SettingsPanel health={health} serviceAvailable={chatServiceUp !== false} />
+          <SettingsPanel health={health} serviceAvailable={chatServiceUp !== false} modes={modes} />
         )}
       </aside>
 
@@ -366,7 +417,7 @@ export default function App() {
                   <span className="truncate text-[13.5px] font-semibold">{activeConv.name}</span>
                   {activeConv.category && (
                     <span className="rounded-full bg-foreground/[0.07] px-2 py-0.5 text-[11px] text-muted-foreground">
-                      {activeConv.category}
+                      {modes.find((m) => m.key === activeConv.category)?.displayName ?? activeConv.category}
                     </span>
                   )}
                   {activeConv.archived && (
@@ -389,7 +440,9 @@ export default function App() {
                   conv={activeConv}
                   busy={activeUi.busy}
                   error={activeUi.error}
+                  run={activeUi.run}
                   onRetry={() => activeChatSid && retry(activeChatSid)}
+                  onOpenCards={() => setSidebarTab("cards")}
                 />
                 <Composer
                   branchParent={activeUi.branchParent}
