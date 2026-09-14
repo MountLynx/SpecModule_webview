@@ -104,7 +104,8 @@ export default function App() {
     return () => clearInterval(t);
   }, [refreshRuns]);
 
-  // 对话服务探测：404 = treechat 未挂载（服务未启用）；其余错误不翻转状态
+  // 对话服务探测：404 = /treechat 未挂载（引擎已收编、挂载常开，此态仅剩防御意义：
+  // 后端过旧或未启动）；其余错误不翻转状态
   const refreshSessions = useCallback(() => {
     chatApi.listSessions()
       .then((ss) => { setSessions(ss); setChatServiceUp(true); })

@@ -413,3 +413,15 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   questions_md）——前端全走 /api/modes 动态清单，偏差对前端透明。业务 run 联动
   （spec 卡片 → 一键发起业务 run）不在 TreeChat 本次改动内，留三期收口后续。计划：
   `docs/superpowers/plans/2026-09-14-chat-as-modules-migration.md`。
+- 2026-09-14 **对话引擎收编：treechat 后端整包并入本仓库**——treechat 不会发 PyPI、
+  webview 是唯一 Web 消费端、前端已是移植副本，editable 兄弟依赖只剩环境摩擦
+  （interpreters 错位即 ImportError），故整包收编：顶级 `treechat/` 包（22 文件 /
+  2461 行，core 引擎/session/module·llm bridge/modules/cli/webapp，逐字拷贝零改动）+
+  全套测试收编 `tests/treechat/`（133 例，自包含无兄弟路径）；pyproject 增
+  `treechat*` 打包与 `treechat` console script（REPL 入口保留）；`server/chat.py`
+  去可缺席降级（import 常开、恒 True 返回），`tests/test_chat_mount.py` 去
+  importorskip；前端「安装 treechat」防御文案改「服务未挂载请确认后端已启动」；
+  依赖零新增（treechat 唯一依赖 specmodule，本项目已声明）。原 `../Treechat`
+  仓库收尾提交（模式接线收口 + message_field + session_delete 锁修复，133 例绿）
+  后冻结，演进直接在本仓库进行。计划：
+  `docs/superpowers/plans/2026-09-14-treechat-vendoring.md`。

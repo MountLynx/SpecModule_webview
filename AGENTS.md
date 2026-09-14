@@ -6,7 +6,7 @@
 
 **Thin layer, zero business logic.** The library's query functions map 1:1 to HTTP endpoints; `module_harness/infra/query.py` was explicitly designed as the shared query layer for CLI/MCP/Web consumers. Import it, never reimplement. Anything that looks like logic belongs upstream in the library repo (see 统一 API 原则 below).
 
-**Current state: 阶段 0 HTTP 后端层 + 阶段 1 运行时图视图 + 运行控制（cancel/pause/resume/rollback）已落地**（2026-08-29 / 2026-08-31 实施，设计定稿见 roadmap「运行时图视图设计」「运行控制设计」节）：`server/` FastAPI 薄层（运行读端点 + 图端点 + 控制面端点 + WS 流）与 `web/` SPA（Vite + React + Tailwind + React Flow + dagre）均已实现、测试全绿；**TreeChat 整合一/二/三期已落地**（2026-09-10 / 2026-09-14，见 docs/superpowers：一期壳层重组 + 二期对话引擎并入与顶部页签制 + 三期 chat as modules——`server/chat.py` 整树挂载 `treechat/webapp` 于 `/treechat`，前端页签制壳多实例共存 chat/run，回合 SSE 流式 + 模式入口）；后续（业务 run 联动收口（chat spec 卡片 → 发起业务 run）、状态面板/审阅时间线/产出对比/管理面）按 roadmap 推进。Acceptance target: M1 + M2 modules fully wired — runtime visualization + output comparison.
+**Current state: 阶段 0 HTTP 后端层 + 阶段 1 运行时图视图 + 运行控制（cancel/pause/resume/rollback）已落地**（2026-08-29 / 2026-08-31 实施，设计定稿见 roadmap「运行时图视图设计」「运行控制设计」节）：`server/` FastAPI 薄层（运行读端点 + 图端点 + 控制面端点 + WS 流）与 `web/` SPA（Vite + React + Tailwind + React Flow + dagre）均已实现、测试全绿；**TreeChat 整合一/二/三期已落地且对话引擎已收编**（2026-09-10 / 2026-09-14，见 docs/superpowers：一期壳层重组 + 二期对话引擎并入与顶部页签制 + 三期 chat as modules——对话回合 SSE 流式 + 模式入口；2026-09-14 起引擎以顶级 `treechat/` 包收编进本仓库、挂载常开，前端 `web/src/chat/` 为移植副本,原 `../Treechat` 仓库冻结）；后续（业务 run 联动收口（chat spec 卡片 → 发起业务 run）、状态面板/审阅时间线/产出对比/管理面）按 roadmap 推进。Acceptance target: M1 + M2 modules fully wired — runtime visualization + output comparison.
 
 ## Architecture & Data Flow
 
@@ -54,13 +54,14 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 - `run_id`: Module default `mod_<8hex>`, SubModule `{name}_<6hex>`; consumers may supply their own (CLI `--run-id`). Webview treats `run_id` as opaque path segment.
 - **Real-time without touching the library**: the WS stream (`/api/runs/{id}/stream`) polls `query_run_status` + `control.read_control`（paused 标志）+ `query.read_stream`（stream.log 追尾，锚定最后一条 `run_start`）on the server side（~1s），status 按 `(phase, tick, updated_at, paused)` 签名变化才推（附 `stream_mtime` 辅助心跳）、新 stream 记录批量推 `{"type": "stream", records}`（先于 status）、终态（含 truncated）推完 close(1000) — no library hooks, no push mechanism in the library.
 - CORS: dev SPA runs on a Vite dev server; open the dev origin only. Prod: FastAPI serves the built static assets — same origin, no CORS needed.
-- **不重复构建（统一 API 原则）**：同步完善 API 文档与 CLI 先行的目的就是统一 API——出现第二个消费端（本仓库/TUI/Web）时，共享逻辑收编进库（共享层函数/入口方法），消费端只留传输级薄映射；消费端代码里出现与 CLI 重复的接线/校验逻辑即为违规——要么本轮收编上游，要么记录偏差并排期收编。上游不是不可动，视情况而定：值得统一的改动直接改 sibling 库仓库（遵守其 AGENTS.md），api.md 补录、库仓库独立提交，发新版后同步依赖。**graph 序列化已收编进库**（2026-08-29：`query.build_run_graph`/`graph_to_dict`，CLI visualize 与 Web 共用）——图结构是库侧唯一新数据形状；本层不再维护图构建/序列化代码，消费端只留薄映射。
+- **不重复构建（统一 API 原则）**：同步完善 API 文档与 CLI 先行的目的就是统一 API——出现第二个消费端（本仓库/TUI/Web）时，共享逻辑收编进库（共享层函数/入口方法），消费端只留传输级薄映射；消费端代码里出现与 CLI 重复的接线/校验逻辑即为违规——要么本轮收编上游，要么记录偏差并排期收编。上游不是不可动，视情况而定：值得统一的改动直接改 sibling 库仓库（遵守其 AGENTS.md），api.md 补录、库仓库独立提交，发新版后同步依赖。**graph 序列化已收编进库**（2026-08-29：`query.build_run_graph`/`graph_to_dict`，CLI visualize 与 Web 共用）——图结构是库侧唯一新数据形状；本层不再维护图构建/序列化代码，消费端只留薄映射。**对话引擎反向收编为偏差记录**（2026-09-14）：treechat 不会发 PyPI、webview 是唯一 Web 消费端、前端已是移植副本——继续做 editable 兄弟依赖只剩环境摩擦（可缺席降级随之退役），故整包收编为本仓库顶级 `treechat/` 包；specmodule 库面的共享逻辑纪律不变，treechat 内部对 module_harness 的消费仍全部经 bridge 单点。
 - **库 API 文档同步完善**：消费新的 specmodule API 时，同步补录 `../SpecModule/docs/references/api.md`（做到哪里写哪里，按消费增量生长）；文档变更在库仓库独立提交（`docs:` 前缀，遵循其 AGENTS.md），并在本仓库 roadmap.md 变更日志记录。
 
 ## Key Directories
 
 - repo root — this repo:
-  - `server/` — FastAPI thin layer: `app.py` (entry: CORS + router wiring), `deps.py` (base_dir/搜索路径解析 + run_id 校验), `api/runs.py` (runtime read endpoints), `api/graph.py` (run 图重建：`build_run_graph`/`graph_to_dict` 薄调用 + 每节点运行摘要叠加), `api/manage.py` (模块枚举 + 模块详情), `api/control.py` (运行控制 cancel/pause/unpause + 发起运行/删除 run + inputs 预填 + resume 子进程编排 + 进程观测), `chat.py` (TreeChat 整树挂载 `/treechat`——base_dir 锚定配置链与会话数据目录，treechat 缺席自动降级), `ws.py` (tick 流实时推送)
+  - `server/` — FastAPI thin layer: `app.py` (entry: CORS + router wiring), `deps.py` (base_dir/搜索路径解析 + run_id 校验), `api/runs.py` (runtime read endpoints), `api/graph.py` (run 图重建：`build_run_graph`/`graph_to_dict` 薄调用 + 每节点运行摘要叠加), `api/manage.py` (模块枚举 + 模块详情), `api/control.py` (运行控制 cancel/pause/unpause + 发起运行/删除 run + inputs 预填 + resume 子进程编排 + 进程观测), `chat.py` (TreeChat 整树挂载 `/treechat`——base_dir 锚定配置链与会话数据目录,挂载常开), `ws.py` (tick 流实时推送)
+  - `treechat/` — 对话引擎（2026-09-14 自 `../Treechat` 收编为本仓库顶级包,原独立仓库冻结,演进直接在此进行）：`core/`（会话树/卡片/上下文/事件/存储）+ `session.py`（会话门面）+ `module_bridge.py`/`llm_bridge.py`（module_harness 桥——spec 组装/事件订阅/结构化输出取回 + LLM 客户端与卡片提炼）+ `modules/`（内嵌对话型 module：direct 直答、grilling 拷问）+ `cli/`（REPL,console script `treechat`）+ `webapp/`（FastAPI 服务层,被 `server/chat.py` 整树挂载）；其测试收编于 `tests/treechat/`（133 例）
   - `web/` — Vite + React + TS + Tailwind + React Flow + dagre SPA（页签制壳：顶部页签栏 + 活动栏 + 侧边栏）：`src/App.tsx`（壳层：顶部页签模型（modules 固定 + chat/run 多实例）/runs 轮询/按 sid 多实例会话状态/SSE 流式回合（运行迹按 sid，后台页签持续流式）/恢复请求）+ `src/ws.ts`（WS 客户端，消息按 runId 打包防陈旧流）+ `components/`（TabBar 顶部页签栏、ActivityBar 活动栏（chat/tree/cards/modules/runs/settings）、ModuleList/ModuleDetail 模块库（发起表单内嵌主区）、RunList 运行历史侧栏、RunView 运行视图容器、GraphView/StatusNode 图与徽章、NodePanel 节点面板、RunControls 控制条 + 恢复对话框、dialogTheme 对话框共享类、ui/ 基件含 Radix dialog/dropdown-menu/alert-dialog）+ `src/chat/`（TreeChat 移植：types/api（锚 `/treechat` 前缀；api 含 streamSse 流式回合 + modes）/treelayout/Markdown/ChatView（含 RunBlock 回合运行块）/Composer + ChatListPanel（创建选模式）/TreePanel/CardsPanel/SettingsPanel（模式只读）侧栏面板）+ `src/api.ts`（端点载荷类型）+ `src/lib/utils.ts`（cn/relativeTime）+ `src/lib/json.ts`
   - `tests/` — pytest + httpx TestClient
   - `roadmap.md` — the plan: architecture, endpoint list, phase breakdown, acceptance criteria. Re-read before implementing.
@@ -78,8 +79,7 @@ pip install specmodule
 # or editable against the sibling checkout
 pip install -e "../SpecModule"
 
-# TreeChat 对话服务（可选依赖：未安装则 /treechat 不挂载，运行管理不受影响）
-pip install -e "../Treechat"
+# TreeChat 对话引擎已收编为本仓库顶级 treechat/ 包（pip install -e . 即随装，无独立依赖）
 
 # install this repo's dev deps (fastapi + uvicorn + httpx)
 pip install -e .[dev]   # or: pip install fastapi uvicorn httpx
@@ -137,7 +137,7 @@ Python ≥3.10 (library dev'd on 3.13). No lint/format/type tooling in this ecos
 ## Runtime/Tooling Preferences
 
 - **Python ≥3.10**, pip + setuptools; package manager: pip only (no uv/poetry in ecosystem).
-- Runtime deps: `specmodule` (pulls `tickflow-py` — imported as `tickflow`; import name ≠ package name) + `fastapi` + `uvicorn` (本项目依赖, per roadmap); test dep: `httpx`; 对话服务可选依赖 `treechat`（`pip install -e "../Treechat"`，缺席自动降级）。
+- Runtime deps: `specmodule` (pulls `tickflow-py` — imported as `tickflow`; import name ≠ package name) + `fastapi` + `uvicorn` (本项目依赖, per roadmap); test dep: `httpx`; 对话引擎 `treechat` 已收编为本仓库顶级包（随 `pip install -e .` 一起安装,挂载常开,无缺席降级;原 `../Treechat` 独立仓库已冻结）。
 - No formatter/linter/type-checker configs anywhere in the ecosystem; keep it that way (stdlib + pytest only).
 - API keys live in `.env` (gitignored); `config.json` never stores secrets. The webview backend itself needs no API keys (it only reads run artifacts) — keys matter only for tests that exercise real `Module.run`.
 - Sibling consumer repos (`SpecModule_tui/`, `SpecModule_mcp/`) are the precedent for this repo's thin-consumer shape; `SpecModule_mcp/AGENTS.md` is the closest structural model for this file.

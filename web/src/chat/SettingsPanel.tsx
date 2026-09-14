@@ -15,7 +15,7 @@ export function SettingsPanel({ health, serviceAvailable, modes }: Props) {
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 text-[12.5px] leading-6 text-muted-foreground">
         {!serviceAvailable ? (
           <p className="rounded-panel border border-dashed px-2.5 py-3">
-            对话服务未启用——服务端未安装 treechat（`pip install -e "../Treechat"` 后重启生效）。
+            对话服务未挂载——对话功能内置于服务端，无需额外安装；请确认后端已启动/升级后刷新。
             运行管理功能不受影响。
           </p>
         ) : (

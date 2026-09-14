@@ -48,8 +48,8 @@ export function ChatListPanel(p: Props) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1.5 px-4 text-center text-muted-foreground">
         <div className="text-[28px]">💬</div>
-        <div className="text-[13px]">对话服务未启用</div>
-        <div className="text-[11.5px] opacity-70">服务端安装 treechat 后重启即可（运行管理不受影响）</div>
+        <div className="text-[13px]">对话服务未挂载</div>
+        <div className="text-[11.5px] opacity-70">对话功能内置于服务端——请确认后端已启动/升级后刷新</div>
       </div>
     );
   return <ChatListPanelInner {...p} />;
