@@ -35,5 +35,5 @@ app.include_router(manage.router)
 app.include_router(graph.router)
 app.include_router(control.router)
 app.include_router(ws_router)
-# TreeChat 对话服务（/treechat/api/*）：treechat 未安装时自动跳过，其余不受影响
+# TreeChat 对话服务（/treechat/api/*）：引擎已收编为本仓库顶级包，挂载常开
 mount_chat(app, get_base_dir())

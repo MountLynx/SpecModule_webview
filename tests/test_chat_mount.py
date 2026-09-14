@@ -3,7 +3,8 @@
 
 隔离：不依赖全局 app——mount_chat 注入 tmp base_dir，会话文件落在
 tmp/.treechat/sessions；LLM 客户端替换走子应用 registry（app.state.chat_registry，
-对齐 treechat 自家 conftest 的假客户端模式）。treechat 缺席时整模块跳过。
+对齐 treechat 自家 conftest 的假客户端模式）。对话引擎已收编为本仓库顶级包，
+测试常开（原 importorskip 随可缺席降级一并退役）。
 
 三期（chat as modules）：回合契约升级为 SSE 流式（start 预告 → 逐 token/节点进度 →
 done/error 终帧；REST 非流式退役），LLM 失败经 SSE error 帧回传。
@@ -11,16 +12,14 @@ done/error 终帧；REST 非流式退役），LLM 失败经 SSE error 帧回传�
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from llm import LLMError, LLMResponse
 
-pytest.importorskip("treechat")
-
-from llm import LLMError, LLMResponse  # noqa: E402
-
-from server.chat import mount_chat  # noqa: E402
+from server.chat import mount_chat
 
 
 class FakeChatClient:
@@ -84,7 +83,6 @@ def test_health_reports_workspace_data_dir(env):
     body = r.json()
     assert body["ok"] is True
     assert "llmConfigured" in body
-    from pathlib import Path
     assert Path(body["dataDir"]) == base / ".treechat"
 
 
@@ -95,7 +93,6 @@ def test_treechat_data_dir_env_override(tmp_path, monkeypatch):
     assert mount_chat(app, base_dir=tmp_path) is True
     r = TestClient(app).get("/treechat/api/health")
     assert r.status_code == 200
-    from pathlib import Path
     assert Path(r.json()["dataDir"]) == override
 
 
