@@ -74,37 +74,32 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 ## Development Commands
 
 ```bash
-# install the library (the only runtime dependency)
-pip install specmodule
-# or editable against the sibling checkout
-pip install -e "../SpecModule"
-
-# TreeChat 对话引擎已收编为本仓库顶级 treechat/ 包（pip install -e . 即随装，无独立依赖）
-
-# install this repo's dev deps (fastapi + uvicorn + httpx)
-pip install -e .[dev]   # or: pip install fastapi uvicorn httpx
+# environment (uv：创建 .venv + uv.lock 锁定；specmodule 经 tool.uv.sources 锚定 ../SpecModule editable)
+uv sync
 
 # run tests
-python -m pytest tests/ -q                  # this repo's suite
-python -m pytest ../SpecModule/module_harness/tests/ -q -m "not smoke"   # library baseline (no LLM keys)
-python -m pytest ../SpecModule/module_harness/tests/smoke/ -v -s         # real-LLM smoke (needs config.json + .env)
+uv run pytest tests/ -q                     # this repo's suite（webview + 收编的 treechat 133 例）
+uv run pytest ../SpecModule/module_harness/tests/ -q -m "not smoke"   # library baseline (no LLM keys)
+uv run pytest ../SpecModule/module_harness/tests/smoke/ -v -s         # real-LLM smoke (needs config.json + .env)
 
 # run the backend (start from project root — imports resolve against the library)
-uvicorn server.app:app --reload --port 8000
+uv run uvicorn server.app:app --reload --port 8000
 # with explicit run root (recommended — server cwd ≠ run root)
-SPECMODULE_BASE=<运行根目录> uvicorn server.app:app --port 8000
+SPECMODULE_BASE=<运行根目录> uv run uvicorn server.app:app --port 8000
 
 # frontend (web/ only; node_modules/ and dist/ are gitignored)
-cd web && npm install && npm run dev   # dev server on :5173, /api 与 /treechat 代理到 :8000（WS 走 /api）
+cd web && npm install && npm run dev   # dev server on :5173, /api 与 /treechat 代理到 :8000（SSE/WS 走 HTTP 代理）
 npm run build                          # tsc --noEmit + vite build (acceptance gate)
 ```
 
 运行业务模块需要其所在目录可被库发现：模块在 cwd/modules 或 `$SPECMODULE_PATH`（os.pathsep 分隔）下（测试用 `SPECMODULE_PATH=tests/modules`）。
 
+无 uv 时的 pip 回落：`pip install -e "../SpecModule" -e . pytest httpx`（dev 组在 `[dependency-groups]`，pip ≥25.1 也可 `pip install --group dev -e .`）。
+
 # library CLI reference (semantics of the API surface)
-python -m module_harness.cli run --module <name> --spec '{"...": "..."}' --mock
-python -m module_harness.cli status --run-id <id>
-python -m module_harness.cli review --run-id <id>
+uv run python -m module_harness.cli run --module <name> --spec '{"...": "..."}' --mock
+uv run python -m module_harness.cli status --run-id <id>
+uv run python -m module_harness.cli review --run-id <id>
 ```
 
 Python ≥3.10 (library dev'd on 3.13). No lint/format/type tooling in this ecosystem — don't introduce any.
@@ -136,7 +131,7 @@ Python ≥3.10 (library dev'd on 3.13). No lint/format/type tooling in this ecos
 
 ## Runtime/Tooling Preferences
 
-- **Python ≥3.10**, pip + setuptools; package manager: pip only (no uv/poetry in ecosystem).
+- **Python ≥3.10**; 包管理：**uv**（2026-09-14 起，`uv sync` 建 `.venv` + 提交 `uv.lock`；specmodule 经 `[tool.uv.sources]` 锚 `../SpecModule` editable；无 uv 时 pip 回落见开发命令）。生态其余仓库（SpecModule 等）惯例仍是 pip，不强制跟随。
 - Runtime deps: `specmodule` (pulls `tickflow-py` — imported as `tickflow`; import name ≠ package name) + `fastapi` + `uvicorn` (本项目依赖, per roadmap); test dep: `httpx`; 对话引擎 `treechat` 已收编为本仓库顶级包（随 `pip install -e .` 一起安装,挂载常开,无缺席降级;原 `../Treechat` 独立仓库已冻结）。
 - No formatter/linter/type-checker configs anywhere in the ecosystem; keep it that way (stdlib + pytest only).
 - API keys live in `.env` (gitignored); `config.json` never stores secrets. The webview backend itself needs no API keys (it only reads run artifacts) — keys matter only for tests that exercise real `Module.run`.
@@ -148,5 +143,5 @@ Python ≥3.10 (library dev'd on 3.13). No lint/format/type tooling in this ecos
 - **Isolation pattern** (library convention, required): real run stores under `tmp_path` — `tmp_path/.specmodule/runs/<id>/run.sqlite` + `status.json`; construct a minimal fixture run by writing a `status.json` (phase-only) and/or a `run.sqlite` via `tickflow.persistence.SqliteBackend` (or reuse library test helpers). Never touch real `~/.specmodule`.
 - Endpoint tests: build fixture run artifacts → hit endpoints via TestClient → assert response shapes match the mapping table above, including the error contract (None → 404).
 - Feed compat: assert `/api/runs/{id}/feed` shape stays byte-compatible with `feed.py`'s `_serve_feed` output.
-- Library baseline before merging anything: `python -m pytest ../SpecModule/module_harness/tests/ -q -m "not smoke"`.
+- Library baseline before merging anything: `uv run pytest ../SpecModule/module_harness/tests/ -q -m "not smoke"`.
 - Acceptance (roadmap): M1 + M2 modules fully wired — runtime visualization + output comparison, verified end-to-end against real run artifacts.

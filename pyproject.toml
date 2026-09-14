@@ -5,7 +5,7 @@ description = "SpecModule 可视化消费通道：FastAPI 薄层 + React SPA"
 requires-python = ">=3.10"
 dependencies = ["specmodule", "fastapi>=0.110", "uvicorn>=0.29"]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = ["httpx>=0.27", "pytest>=8"]
 
 [project.scripts]
@@ -17,3 +17,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["server*", "treechat*"]
+
+[tool.uv.sources]
+# 开发锚定兄弟仓库 editable——与 SpecModule 同仓迭代（uv.lock 记录该来源；
+# 纯部署场景可改回 PyPI 解析，见 AGENTS.md 开发命令）
+specmodule = { path = "../SpecModule", editable = true }

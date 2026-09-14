@@ -425,3 +425,7 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   仓库收尾提交（模式接线收口 + message_field + session_delete 锁修复，133 例绿）
   后冻结，演进直接在本仓库进行。计划：
   `docs/superpowers/plans/2026-09-14-treechat-vendoring.md`。
+- 2026-09-14 **uv 项目环境**——`uv sync`/`uv run` 为标准流程：dev 依赖迁
+  `[dependency-groups]`（PEP 735，原 optional-dependencies 退役），specmodule 经
+  `[tool.uv.sources]` 锚 `../SpecModule` editable（uv.lock 提交锁定；`.venv/` 已
+  gitignore）；pip 回落路径见 AGENTS.md 开发命令；生态其余仓库仍 pip 不强制跟随。
