@@ -381,3 +381,35 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   对话⇄run 联动留三期。设计：
   `docs/superpowers/specs/2026-09-10-treechat-integration-phase2-chat-tabs-design.md`；
   计划：`docs/superpowers/plans/2026-09-10-treechat-integration-phase2-chat-tabs.md`。
+- 2026-09-11 **Chat as Modules 设计定稿（三期方向重定义）**——grilling 定位拷问收敛。
+  定位声明：specmodule 是 agent harness 框架（能力由 harness 结构提供，LLM 是图里的
+  组件）；取代语义：skill 中的「流程约束与提示词」类 → module 化；agent loop 降级为
+  图级守卫循环（预算=max_ticks、收尾=guard）。核心命题：**不是在 chat 里用 module，
+  而是用 module 拼出一个 chat**——每回合 = 一次对话型 module run（in-process、
+  ephemeral、审计宿主=会话树、无运行视图），模式 = 对话型 module（复用 category），
+  输入即 spec（brief 原话 + bridge 组装 history），spec 文档 = 共同维护的卡片
+  （服务层自动刷新 + 卡片直填/对话框引用双通道）。v1 三个对话型 module（直答=单
+  harness 节点退化形态、grilling、domain-modeling——自用户 skill_by_me 两个 skill
+  移植，零外部工具依赖），v1 上流式（EventBus on_token → SSE）；嵌入式 module 随
+  treechat 包内嵌分发。业务 run 联动机制不变（webview 编排 spawn + WS 跟踪卡片），
+  spec-builder 一键转化 v1.1、推荐输出=自动路由种子 v2。落地顺序：TreeChat 仓库先行
+  （module_bridge/SSE/嵌入式 modules/category 模式化）→ 本仓库挂载集成与前端模式入口。
+  库依赖五项（brief 约定文档化 / scaffold 对话型模板 / persist 语义确认 / on_token
+  事件面 api.md / 远期 agent 节点原语）。设计：
+  `docs/superpowers/specs/2026-09-11-chat-as-modules-design.md`。
+- 2026-09-14 **TreeChat 整合三期迁移：chat as modules 集成**——TreeChat 仓库先行完成
+  （module_bridge/SSE 传输层/嵌入式对话型 module/category 模式化），本仓库挂载集成落地：
+  后端零改动（`server/chat.py` 挂载契约不变，editable 安装自动跟随 SSE/modes 新契约）；
+  挂载测试升级 SSE 回合契约 8 例（start 预告 → 逐 token/节点进度 → done/error 终帧、
+  LLM 失败 error 帧——REST 502 契约退役；`/treechat/api/modes` 与分类创建回归）。
+  前端移植 webui 增量：SSE 流式回合（streamSse 逐帧解析 + 断流检测；ChatView RunBlock
+  节点预告/逐 token 全文/卡片链接片收口）、会话创建模式选择（direct 映射空分类）、
+  页签徽章模式显示名、设置页模式只读展示；**SSE 按 sid 多实例推广**——回调闭包绑定
+  发起 sid 写入对应运行迹，后台页签会话持续流式（webui 单活动会话的 activeSidRef
+  守卫不需要；删除竞态由后端 session_delete 与轮次共用 registry 锁 + deletedSids
+  兜底）。偏差记录（vs 原设计）：v1 对话型 module 实为两个——**grilling 吸收
+  domain-modeling**（节点序 TreeUpdate → FrontierFormat → Resolution，Resolution
+  裁决 + spec:glossary 词表卡片），message_field 改由模块声明（不再硬编码
+  questions_md）——前端全走 /api/modes 动态清单，偏差对前端透明。业务 run 联动
+  （spec 卡片 → 一键发起业务 run）不在 TreeChat 本次改动内，留三期收口后续。计划：
+  `docs/superpowers/plans/2026-09-14-chat-as-modules-migration.md`。
