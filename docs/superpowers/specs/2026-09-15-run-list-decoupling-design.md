@@ -75,3 +75,13 @@ webview 前端对 `GET /api/runs` 周期轮询，运行历史一多整页卡死�
 ## 范围外建议
 
 `.specmodule/runs` 现存 4821 个历史目录（多为 `bad_*` 测试残渣）在新机制下无害；日后可手动归档或 `specmodule delete-run` 清理。
+
+## 勘误（实施期修正，2026-09-15）
+
+1. 排序键为各 run 目录 **status.json 自身 mtime**（每目录一次元数据 stat），
+   非「scandir 自带 find 数据、不额外打开文件」——原表述针对的是目录自身
+   mtime，而目录 mtime 会因 WAL 侧车（-wal/-shm）增删被污染，且不区分是
+   哪个子项变化；status.json 文件 mtime 才精确刻画状态写入时刻。
+2. status.json 按 **phase 迁移**重写（非每 tick）；长跑 run（长时间无
+   phase 迁移）可能滑出前 N，粒度与 `list_runs` 的 updated_at 排序一致，
+   尾部由 total + CLI `runs` 兜底。
