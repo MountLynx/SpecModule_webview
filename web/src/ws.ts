@@ -18,9 +18,15 @@ export interface StreamState {
   stream: StreamBuffer;
 }
 
-export function useRunStream(runId: string | null): StreamState | null {
+export function useRunStream(
+  runId: string | null,
+  onTerminal?: () => void,
+): StreamState | null {
   const [state, setState] = useState<StreamState | null>(null);
   const terminalRef = useRef(false);
+  // 回调经 ref 透传：effect 只依赖 runId，回调换 identity 不触发 WS 重连
+  const onTerminalRef = useRef(onTerminal);
+  onTerminalRef.current = onTerminal;
 
   useEffect(() => {
     // 切换 run 先清旧消息，避免 header 短暂显示上一个 run 的 phase
@@ -41,6 +47,7 @@ export function useRunStream(runId: string | null): StreamState | null {
         const data = JSON.parse(ev.data) as WsMsg;
         if (data.type === "error") {
           // 服务端错误关闭（如 run 不存在）→ 停止重连，避免错误-关闭-重连循环
+          if (!terminalRef.current) onTerminalRef.current?.();
           terminalRef.current = true;
           return;
         }
@@ -70,7 +77,10 @@ export function useRunStream(runId: string | null): StreamState | null {
             msg: data,
             stream: prev?.runId === runId ? prev.stream : { text: {}, seq: 0 },
           }));
-          if (TERMINAL_PHASES.has(data.phase)) terminalRef.current = true;
+          if (TERMINAL_PHASES.has(data.phase) && !terminalRef.current) {
+            terminalRef.current = true;
+            onTerminalRef.current?.();
+          }
         }
       };
       ws.onclose = () => {

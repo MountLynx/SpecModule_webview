@@ -126,8 +126,13 @@ async function postJson<T>(url: string, payload: unknown): Promise<T> {
   });
 }
 
-export const fetchRuns = () =>
-  getJson<{ runs: RunSummary[] }>("/api/runs").then((d) => d.runs);
+/** GET /api/runs 载荷：最近 N 条完整行 + 历史总目录数（尾部只计不展开）。 */
+export interface RunsPayload {
+  runs: RunSummary[];
+  total: number;
+}
+
+export const fetchRuns = () => getJson<RunsPayload>("/api/runs");
 
 export const fetchStatus = (runId: string) =>
   getJson<StatusResp>(`/api/runs/${encodeURIComponent(runId)}/status`);

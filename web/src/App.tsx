@@ -68,6 +68,7 @@ export default function App() {
   const [activeId, setActiveId] = useState<string>("modules");
   const [openModuleName, setOpenModuleName] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [runsTotal, setRunsTotal] = useState(0);
   // 打开恢复对话框的请求：runId + seq 守卫（一期机制原样）
   const [resumeRequest, setResumeRequest] = useState<ResumeRequestMsg | null>(null);
 
@@ -95,13 +96,18 @@ export default function App() {
     });
   }, []);
 
+  // 列表不做周期轮询（2026-09-15 根修，specs/2026-09-15-run-list-decoupling）：
+  // 首次加载 + 事件钩子（发起/删除/行内控制/页签终态）触发；页签内监控走 WS
   const refreshRuns = useCallback(() => {
-    fetchRuns().then(setRuns).catch(() => {});
+    fetchRuns()
+      .then((d) => {
+        setRuns(d.runs);
+        setRunsTotal(d.total);
+      })
+      .catch(() => {});
   }, []);
   useEffect(() => {
     refreshRuns();
-    const t = setInterval(refreshRuns, 5000);
-    return () => clearInterval(t);
   }, [refreshRuns]);
 
   // 对话服务探测：404 = /treechat 未挂载（引擎已收编、挂载常开，此态仅剩防御意义：
@@ -272,7 +278,7 @@ export default function App() {
 
   const consumeResumeRequest = useCallback(() => setResumeRequest(null), []);
 
-  // RunList 行内控制：失败静默——列表 5s 轮询刷新后状态即真相
+  // RunList 行内控制：失败静默——控制动作后显式刷新列表，状态即真相
   const handleListControl = useCallback(
     async (rid: string, action: ControlAction) => {
       try {
@@ -389,11 +395,13 @@ export default function App() {
         {sidebarTab === "runs" && (
           <RunList
             runs={runs}
+            total={runsTotal}
             current={activeRunId}
             onSelect={openRunTab}
             onControl={handleListControl}
             onResume={handleListResume}
             onDeleted={handleDeleted}
+            onRefresh={refreshRuns}
           />
         )}
         {sidebarTab === "settings" && (

@@ -33,21 +33,27 @@ const ctlBtn = "h-5 px-1.5 text-[10.5px]";
 
 interface RunListProps {
   runs: RunSummary[];
+  /** 历史总目录数（尾部只计不展开；> runs.length 时显示提示） */
+  total: number;
   current: string | null;
   onSelect: (id: string) => void;
   onControl: (id: string, action: ControlAction) => void;
   onResume: (id: string) => void;
   /** 删除成功回调（壳层刷新列表；删的是当前打开的 run 则清 runId） */
   onDeleted: (runId: string) => void;
+  /** 手动刷新（列表不做周期轮询） */
+  onRefresh: () => void;
 }
 
 export function RunList({
   runs,
+  total,
   current,
   onSelect,
   onControl,
   onResume,
   onDeleted,
+  onRefresh,
 }: RunListProps) {
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -79,9 +85,17 @@ export function RunList({
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 px-3.5 pb-2 pt-2.5 text-[12.5px] font-bold">
         运行历史
-        <span className="font-normal text-muted-foreground">{runs.length} 条</span>
+        <span className="font-normal text-muted-foreground">{total} 条</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto h-5 px-1.5 text-[10.5px]"
+          onClick={onRefresh}
+        >
+          ↻ 刷新
+        </Button>
         {err && (
-          <span title={err} className="truncate font-normal text-[11.5px] text-destructive">
+          <span title={err} className="min-w-0 truncate font-normal text-[11.5px] text-destructive">
             {err}
           </span>
         )}
@@ -176,6 +190,13 @@ export function RunList({
             </div>
           );
         })}
+        {total > runs.length && (
+          <div className="px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+            共 {total} 条 · 仅展开最近 {runs.length} 条，更早历史用 CLI
+            <code className="mx-1 font-mono">specmodule runs</code>
+            查看
+          </div>
+        )}
         {!runs.length && (
           <div className="px-3 py-3 text-[11.5px] leading-relaxed text-muted-foreground">
             暂无运行记录——到「模块库」发起一个运行，或用 CLI 在运行根目录起 run。

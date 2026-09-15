@@ -69,8 +69,9 @@ export function RunView({
   const [materialTimeout, setMaterialTimeout] = useState(false);
   const lastMsgAtRef = useRef<number>(Date.now());
   const liveRef = useRef(false);
-  // 落盘后才连 WS（run 不存在时服务端拒连 + 前端永久停连，不可逆）
-  const streamState = useRunStream(materialized ? runId : null);
+  // 落盘后才连 WS（run 不存在时服务端拒连 + 前端永久停连，不可逆）；
+  // 终态回调刷新侧栏列表（列表不做周期轮询，事件钩子驱动）
+  const streamState = useRunStream(materialized ? runId : null, onRefreshRuns);
   const stream = streamState?.msg ?? null;
   // 已应用到 node_states 的 tick 基线（首条 WS 消息重放的是 /graph 初始载荷已计入的状态）
   const appliedTickRef = useRef<number | null>(null);
