@@ -18,7 +18,7 @@ class TestRunsList:
 
     def test_payload_shape_and_order(self, base, client):
         """新载荷：query.recent_runs 形状（mtime 前 N 条）+ paused 叠加 + total 计数。"""
-        seed_run(base, "r_old", status={"module_id": "r_old", "phase": "done", "updated_at": 1.0})
+        seed_run(base, "r_old", status={"module_id": "r_old", "phase": "done", "updated_at": 9.0})
         seed_run(
             base, "r_new",
             firings=[{"tick": 1, "node": "A", "output": "a1"}],
