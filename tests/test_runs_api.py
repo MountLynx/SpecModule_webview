@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 
 from tests.conftest import seed_run
 
@@ -12,16 +14,16 @@ class TestRunsList:
     def test_empty(self, client):
         r = client.get("/api/runs")
         assert r.status_code == 200
-        assert r.json() == {"runs": []}
+        assert r.json() == {"runs": [], "total": 0}
 
     def test_payload_shape_and_order(self, base, client):
-        """新载荷：query.list_runs 形状 + paused 叠加；updated_at 降序。"""
+        """新载荷：query.recent_runs 形状（mtime 前 N 条）+ paused 叠加 + total 计数。"""
         seed_run(base, "r_old", status={"module_id": "r_old", "phase": "done", "updated_at": 1.0})
         seed_run(
             base, "r_new",
             firings=[{"tick": 1, "node": "A", "output": "a1"}],
             snapshots={1: {"tick": 1, "status": "running", "fireable": ["B"], "fired": ["A"]}},
-            status={"module_id": "r_new", "module": "mini_graph",
+            status={"module_id": "r_new", "module": "mini_graph", "tick": 1,
                     "phase": "running", "updated_at": 2.0},
         )
         # 仅 status.json 的失败 run（无 run.sqlite）——has_sqlite False
@@ -32,9 +34,16 @@ class TestRunsList:
                         "error": "boom", "updated_at": 3.0}),
             encoding="utf-8",
         )
+        # mtime 锚定确定性顺序：r_bare > r_new > r_old（列表按 mtime 降序）
+        now = time.time()
+        for run_id, age in (("r_old", 600), ("r_new", 60), ("r_bare", 5)):
+            p = base / ".specmodule" / "runs" / run_id / "status.json"
+            os.utime(p, (now - age, now - age))
         r = client.get("/api/runs")
         assert r.status_code == 200
-        runs = r.json()["runs"]
+        body = r.json()
+        assert body["total"] == 3
+        runs = body["runs"]
         assert [x["run_id"] for x in runs] == ["r_bare", "r_new", "r_old"]
         row = next(x for x in runs if x["run_id"] == "r_new")
         assert set(row) == {

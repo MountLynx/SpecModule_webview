@@ -20,21 +20,23 @@ def not_found(run_id: str) -> HTTPException:
 
 
 @router.get("")
-def list_runs(base_dir: Path = Depends(get_base_dir)) -> dict:
-    """运行列表：query.list_runs 枚举 + 逐 run read_control 叠加 paused（updated_at 降序）。
+def recent_runs(base_dir: Path = Depends(get_base_dir)) -> dict:
+    """运行列表：query.recent_runs（mtime 前 N 条完整行 + total 计数）
+    + 逐行 read_control 叠加 paused。
 
-    status.json 缺失/损坏的 run 以 phase="unknown" 收入不跳过（删除入口要对
-    坏目录可用）；module 记 status.json 溯源字段，旧 run 无 → None（前端回落
-    run_id 启发式）。
+    成本与历史规模解耦——全量枚举不进列表端点（CLI `runs` 保留全量语义），
+    更早历史 UI 只透出 total（提示 CLI 查看）；status.json 缺失/损坏的 run
+    以 phase="unknown" 收入不跳过（删除入口要对坏目录可用）。
     """
-    out = []
-    for row in query.list_runs(base_dir=base_dir):
+    data = query.recent_runs(base_dir=base_dir)
+    rows = []
+    for row in data["runs"]:
         req = control.read_control(row["run_id"], base_dir=base_dir)
-        out.append({
+        rows.append({
             **row,
             "paused": bool(req and req.get("action") == "pause"),
         })
-    return {"runs": out}
+    return {"runs": rows, "total": data["total"]}
 
 
 class CheckpointBody(BaseModel):
