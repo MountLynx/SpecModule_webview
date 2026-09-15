@@ -20,7 +20,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 
 | Endpoint | Library call | Shape |
 |---|---|---|
-| `GET /api/runs` | `query.list_runs(base_dir=None) -> list[dict]`（库共享 run 枚举，updated_at 降序）+ 逐 run `control.read_control` 叠加 `paused` | `[{run_id, module, phase, tick, error, updated_at, has_sqlite, paused}]`；`module` = status.json 溯源字段（旧 run → None，前端回落 run_id 启发式）；status.json 缺失/损坏 → `phase="unknown"` 收入不跳过（删除入口对坏目录可用） |
+| `GET /api/runs` | `query.recent_runs(base_dir=None, limit=100)`（库共享快速列表：status.json mtime 前 N 条完整行 + total 计数，2026-09-15 根修）+ 逐行 `control.read_control` 叠加 `paused` | `{runs: [{run_id, module, phase, tick, error, updated_at, has_sqlite, paused}], total}`；成本与历史规模解耦（更早历史不展开，UI 提示 CLI `runs` 查看）；前端列表不做周期轮询——手动刷新 + 事件钩子（发起/删除/行内控制/页签终态）；`module` = status.json 溯源字段（旧 run → None，前端回落 run_id 启发式）；status.json 缺失/损坏 → `phase="unknown"` 收入不跳过（删除入口对坏目录可用） |
 | `GET /api/runs/{id}/status` | `query_run_status(module_id, base_dir=None) -> ModuleStatus \| None` | `{module_id, phase, status, tick, fireable, fired, outputs, node_states, error, updated_at}` |
 | `GET /api/runs/{id}/timeline` | `build_timeline` + `timeline_to_dict`; filters `filter_failed/filter_tick/filter_node` | `{module_id, latest_tick, entries: [{tick, node, status, output, error}]}`; entry status `ok\|failed\|aborted` |
 | `GET /api/runs/{id}/checkpoints` | `build_checkpoints` + `checkpoints_to_dict` | `{module_id, checkpoints: [{target, tick, kind, fired, label}]}`; `target` = direct resume arg (`"<tick>"` or `"manual:<label>"`) |

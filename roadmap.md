@@ -429,3 +429,15 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   `[dependency-groups]`（PEP 735，原 optional-dependencies 退役），specmodule 经
   `[tool.uv.sources]` 锚 `../SpecModule` editable（uv.lock 提交锁定；`.venv/` 已
   gitignore）；pip 回落路径见 AGENTS.md 开发命令；生态其余仓库仍 pip 不强制跟随。
+- 2026-09-15 **运行列表与轮询机制根修**——实测 4821 个历史 run 下 `GET /api/runs`
+  单次 12.5s（`list_runs` 10.2s，其中给 2924 个旧 run 逐个开 `SqliteBackend` 查
+  tick 占 6.6s），前端 5s 周期轮询把页面拖死。收编上游：库新增 `query.recent_runs`
+  （status.json mtime 排序只展开前 N 条 + total 计数，phase 迁移刷新排序键故活跃
+  run 靠前，成本与历史规模解耦）、`_latest_tick_light` 换只读连接（免建连写锁，
+  CLI 全量 `runs` 10s→4s）；webview `/api/runs` 改薄映射，前端列表去 5s 轮询改
+  手动刷新 + 事件钩子（发起/删除/行内控制/页签终态），尾部按 total 提示更早历史
+  走 CLI。已知后续：同页签 resume 不重挂载 RunView、WS 不 re-arm，恢复跑完的
+  终态钩子不触发（预存 WS 生命周期限制，去轮询后显性化；列表靠手动刷新/其他
+  钩子兜底），留后续处理。设计/计划：
+  `docs/superpowers/specs/2026-09-15-run-list-decoupling-design.md`、
+  `docs/superpowers/plans/2026-09-15-run-list-decoupling.md`。
