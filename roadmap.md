@@ -441,3 +441,15 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   钩子兜底），留后续处理。设计/计划：
   `docs/superpowers/specs/2026-09-15-run-list-decoupling-design.md`、
   `docs/superpowers/plans/2026-09-15-run-list-decoupling.md`。
+- 2026-09-16 **数据根锚定 home + example 模块安装进 store + 测试垃圾清理**——
+  module 索引一直连到原仓库 `example/`，cwd 锚定使测试 run 持续积累
+  （`../SpecModule/.specmodule/runs` 5109 条 + 本仓库 75 条，纯垃圾已清）。
+  根修三件事：① `server/deps.py get_base_dir` 缺省从 cwd 改为用户主目录——
+  数据根统一 `~/.specmodule`（runs/store/chat 同根），本地启动无需设
+  `SPECMODULE_BASE`，覆盖语义不变；② example 实践线模块（`academic_writer`
+  = M1 验收模块 + `ppt_master`）按 store 规范安装进 `~/.specmodule/modules/`：
+  顶层 entry 入口 + `_lib/example` 自包含实现包（入口引导 sys.path，
+  `llm`/`module_harness` 为发行包自带顶级包走安装链），server 视图 ≡ spawn
+  子进程视图（cwd=home `cli list` 验证）；③ AGENTS.md 增补「测试垃圾随时
+  清理」纪律（run 工件一律 tmp_path，仓库目录下 `.specmodule/runs/*` 发现
+  即删）。

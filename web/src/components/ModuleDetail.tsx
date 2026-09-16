@@ -113,7 +113,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-5">
+    <div className="h-full min-h-0 flex-1 overflow-y-auto p-5">
       <div className="max-w-[760px] text-[13px]">
         <div className="flex items-center gap-2">
           <span className="text-[16px] font-bold">{detail.name}</span>

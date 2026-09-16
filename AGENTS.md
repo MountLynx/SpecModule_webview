@@ -48,7 +48,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
 **Monitoring.** Progress rides runner hooks `hooks={"on_tick_start": cb(tick, fireable), "on_fire": cb(NodeState), …}` and `EventBus` typed events. Persistence is file-based and cross-process readable: `run.sqlite` (tables `snapshots`, `firings`, `checkpoints`, `module_inputs`; WAL) + `status.json`.
 
 **Key constraints**
-- `base_dir` defaults to `cwd` — a server process's cwd differs from the user's run root; pass `base_dir` explicitly and consistently (one runs root per server, via `SPECMODULE_BASE` env, default cwd). **模块搜索锚定同一纪律**：所有模块枚举/解析调用（`list_modules`/`resolve_module`/`resolve_module_full`）显式传 `search=store.search_paths(base_dir)`（`server/deps.py get_search_paths`）——server 模块视图 ≡ spawn 子进程 CLI 视图，放运行根 `modules/` 下的模块不被误判 module_unresolved；`GET /api/modules` 载荷附 `search_paths` 透出实际扫描目录。
+- `base_dir` 缺省锚**用户主目录**（env `SPECMODULE_BASE` 可覆盖，测试/多运行根才需要设）——数据根统一 `~/.specmodule`：runs（`~/.specmodule/runs/`）、模块 store、chat 会话（`~/.treechat/`）同根；本地启动 webview 不再散落运行记录进仓库目录（2026-09-16 根修：此前 cwd 锚定导致 module 索引连到原仓库 example、`../SpecModule/.specmodule/runs` 积累 5109 条测试 run）。**模块搜索锚定同一纪律**：所有模块枚举/解析调用（`list_modules`/`resolve_module`/`resolve_module_full`）显式传 `search=store.search_paths(base_dir)`（`server/deps.py get_search_paths`）——server 模块视图 ≡ spawn 子进程 CLI 视图，放运行根 `modules/` 下的模块不被误判 module_unresolved；`GET /api/modules` 载荷附 `search_paths` 透出实际扫描目录。
 - Failed runs write only `status.json` (no `run.sqlite`) — status/timeline endpoints must tolerate a run dir without sqlite (query layer returns `None` — map to 404, never raise).
 - Single-writer per `run_id` (WAL) — serialize any cross-process operations touching the same run.
 - `run_id`: Module default `mod_<8hex>`, SubModule `{name}_<6hex>`; consumers may supply their own (CLI `--run-id`). Webview treats `run_id` as opaque path segment.
@@ -69,7 +69,7 @@ Library interfaces → endpoint mapping (all verified in `../SpecModule/module_h
   - `module_harness/` — `query.py` (timeline/checkpoint queries + `read_module_inputs`), `status.py` (`ModuleStatus`), `control.py` (跨进程控制文件协议：cancel/pause/unpause + hook 工厂), `graph_builder.py` (`TasklistTranslator`), `translator.py`, `store.py` (module store), `module.py` (`Module` orchestrator), `feed.py` (reference JSON composition + polling pattern), `entry.py`, `cli.py` (21-subcommand `specmodule` CLI: + `cancel`/`pause`/`unpause`)
   - `docs/references/api.md` — 库面编程 API 参考（按消费增量生长，本仓库消费新 API 必须同步补录）；`cli-usage.md` — parameter semantics for every operation
   - `AGENTS.md` — sibling guidelines (architecture rules, gotchas); mirror its conventions
-- Run artifacts (created at runtime): `<base_dir>/.specmodule/runs/<run_id>/`（`run.sqlite` + `status.json` + `stream.log`——LLM 流式 JSONL，`Module(stream_log=False)` 关闭）; module store: `$SPECMODULE_HOME` or `~/.specmodule/` (`modules/`, `manifests/`, `cache/`, `config.json`, `.env`, `rules.txt`).
+- Run artifacts (created at runtime): `<base_dir>/.specmodule/runs/<run_id>/`（`run.sqlite` + `status.json` + `stream.log`——LLM 流式 JSONL，`Module(stream_log=False)` 关闭）; module store: `$SPECMODULE_HOME` or `~/.specmodule/` (`modules/`, `manifests/`, `cache/`, `config.json`, `.env`, `rules.txt`). example 实践线模块（`academic_writer`/`ppt_master`）已按 entry 式安装进 `~/.specmodule/modules/`（2026-09-16，SpecModule@18573a2：顶层入口文件 + `_lib/example` 自包含实现包，入口引导把 `_lib` 加入 sys.path；`llm`/`module_harness` 是 specmodule 发行包自带顶级包，走安装链解析、不随 store 拷贝）。
 
 ## Development Commands
 
@@ -84,7 +84,8 @@ uv run pytest ../SpecModule/module_harness/tests/smoke/ -v -s         # real-LLM
 
 # run the backend (start from project root — imports resolve against the library)
 uv run uvicorn server.app:app --reload --port 8000
-# with explicit run root (recommended — server cwd ≠ run root)
+# 运行根缺省已锚用户主目录（数据根统一 ~/.specmodule），本地启动无需设 env；
+# 仅测试隔离 / 多运行根时覆盖：
 SPECMODULE_BASE=<运行根目录> uv run uvicorn server.app:app --port 8000
 
 # frontend (web/ only; node_modules/ and dist/ are gitignored)
@@ -141,6 +142,7 @@ Python ≥3.10 (library dev'd on 3.13). No lint/format/type tooling in this ecos
 
 - **pytest** + `httpx` TestClient (FastAPI's ASGI test client). No pytest config, no coverage tooling, no thresholds — match the ecosystem.
 - **Isolation pattern** (library convention, required): real run stores under `tmp_path` — `tmp_path/.specmodule/runs/<id>/run.sqlite` + `status.json`; construct a minimal fixture run by writing a `status.json` (phase-only) and/or a `run.sqlite` via `tickflow.persistence.SqliteBackend` (or reuse library test helpers). Never touch real `~/.specmodule`.
+- **测试垃圾随时清理**：测试产生的 run 工件一律落 `tmp_path`（isolation pattern）；凡出现在任一仓库目录下的 `.specmodule/runs/*` 都是泄漏的测试垃圾，发现即删、不得积累（2026-09-16 曾因 cwd 锚定在 `../SpecModule/.specmodule/runs` 积累 5109 条、本仓库 75 条，已清理）。
 - Endpoint tests: build fixture run artifacts → hit endpoints via TestClient → assert response shapes match the mapping table above, including the error contract (None → 404).
 - Feed compat: assert `/api/runs/{id}/feed` shape stays byte-compatible with `feed.py`'s `_serve_feed` output.
 - Library baseline before merging anything: `uv run pytest ../SpecModule/module_harness/tests/ -q -m "not smoke"`.

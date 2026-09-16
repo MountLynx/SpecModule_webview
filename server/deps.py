@@ -1,5 +1,5 @@
 # server/deps.py
-"""共享依赖：base_dir/模块搜索路径解析（env SPECMODULE_BASE，缺省 cwd）+ run_id 校验。
+"""共享依赖：base_dir/模块搜索路径解析（env SPECMODULE_BASE，缺省用户主目录）+ run_id 校验。
 
 base_dir 每次请求现读 env（测试可 monkeypatch）；模块搜索路径随 base_dir 派生
 （`store.search_paths(base_dir)`，同进程边界纪律——server 模块视图 ≡ spawn 子进程
@@ -21,8 +21,14 @@ _RUN_ID_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
 
 
 def get_base_dir() -> Path:
-    """运行根目录：env SPECMODULE_BASE，缺省 cwd（服务器进程 cwd ≠ 运行根）。"""
-    return Path(os.environ.get("SPECMODULE_BASE") or ".").resolve()
+    """运行根目录：env SPECMODULE_BASE，缺省用户主目录（数据根统一 ~/.specmodule）。
+
+    缺省锚 home 而非 cwd：cwd 随启动目录漂移，会把运行记录散落进各仓库目录
+    （曾在 ../SpecModule 积累 5109 条测试 run——2026-09-16 根修）；home 锚定后
+    runs（~/.specmodule/runs）与模块 store 同根，本地启动无需再设 env。
+    SPECMODULE_BASE 仍可覆盖（测试隔离 / 多运行根）。
+    """
+    return Path(os.environ.get("SPECMODULE_BASE") or Path.home()).resolve()
 
 
 def get_search_paths(base_dir: Path | None = None) -> list[Path]:

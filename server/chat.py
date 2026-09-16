@@ -31,7 +31,7 @@ _DISABLED_STATIC = Path("__chat_static_disabled__")
 def mount_chat(app: FastAPI, base_dir: Path | None = None) -> bool:
     """挂载 TreeChat 子应用（/treechat/api/*）；恒返回 True（引擎已收编，挂载常开）。
 
-    base_dir 缺省走 deps 纪律（SPECMODULE_BASE or cwd）；子应用 registry 暴露在
+    base_dir 缺省走 deps 纪律（SPECMODULE_BASE or home）；子应用 registry 暴露在
     app.state.chat_registry 供测试替换 LLM 客户端。
     """
     from server.deps import get_base_dir
