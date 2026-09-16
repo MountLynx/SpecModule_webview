@@ -91,14 +91,16 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
         ? "spec 为空且模块无 default_spec——请至少填写一个字段"
         : null;
 
-  const submit = async () => {
+  const submit = async (specOverride?: Record<string, unknown>) => {
+    if (busy) return;
     setBusy(true);
     setErr(null);
     try {
       const r = await postLaunch({
         module: detail.name,
-        // 未动过字段 → 不传 spec（CLI 回落 entry.default_spec，语义最准）
-        spec: touched ? spec : null,
+        // 未动过字段 → 不传 spec（CLI 回落 entry.default_spec，语义最准）；
+        // spec 参考点击 → 显式传参考值（与表单当前值无关，见设计文档）
+        spec: specOverride ?? (touched ? spec : null),
         template: template || null,
         run_id: runId.trim() || null,
         max_ticks: maxTicks,
@@ -187,12 +189,37 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
         )}
 
         <div className="mt-4">
-          <div className="text-[12.5px] font-semibold">default_spec</div>
-          <pre className="mt-1.5 overflow-x-auto rounded-md border bg-secondary p-2 font-mono text-[11.5px] leading-relaxed">
-            {detail.default_spec != null
-              ? JSON.stringify(detail.default_spec, null, 2)
-              : "（无——运行时留空 spec 将使用模板缺省）"}
-          </pre>
+          <div className="text-[12.5px] font-semibold">spec 参考</div>
+          {detail.default_spec != null ? (
+            <>
+              <pre
+                role="button"
+                tabIndex={0}
+                onClick={() => submit({ ...detail.default_spec })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    submit({ ...detail.default_spec });
+                  }
+                }}
+                aria-disabled={busy}
+                title="点击用参考 spec 尝试运行"
+                className={cn(
+                  "mt-1.5 cursor-pointer overflow-x-auto rounded-md border bg-secondary p-2 font-mono text-[11.5px] leading-relaxed transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  busy ? "pointer-events-none opacity-60" : "",
+                )}
+              >
+                {JSON.stringify(detail.default_spec, null, 2)}
+              </pre>
+              <div className="mt-1 text-[11px] text-muted-foreground">
+                点击用参考 spec 尝试运行
+              </div>
+            </>
+          ) : (
+            <pre className="mt-1.5 overflow-x-auto rounded-md border bg-secondary p-2 font-mono text-[11.5px] leading-relaxed">
+              （模块未声明参考 spec——留空将使用模板缺省）
+            </pre>
+          )}
         </div>
 
         {/* ── 发起运行（原 RunDialog 表单）── */}
@@ -253,7 +280,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
           {hint && <div className="mt-2 text-[12px] text-[var(--ph-truncated)]">{hint}</div>}
           {err && <div className="mt-2 text-[12.5px] text-destructive">{err}</div>}
           <div className="mt-4 flex items-center gap-3">
-            <Button onClick={submit} disabled={submitDisabled}>
+            <Button onClick={() => submit()} disabled={submitDisabled}>
               {busy ? "启动中…" : "▶ 发起运行"}
             </Button>
             <span className="text-[11px] text-muted-foreground">

@@ -453,3 +453,9 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   子进程视图（cwd=home `cli list` 验证）；③ AGENTS.md 增补「测试垃圾随时
   清理」纪律（run 工件一律 tmp_path，仓库目录下 `.specmodule/runs/*` 发现
   即删）。
+- 2026-09-16 **启动界面优化一：spec 参考试运行**——「default_spec」区块更名「spec 参考」，
+  有参考时整块可点、直接以参考 spec 发起运行（走既有 submit 路径，单一启动入口；无参考
+  维持空态不可点；可点块带键盘可达性 role/tabIndex/Enter+Space，对齐 ModuleList 既有模式；
+  busy 时视觉反馈+点击无效）。试剂 academic_writer 上游补 `default_spec`/`spec_schema`
+  （SpecModule 仓库独立提交 d96924c + store 安装副本同步），详情「spec 字段」表随之亮起。
+  设计：docs/superpowers/specs/2026-09-16-spec-reference-launch-ui-design.md
