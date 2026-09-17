@@ -459,3 +459,11 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   busy 时视觉反馈+点击无效）。试剂 academic_writer 上游补 `default_spec`/`spec_schema`
   （SpecModule 仓库独立提交 d96924c + store 安装副本同步），详情「spec 字段」表随之亮起。
   设计：docs/superpowers/specs/2026-09-16-spec-reference-launch-ui-design.md
+- 2026-09-17 **启动界面优化三：模板切换联动**——上游 per-template spec 通道（设计二）就位后
+  消费端跟进：详情「模板」徽章可点切换（高亮跟随、「（默认）」缀标锚定默认模板、description
+  显示于徽章下方），发起表单 `<select>` 移除两处合一；spec 字段表/spec 参考/SpecForm 随选中
+  模板换源（库内 spec_for 解析值；切换即重置为新模板参考值，SpecForm 按 name:template key
+  重挂载零改动）；提交 spec 显式性改 submit 单点判定（未动过且与 entry 级 default_spec 相同
+  → 不传走回落；否则显式传——修复切模板后 CLI 回落恒指 entry 级与表单所见错位）。兼修
+  api.ts templates 类型未跟上游形状变更导致的详情面板渲染崩溃。server 补双模板形状锚定测试。
+  设计：docs/superpowers/specs/2026-09-17-template-switch-launch-ui-design.md

@@ -32,6 +32,40 @@ entry = ModuleEntry(
 )
 '''
 
+# 双模板 + per-template spec 覆盖：detail_to_dict templates 解析对象列表形状锚定
+TWO_TEMPLATE_SRC = '''"""双模板 + per-template spec 覆盖测试模块。"""
+from module_harness.cli.entry import ModuleEntry, TemplateSpec
+from module_harness.infra.events import EventBus
+from module_harness.core.registry import HarnessRegistry
+
+
+def _registry_for(llm_client, template_name, event_bus):
+    reg = HarnessRegistry(llm_client=llm_client, event_bus=event_bus or EventBus.null())
+
+    @reg.script("A")
+    def a(view):
+        return {"done": True}
+
+    return reg
+
+
+entry = ModuleEntry(
+    name="tmpl_mod",
+    description="双模板测试模块",
+    templates={
+        "alpha": {"description": "alpha 描述"},
+        "beta": {"description": "beta 描述"},
+    },
+    default_template="alpha",
+    default_spec={"topic": "anchor"},
+    spec_schema={"topic": "str"},
+    template_specs={
+        "beta": TemplateSpec(spec_schema={"raw_text": "str"}, default_spec={"raw_text": "x"})
+    },
+    build_registry=_registry_for,
+)
+'''
+
 
 class TestModules:
     def test_lists_fixture_module(self, client):
@@ -109,3 +143,27 @@ class TestModuleDetail:
         r = client.get("/api/modules/broken_pack")
         assert r.status_code == 400
         assert "加载失败" in r.json()["error"]
+
+
+class TestModuleDetailTemplates:
+    def test_templates_parsed_objects_with_fallback(self, base_no_search_env, client):
+        """templates 为解析后对象列表：beta 覆盖生效、alpha 回落 entry 级（消费端形状锚）。"""
+        mods_dir = base_no_search_env / "modules"
+        mods_dir.mkdir()
+        (mods_dir / "tmpl_mod.py").write_text(TWO_TEMPLATE_SRC, encoding="utf-8")
+        d = client.get("/api/modules/tmpl_mod").json()
+        assert d["default_template"] == "alpha"
+        assert d["templates"] == [
+            {
+                "name": "alpha",
+                "description": "alpha 描述",
+                "spec_schema": {"topic": "str"},
+                "default_spec": {"topic": "anchor"},
+            },
+            {
+                "name": "beta",
+                "description": "beta 描述",
+                "spec_schema": {"raw_text": "str"},
+                "default_spec": {"raw_text": "x"},
+            },
+        ]

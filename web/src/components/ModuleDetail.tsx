@@ -59,7 +59,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
       .then((d) => {
         if (cancelled) return;
         setDetail(d);
-        setTemplate(d.default_template ?? d.templates[0] ?? "");
+        setTemplate(d.default_template ?? d.templates[0]?.name ?? "");
         setRunId(`${d.name}_${randHex6()}`);
         setSpec(d.default_spec ? { ...d.default_spec } : {});
         setTouched(false);
@@ -79,16 +79,20 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
     return <div className="p-4 text-[12.5px] text-muted-foreground">加载中…</div>;
   }
 
+  // 选中模板派生值（per-template 解析对象已含库内回落；?? 仅服务无模板模块）
+  const selected = detail.templates.find((t) => t.name === template) ?? null;
+  const activeSchema = selected?.spec_schema ?? detail.spec_schema;
+  const activeSpec = selected?.default_spec ?? detail.default_spec;
   const specEmpty = spec == null || Object.keys(spec).length === 0;
   const submitDisabled =
     busy ||
     spec == null || // JSON 非法（无效 spec 无从提交）
-    (specEmpty && detail.default_spec == null); // 空且无缺省 → CLI 也无米下锅
+    (specEmpty && activeSpec == null); // 空且无参考 → CLI 也无米下锅
   const hint =
     spec == null
       ? "spec JSON 非法——修正后才能启动"
-      : specEmpty && detail.default_spec == null
-        ? "spec 为空且模块无 default_spec——请至少填写一个字段"
+      : specEmpty && activeSpec == null
+        ? "spec 为空且无参考 spec——请至少填写一个字段"
         : null;
 
   const submit = async (specOverride?: Record<string, unknown>) => {
@@ -96,11 +100,15 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
     setBusy(true);
     setErr(null);
     try {
+      // spec 显式性单点判定：能被 CLI 回落复现（未动过且与 entry 级 default_spec 相同）
+      // → 不传（回落语义最准）；否则显式传表单当前值——切到带覆盖声明的模板后 pristine
+      // 值与 entry 级不等，自然显式传，所见即所跑（修复 CLI 回落恒指 entry 级的错位）。
+      // spec 参考点击 → 走 specOverride 显式通道，不受判定影响（见设计（一）/（三））。
+      const fallbackEquals =
+        !touched && JSON.stringify(spec) === JSON.stringify(detail.default_spec ?? null);
       const r = await postLaunch({
         module: detail.name,
-        // 未动过字段 → 不传 spec（CLI 回落 entry.default_spec，语义最准）；
-        // spec 参考点击 → 显式传参考值（与表单当前值无关，见设计文档）
-        spec: specOverride ?? (touched ? spec : null),
+        spec: specOverride ?? (fallbackEquals ? null : spec),
         template: template || null,
         run_id: runId.trim() || null,
         max_ticks: maxTicks,
@@ -148,34 +156,46 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
         <div className="mt-4">
           <div className="text-[12.5px] font-semibold">模板</div>
           {detail.templates.length ? (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {detail.templates.map((t) => (
-                <span
-                  key={t}
-                  className={
-                    "rounded-md border px-2 py-0.5 text-[11px] " +
-                    (t === detail.default_template
-                      ? "border-transparent bg-primary text-primary-foreground"
-                      : "border-border bg-card")
-                  }
-                  title={t === detail.default_template ? "默认模板" : undefined}
-                >
-                  {t}
-                  {t === detail.default_template ? "（默认）" : ""}
-                </span>
-              ))}
-            </div>
+            <>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {detail.templates.map((t) => {
+                  const isDefault = t.name === detail.default_template;
+                  return (
+                    <button
+                      key={t.name}
+                      type="button"
+                      onClick={() => setTemplate(t.name)}
+                      title={isDefault ? "默认模板" : undefined}
+                      className={
+                        "rounded-md border px-2 py-0.5 text-[11px] transition-colors " +
+                        (t.name === template
+                          ? "border-transparent bg-primary text-primary-foreground"
+                          : "border-border bg-card hover:border-primary/60")
+                      }
+                    >
+                      {t.name}
+                      {isDefault ? "（默认）" : ""}
+                    </button>
+                  );
+                })}
+              </div>
+              {selected?.description && (
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {selected.description}
+                </div>
+              )}
+            </>
           ) : (
             <div className="mt-1 text-muted-foreground">（无模板——模块自带流程定义）</div>
           )}
         </div>
 
-        {detail.spec_schema && (
+        {activeSchema && (
           <div className="mt-4">
             <div className="text-[12.5px] font-semibold">spec 字段</div>
             <table className="mt-1.5 border-collapse text-[12px]">
               <tbody>
-                {Object.entries(detail.spec_schema).map(([k, t]) => (
+                {Object.entries(activeSchema).map(([k, t]) => (
                   <tr key={k}>
                     <td className="border border-border px-2.5 py-0.5 font-mono">{k}</td>
                     <td className="border border-border px-2.5 py-0.5 text-muted-foreground">
@@ -190,16 +210,16 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
 
         <div className="mt-4">
           <div className="text-[12.5px] font-semibold">spec 参考</div>
-          {detail.default_spec != null ? (
+          {activeSpec != null ? (
             <>
               <pre
                 role="button"
                 tabIndex={0}
-                onClick={() => submit({ ...detail.default_spec })}
+                onClick={() => submit({ ...activeSpec })}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    submit({ ...detail.default_spec });
+                    submit({ ...activeSpec });
                   }
                 }}
                 aria-disabled={busy}
@@ -209,7 +229,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
                   busy ? "pointer-events-none opacity-60" : "",
                 )}
               >
-                {JSON.stringify(detail.default_spec, null, 2)}
+                {JSON.stringify(activeSpec, null, 2)}
               </pre>
               <div className="mt-1 text-[11px] text-muted-foreground">
                 点击用参考 spec 尝试运行
@@ -225,28 +245,11 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
         {/* ── 发起运行（原 RunDialog 表单）── */}
         <div className="mt-5 border-t pt-4">
           <div className="text-[12.5px] font-bold">发起运行</div>
-          {detail.templates.length > 1 && (
-            <div className="mt-3">
-              <div className="mb-1 text-[12px] font-semibold">模板</div>
-              <select
-                value={template}
-                onChange={(e) => setTemplate(e.target.value)}
-                className="w-full max-w-[320px] rounded-control border border-input bg-transparent px-2 py-1 text-[13px]"
-              >
-                {detail.templates.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                    {t === detail.default_template ? "（默认）" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
           <div className="mt-3">
             <SpecForm
-              key={detail.name}
-              schema={detail.spec_schema}
-              defaultSpec={detail.default_spec}
+              key={`${detail.name}:${template}`}
+              schema={activeSchema}
+              defaultSpec={activeSpec}
               onChange={(s, t) => {
                 setSpec(s);
                 setTouched(t);

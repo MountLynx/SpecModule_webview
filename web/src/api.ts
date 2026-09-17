@@ -160,7 +160,15 @@ export interface ModulesPayload {
 
 export const fetchModules = () => getJson<ModulesPayload>("/api/modules");
 
-/** 模块详情（store.detail_to_dict 形状；templates/submodules 为排序出名列表） */
+/** 单模板解析对象（store.detail_to_dict 出口；spec 两键库内 spec_for 已按模板回落，前端零回落逻辑） */
+export interface TemplateInfo {
+  name: string;
+  description: string; // 模板 JSON 自带，缺省 ""
+  spec_schema: Record<string, string> | null;
+  default_spec: Record<string, unknown> | null;
+}
+
+/** 模块详情（store.detail_to_dict 形状；templates 为解析后对象列表，submodules 为排序出名列表） */
 export interface ModuleDetail {
   name: string;
   kind: string;
@@ -168,7 +176,7 @@ export interface ModuleDetail {
   version: string;
   description: string;
   default_template: string | null;
-  templates: string[];
+  templates: TemplateInfo[];
   default_spec: Record<string, unknown> | null;
   spec_schema: Record<string, string> | null;
   submodules: string[];
