@@ -467,3 +467,14 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   → 不传走回落；否则显式传——修复切模板后 CLI 回落恒指 entry 级与表单所见错位）。兼修
   api.ts templates 类型未跟上游形状变更导致的详情面板渲染崩溃。server 补双模板形状锚定测试。
   设计：docs/superpowers/specs/2026-09-17-template-switch-launch-ui-design.md
+- 2026-09-17 **上游收编：resume/rollback 存档模板溯源**——启动界面优化三验收发现的图重建
+  缺口（非默认模板 run 报 harness not found）补修后，联动缺口随即显性：CLI resume/rollback
+  模板解析仍是 `args.template or default_template`（cli.py），非默认模板发起的 run 续跑会被
+  静默按默认模板重译——compat 硬错误拦不住（只查新图自洽与新成为 start），轻则警告后续跑
+  出残缺输出，且归档新输入会覆盖 module_inputs 污染溯源；webview 恢复对话框因不传 template
+  全量中招，preflight（按归档校验）与实跑行为不一致。上游两连提交收编：703103c 存档记录
+  所选模板（module_inputs.template）+ 图重建/预检按存档模板注册 harness（缺口修复）；
+  d9cf92a resume/rollback 模板解析改「显式 --template > 存档模板 > default_template >
+  归档 tasklist」（与既有 tasklist 兜底同原则；存档模板已注销 → 报错不静默回落；webview
+  零改动受益）。兼修 webview dev 环境两缺口（289c032）：补 pytest-asyncio/jsonschema——
+  uv 迁移后上游基线 129 用例因缺插件假红。基线 676 passed 全绿。
