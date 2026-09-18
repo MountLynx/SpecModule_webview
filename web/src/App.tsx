@@ -96,6 +96,41 @@ export default function App() {
     });
   }, []);
 
+  // ── 流式合帧：token/thinking 增量入 ref 缓冲，requestAnimationFrame 逐帧刷入
+  // state（SSE 逐 token 到达，逐条 setState + 全文 Markdown 重解析会打爆渲染）──
+  const pendingDeltaRef = useRef(new Map<string, Map<string, { text: string; thinking: string }>>());
+  const rafRef = useRef<number | null>(null);
+
+  const flushDeltas = useCallback(() => {
+    rafRef.current = null;
+    const pending = pendingDeltaRef.current;
+    if (pending.size === 0) return;
+    pendingDeltaRef.current = new Map();
+    for (const [sid, deltas] of pending) {
+      updRun(sid, (r) => r && { ...r, nodes: r.nodes.map((n) => {
+        const d = deltas.get(n.key);
+        if (!d) return n;
+        return { ...n, text: n.text + d.text, thinking: n.thinking + d.thinking };
+      }) });
+    }
+  }, [updRun]);
+
+  const bufferDelta = useCallback((sid: string, key: string, kind: "text" | "thinking", chunk: string) => {
+    let perSid = pendingDeltaRef.current.get(sid);
+    if (!perSid) {
+      perSid = new Map();
+      pendingDeltaRef.current.set(sid, perSid);
+    }
+    const cur = perSid.get(key) ?? { text: "", thinking: "" };
+    cur[kind] += chunk;
+    perSid.set(key, cur);
+    if (rafRef.current == null) rafRef.current = requestAnimationFrame(flushDeltas);
+  }, [flushDeltas]);
+
+  useEffect(() => () => {
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+  }, []);
+
   // 列表不做周期轮询（2026-09-15 根修，specs/2026-09-15-run-list-decoupling）：
   // 首次加载 + 事件钩子（发起/删除/行内控制/页签终态）触发；页签内监控走 WS
   const refreshRuns = useCallback(() => {
@@ -200,17 +235,19 @@ export default function App() {
     if (deletedSids.current.has(sid)) return; // 会话已删：丢弃残余流事件
     const d = ev.data;
     if (ev.event === "start") {
+      pendingDeltaRef.current.delete(sid); // 丢弃陈旧缓冲
       updRun(sid, () => ({
         userSeq: d.userSeq, module: d.module, finished: false,
         nodes: d.nodes.map((n: { key: string; label: string }) => (
-          { ...n, text: "", outcome: "running" as const, refs: [] })),
+          { ...n, text: "", thinking: "", outcome: "running" as const, refs: [] })),
       }));
     } else if (ev.event === "node_start") {
       updRun(sid, (r) => r && { ...r, nodes: r.nodes.map((n) =>
         n.key === d.key ? { ...n, outcome: "running" as const } : n) });
     } else if (ev.event === "token") {
-      updRun(sid, (r) => r && { ...r, nodes: r.nodes.map((n) =>
-        n.key === d.key ? { ...n, text: n.text + d.text } : n) });
+      bufferDelta(sid, d.key, "text", d.text);
+    } else if (ev.event === "thinking") {
+      bufferDelta(sid, d.key, "thinking", d.text);
     } else if (ev.event === "node_end") {
       updRun(sid, (r) => r && { ...r, nodes: r.nodes.map((n) =>
         n.key === d.key ? { ...n, outcome: d.outcome, refs: d.refs ?? [] } : n) });
@@ -224,7 +261,7 @@ export default function App() {
       updRun(sid, (r) => r && { ...r, finished: true, errored: true });
       updUi(sid, { error: d.error });
     }
-  }, [updRun, updUi, refreshSessions]);
+  }, [updRun, updUi, refreshSessions, bufferDelta]);
 
   const send = async (sid: string, text: string) => {
     const ui = getChatUi(sid);

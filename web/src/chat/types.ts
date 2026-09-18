@@ -90,6 +90,8 @@ export interface RunNodeState {
   key: string;
   label: string;
   text: string;
+  /** 思考通道累计文本（thinking 帧；正文到达后 UI 自动收起） */
+  thinking: string;
   outcome: "running" | "ok" | "failed";
   refs: CardRef[];
 }
