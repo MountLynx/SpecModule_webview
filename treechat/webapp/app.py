@@ -2,7 +2,7 @@
 
 约定：除枚举/健康检查外，所有变更接口返回变更后的完整会话状态（ConvState），
 会话规模小，全量最简单且无客户端同步 bug。轮次（/turn、/retry）为 text/event-stream：
-start → (node_start | token | node_end)* → done | error；LLM 失败发 error 帧
+start → (node_start | (token | thinking)* | node_end)* → done | error；LLM 失败发 error 帧
 ——user 节点已落盘（悬而未答），前端展示错误条并可 /retry。
 """
 from __future__ import annotations

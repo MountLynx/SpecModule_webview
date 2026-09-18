@@ -100,6 +100,7 @@ async def run_turn(module: ConversationalModule, conv, user_seq: int, *,
 
     def on_thinking(e) -> None:
         # 思考是原始文本非 JSON 字段——不经 FieldStreamShaper 直接透传
+        # （否则 shaper 的 seek 态匹配不到字段锚，思考文本会被整体吞掉）
         on_event({"event": "thinking", "key": e.node, "text": e.chunk})
 
     def on_completed(e) -> None:

@@ -79,6 +79,29 @@ def test_run_turn_emits_thinking_events(tmp_path, fake_module):
     # thinking 帧先于同节点正文 token 帧（思考在前）
     kinds = [e["event"] for e in events]
     assert kinds.index("thinking") < kinds.index("token")
+    # thinking 与节点配对：key 必属某 start 帧通告的节点
+    starts = {e["key"] for e in events if e["event"] == "node_start"}
+    assert {e["key"] for e in think} <= starts
+
+
+def test_run_turn_grilling_thinking_bypasses_shaper(tmp_path, fake_module):
+    """json 形状节点（带 display_fields/shaper）的 thinking 帧也原样透传。
+
+    FrontierFormat 有 FieldStreamShaper（token 流被整形）——若 thinking 误经
+    shaper，seek 态匹配不到字段锚，"思考过程。" 会被整体吞掉、本断言失败。
+    """
+    conv, u2 = _conv(tmp_path)
+    conv.set_category("grilling")
+    fake_module.responses = [
+        "# 树-v1",
+        json.dumps({"questions_md": "❓ Q1", "done": False, "terms_md": ""}),
+        json.dumps({"glossary_md": "**Order**: 订单", "adr_candidates": ""}),
+    ]
+    events = []
+    _run(BUILT_IN["grilling"], conv, u2, fake_module, on_event=events.append)
+    frontier = "".join(e["text"] for e in events
+                       if e["event"] == "thinking" and e["key"] == "FrontierFormat")
+    assert frontier == "思考过程。"  # 原始文本透传，未经整形
 
 
 def test_run_turn_direct_prompt_content(tmp_path, fake_module):
