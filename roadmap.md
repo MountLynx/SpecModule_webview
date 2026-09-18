@@ -492,3 +492,14 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   语义与实值预填完全一致（所见即所跑）。ModuleDetail「spec 参考」pre 由点击运行改为纯
   展示（whitespace-pre-wrap 防长行溢出），另设「用参考 spec 尝试运行」outline 按钮显式
   触发（上一会话遗留提交）。
+- 2026-09-18 **LLM 思考通道全链路真流式**：上游 SpecModule `complete(on_thinking=)` 双回调——
+  OpenAI 兼容 `reasoning_content`/`reasoning` 方言 + content 内联 `<think>` 剥离（流式/非流式
+  均剥，返回 content 不含思考文本）+ Anthropic `thinking_delta` + RoutingClient 透传
+  （SpecModule 11abbda/0c40601/d2e4746/32035f2，api.md 已补录 a6df7fd）；harness 发
+  `LlmThinking` 事件 → stream.log `thinking` 记录 → server WS 泛化透传（推送节奏 1s→0.2s，
+  透传契约测试钉住）→ NodePanel 思考块（思考中自动展开、正文到达自动收起「已思考 N 字」，
+  双 ref 分对象自动滚动）。treechat 回合 SSE `thinking` 帧（不经 FieldStreamShaper 原样透传，
+  grilling 形状用例钉住）→ ChatView 思考行 + token/thinking rAF 合帧（防逐 token 重渲染风暴，
+  帧 ~16ms 合帧刷入）。兼收上游测试卫生根修（a9fb175：module_harness 测试 run 工件锚定
+  tmp_path，基线跑不再向 cwd 泄漏垃圾）。设计：
+  docs/superpowers/specs/2026-09-18-llm-thinking-streaming-design.md
