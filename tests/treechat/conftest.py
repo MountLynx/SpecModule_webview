@@ -33,6 +33,9 @@ class FakeModuleClient:
         if self.fail:
             raise LLMError("模拟基础设施故障")
         content = self.responses.pop(0) if self.responses else self.default_reply
+        on_thinking = kwargs.get("on_thinking")
+        if on_thinking:
+            on_thinking("思考过程。")
         on_token = kwargs.get("on_token")
         if on_token:
             step = max(1, len(content) // 3)

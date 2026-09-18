@@ -12,7 +12,8 @@ from typing import Any, Callable
 from llm import LLMError
 from module_harness import EventBus, Module, Tasklist
 from module_harness.infra.events import (
-    HarnessFailed, LlmCallCompleted, LlmCallStarted, LlmToken, OutputValidated,
+    HarnessFailed, LlmCallCompleted, LlmCallStarted, LlmToken, LlmThinking,
+    OutputValidated,
 )
 from tickflow import Failure
 
@@ -97,6 +98,10 @@ async def run_turn(module: ConversationalModule, conv, user_seq: int, *,
         if text:
             on_event({"event": "token", "key": e.node, "text": text})
 
+    def on_thinking(e) -> None:
+        # 思考是原始文本非 JSON 字段——不经 FieldStreamShaper 直接透传
+        on_event({"event": "thinking", "key": e.node, "text": e.chunk})
+
     def on_completed(e) -> None:
         _merge_usage(usage_total, e.usage)
         refs = [{"type": "card", "cardId": cid, "title": doc_titles.get(cid, cid)}
@@ -117,6 +122,7 @@ async def run_turn(module: ConversationalModule, conv, user_seq: int, *,
 
     bus.subscribe(LlmCallStarted, on_started)
     bus.subscribe(LlmToken, on_token)
+    bus.subscribe(LlmThinking, on_thinking)
     bus.subscribe(LlmCallCompleted, on_completed)
     bus.subscribe(OutputValidated, on_output_validated)
     bus.subscribe(HarnessFailed, on_failed)

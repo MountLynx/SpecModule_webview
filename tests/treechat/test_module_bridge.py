@@ -68,6 +68,19 @@ def test_run_turn_direct_text(tmp_path, fake_module):
     assert any(e["event"] == "token" and e["text"] for e in events)
 
 
+def test_run_turn_emits_thinking_events(tmp_path, fake_module):
+    """LlmThinking → SSE thinking 帧：原始文本透传，不经 FieldStreamShaper。"""
+    conv, u2 = _conv(tmp_path)
+    events = []
+    out = _run(BUILT_IN["direct"], conv, u2, fake_module, on_event=events.append)
+    think = [e for e in events if e["event"] == "thinking"]
+    assert think and all(e["key"] and isinstance(e["text"], str) for e in think)
+    assert "".join(e["text"] for e in think) == "思考过程。"
+    # thinking 帧先于同节点正文 token 帧（思考在前）
+    kinds = [e["event"] for e in events]
+    assert kinds.index("thinking") < kinds.index("token")
+
+
 def test_run_turn_direct_prompt_content(tmp_path, fake_module):
     conv, u2 = _conv(tmp_path, system="sys-1")
     _run(BUILT_IN["direct"], conv, u2, fake_module)
