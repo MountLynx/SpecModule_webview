@@ -5,9 +5,10 @@ import { TERMINAL_PHASES, type StatusMsg, type StreamMsg } from "./api";
 
 type WsMsg = StatusMsg | StreamMsg | { type: "error"; error: string };
 
-/** 流缓冲：按节点累积的流式文本 + 版本号（每批消息自增，驱动订阅方 effect）。 */
+/** 流缓冲：按节点累积的流式文本/思考文本 + 版本号（每批消息自增，驱动订阅方 effect）。 */
 export interface StreamBuffer {
   text: Record<string, string>;
+  thinking: Record<string, string>;
   seq: number;
 }
 
@@ -55,18 +56,23 @@ export function useRunStream(
           setState((prev) => {
             if (!prev || prev.runId !== runId) return prev;
             const text = { ...prev.stream.text };
+            const thinking = { ...prev.stream.thinking };
             let seq = prev.stream.seq;
             for (const r of data.records) {
               if (r.type === "run_start") {
                 // 新执行边界：清空缓冲（resume 重跑的流从零开始显示）
                 for (const k of Object.keys(text)) delete text[k];
+                for (const k of Object.keys(thinking)) delete thinking[k];
                 seq += 1;
               } else if (r.type === "token" && r.node) {
                 text[r.node] = (text[r.node] ?? "") + (r.chunk ?? "");
                 seq += 1;
+              } else if (r.type === "thinking" && r.node) {
+                thinking[r.node] = (thinking[r.node] ?? "") + (r.chunk ?? "");
+                seq += 1;
               }
             }
-            return { ...prev, stream: { text, seq } };
+            return { ...prev, stream: { text, thinking, seq } };
           });
           return;
         }
@@ -75,7 +81,7 @@ export function useRunStream(
           setState((prev) => ({
             runId,
             msg: data,
-            stream: prev?.runId === runId ? prev.stream : { text: {}, seq: 0 },
+            stream: prev?.runId === runId ? prev.stream : { text: {}, thinking: {}, seq: 0 },
           }));
           if (TERMINAL_PHASES.has(data.phase) && !terminalRef.current) {
             terminalRef.current = true;

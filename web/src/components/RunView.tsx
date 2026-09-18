@@ -320,10 +320,14 @@ export function RunView({
   }, [runId, onRefreshRuns]);
 
   const selectedNode = payload?.graph.nodes.find((n) => n.id === selected) ?? null;
-  // 选中节点的流式文本：仅 running 且流缓冲属于当前 run 时给出（终态后 outputs 接管）
+  // 选中节点的流式文本/思考文本：仅 running 且流缓冲属于当前 run 时给出（终态后 outputs 接管）
   const liveText =
     statusView?.phase === "running" && streamState?.runId === runId && selectedNode
       ? streamState.stream.text[selectedNode.id]
+      : undefined;
+  const liveThinking =
+    statusView?.phase === "running" && streamState?.runId === runId && selectedNode
+      ? streamState.stream.thinking[selectedNode.id]
       : undefined;
   const needModulePicker = error?.code === "module_unresolved";
   const waitingMaterial = !materialized && materialTimeout;
@@ -419,6 +423,7 @@ export function RunView({
             node={selectedNode}
             outputs={statusView?.outputs ?? {}}
             liveText={liveText}
+            liveThinking={liveThinking}
             onClose={() => setSelected(null)}
           />
         )}

@@ -67,7 +67,7 @@ export interface StatusMsg extends StatusCore {
 
 /** stream.log 记录（LLM 流式输出；run_start = 新执行边界，前端据此清缓冲） */
 export interface StreamRecord {
-  type: "run_start" | "call_start" | "token" | "call_end" | "call_error";
+  type: "run_start" | "call_start" | "token" | "thinking" | "call_end" | "call_error";
   ts: number;
   node?: string;
   chunk?: string;

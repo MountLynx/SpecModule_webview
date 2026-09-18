@@ -13,6 +13,7 @@ export function NodePanel({
   node,
   outputs,
   liveText,
+  liveThinking,
   onClose,
 }: {
   runId: string;
@@ -20,15 +21,24 @@ export function NodePanel({
   outputs: Record<string, unknown>;
   /** 该节点当前执行的流式文本（phase=running 且有 token 时非空；终态后由 outputs 接管） */
   liveText?: string;
+  /** 该节点当前执行的思考文本（reasoning 通道；正文 token 到达后自动收起） */
+  liveThinking?: string;
   onClose: () => void;
 }) {
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [openTick, setOpenTick] = useState<number | null>(null);
+  // 思考块展开态：null = 自动（思考中展开、正文到达收起）；用户点击后以手动为准
+  const [thinkExpand, setThinkExpand] = useState<boolean | null>(null);
+  useEffect(() => {
+    setThinkExpand(null);
+  }, [node.id]);
+  const thinkAuto = !liveText;
+  const thinkShown = liveThinking && (thinkExpand ?? thinkAuto);
 
   const liveRef = useRef<HTMLPreElement | null>(null);
   useEffect(() => {
     if (liveRef.current) liveRef.current.scrollTop = liveRef.current.scrollHeight;
-  }, [liveText]);
+  }, [liveText, liveThinking]);
 
   useEffect(() => {
     setEntries([]);
@@ -59,17 +69,34 @@ export function NodePanel({
           类型 {node.type}
           {node.is_start ? " · start" : ""} · 输入 {JSON.stringify(node.inputs)}
         </p>
-        {liveText ? (
+        {liveText || liveThinking ? (
           <section>
             <h4 className="mb-1.5 mt-3 text-[12px] font-semibold">
               实时输出<span className="text-[11px] font-normal text-[var(--ph-running)]">（流式）</span>
             </h4>
-            <pre
-              ref={liveRef}
-              className="m-0 max-h-[240px] overflow-y-auto whitespace-pre-wrap rounded-md border bg-card p-2 text-[11.5px]"
-            >
-              {liveText.slice(-10000)}
-            </pre>
+            {liveThinking ? (
+              <div className="mb-1.5">
+                <button
+                  className="text-left text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onClick={() => setThinkExpand(!(thinkExpand ?? thinkAuto))}
+                >
+                  {thinkShown ? "▼ 思考中…" : `▶ 已思考 ${liveThinking.length} 字`}
+                </button>
+                {thinkShown ? (
+                  <pre
+                    ref={liveRef}
+                    className="m-0 mt-1 max-h-[240px] overflow-y-auto whitespace-pre-wrap rounded-md border border-dashed bg-card p-2 text-[11.5px] italic text-muted-foreground"
+                  >
+                    {liveThinking.slice(-6000)}
+                  </pre>
+                ) : null}
+              </div>
+            ) : null}
+            {liveText ? (
+              <pre className="m-0 max-h-[240px] overflow-y-auto whitespace-pre-wrap rounded-md border bg-card p-2 text-[11.5px]">
+                {liveText.slice(-10000)}
+              </pre>
+            ) : null}
           </section>
         ) : null}
         <section>
