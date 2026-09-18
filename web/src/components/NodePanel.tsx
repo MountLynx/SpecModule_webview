@@ -29,16 +29,17 @@ export function NodePanel({
   const [openTick, setOpenTick] = useState<number | null>(null);
   // 思考块展开态：null = 自动（思考中展开、正文到达收起）；用户点击后以手动为准
   const [thinkExpand, setThinkExpand] = useState<boolean | null>(null);
-  useEffect(() => {
-    setThinkExpand(null);
-  }, [node.id]);
   const thinkAuto = !liveText;
   const thinkShown = liveThinking && (thinkExpand ?? thinkAuto);
 
-  const liveRef = useRef<HTMLPreElement | null>(null);
+  // 双 ref 各挂各的 pre：滚动 effect 按生效显示对象选择目标——无思考 run（thinkShown
+  // 恒 falsy）跟随正文尾部；手动展开思考时跟随思考尾部。
+  const thinkRef = useRef<HTMLPreElement | null>(null);
+  const textRef = useRef<HTMLPreElement | null>(null);
   useEffect(() => {
-    if (liveRef.current) liveRef.current.scrollTop = liveRef.current.scrollHeight;
-  }, [liveText, liveThinking]);
+    const el = thinkShown ? thinkRef.current : textRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [liveText, liveThinking, thinkShown]);
 
   useEffect(() => {
     setEntries([]);
@@ -77,14 +78,19 @@ export function NodePanel({
             {liveThinking ? (
               <div className="mb-1.5">
                 <button
+                  aria-expanded={Boolean(thinkShown)}
                   className="text-left text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={() => setThinkExpand(!(thinkExpand ?? thinkAuto))}
                 >
-                  {thinkShown ? "▼ 思考中…" : `▶ 已思考 ${liveThinking.length} 字`}
+                  {liveText
+                    ? `${thinkShown ? "▼" : "▶"} 已思考 ${liveThinking.length} 字`
+                    : thinkShown
+                      ? "▼ 思考中…"
+                      : "▶ 思考中…"}
                 </button>
                 {thinkShown ? (
                   <pre
-                    ref={liveRef}
+                    ref={thinkRef}
                     className="m-0 mt-1 max-h-[240px] overflow-y-auto whitespace-pre-wrap rounded-md border border-dashed bg-card p-2 text-[11.5px] italic text-muted-foreground"
                   >
                     {liveThinking.slice(-6000)}
@@ -93,7 +99,10 @@ export function NodePanel({
               </div>
             ) : null}
             {liveText ? (
-              <pre className="m-0 max-h-[240px] overflow-y-auto whitespace-pre-wrap rounded-md border bg-card p-2 text-[11.5px]">
+              <pre
+                ref={textRef}
+                className="m-0 max-h-[240px] overflow-y-auto whitespace-pre-wrap rounded-md border bg-card p-2 text-[11.5px]"
+              >
                 {liveText.slice(-10000)}
               </pre>
             ) : null}

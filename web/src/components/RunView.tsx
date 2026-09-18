@@ -419,6 +419,7 @@ export function RunView({
         </div>
         {payload && selected && selectedNode && (
           <NodePanel
+            key={selectedNode.id}
             runId={runId}
             node={selectedNode}
             outputs={statusView?.outputs ?? {}}
