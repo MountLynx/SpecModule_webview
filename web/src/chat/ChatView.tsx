@@ -127,7 +127,7 @@ function RunBlock({ run, onOpenCards }: { run: RunTrace; onOpenCards: () => void
             </div>
             {/* 思考行：思考中流式展示（斜体低强调），正文到达自动收起 */}
             {n.outcome === "running" && n.thinking && !n.text && (
-              <div className="whitespace-pre-wrap border-l-2 border-border pl-2 text-[11.5px] italic text-muted-foreground">
+              <div className="max-h-[240px] overflow-y-auto whitespace-pre-wrap border-l-2 border-border pl-2 text-[11.5px] italic text-muted-foreground">
                 {n.thinking.slice(-800)}
               </div>
             )}
