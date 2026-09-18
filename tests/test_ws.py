@@ -118,3 +118,20 @@ class TestStream:
             assert msg["type"] == "status"
             with pytest.raises(WebSocketDisconnect):
                 ws.receive_json()
+
+    def test_stream_records_include_thinking(self, base, client):
+        """thinking 记录随 stream 消息透传（剥 off；node/chunk 字段原样）。"""
+        run_id = "ws_think"
+        seed_run(base, run_id, status={"module_id": run_id, "phase": "running", "updated_at": 1.0})
+        self._write_stream_log(base, run_id, [
+            json.dumps({"type": "run_start", "ts": 1.0, "pid": 1, "max_ticks": 100}) + "\n",
+            json.dumps({"type": "thinking", "node": "A", "chunk": "推演"}) + "\n",
+            json.dumps({"type": "token", "node": "A", "chunk": "答"}) + "\n",
+        ])
+        with client.websocket_connect(f"/api/runs/{run_id}/stream") as ws:
+            stream_msg = ws.receive_json()
+            assert stream_msg["type"] == "stream"
+            assert [r["type"] for r in stream_msg["records"]] == ["run_start", "thinking", "token"]
+            th = stream_msg["records"][1]
+            assert th["node"] == "A" and th["chunk"] == "推演"
+            assert all("off" not in r for r in stream_msg["records"])

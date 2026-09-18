@@ -17,7 +17,7 @@ from server.deps import get_base_dir, is_valid_run_id
 router = APIRouter()
 
 _TERMINAL = ("done", "aborted", "cancelled", "truncated")
-_POLL_SECONDS = 1.0
+_POLL_SECONDS = 0.2
 
 
 def _stream_mtime(base_dir, run_id: str) -> float | None:
@@ -33,7 +33,7 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
     追尾锚定最后一条 run_start（含，前端以此为清缓冲信号），新记录批量推。
     推送顺序 stream 先于 status；终态（含 truncated）补发最后一批流后
     close(1000)。查询为同步短读（SQLite WAL 跨进程读 + 文件增量读，毫秒级），
-    v1 直接在事件循环内调用。receive 竞速轮询间隔：本协议无客户端→服务端
+    0.2s 拍直接在事件循环内调用（思考流式肉眼连续；status 按 sig 变化才推不变）。receive 竞速轮询间隔：本协议无客户端→服务端
     消息，receive 任务仅为在两次轮询之间察觉客户端断连。
     """
     await websocket.accept()
