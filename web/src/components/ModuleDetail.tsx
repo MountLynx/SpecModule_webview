@@ -103,7 +103,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
       // spec 显式性单点判定：能被 CLI 回落复现（未动过且与 entry 级 default_spec 相同）
       // → 不传（回落语义最准）；否则显式传表单当前值——切到带覆盖声明的模板后 pristine
       // 值与 entry 级不等，自然显式传，所见即所跑（修复 CLI 回落恒指 entry 级的错位）。
-      // spec 参考点击 → 走 specOverride 显式通道，不受判定影响（见设计（一）/（三））。
+      // spec 参考小按钮 → 走 specOverride 显式通道，不受判定影响（见设计（一）/（三））。
       const fallbackEquals =
         !touched && JSON.stringify(spec) === JSON.stringify(detail.default_spec ?? null);
       const r = await postLaunch({
@@ -212,31 +212,22 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
           <div className="text-[12.5px] font-semibold">spec 参考</div>
           {activeSpec != null ? (
             <>
-              <pre
-                role="button"
-                tabIndex={0}
-                onClick={() => submit({ ...activeSpec })}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    submit({ ...activeSpec });
-                  }
-                }}
-                aria-disabled={busy}
-                title="点击用参考 spec 尝试运行"
-                className={cn(
-                  "mt-1.5 cursor-pointer overflow-x-auto rounded-md border bg-secondary p-2 font-mono text-[11.5px] leading-relaxed transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                  busy ? "pointer-events-none opacity-60" : "",
-                )}
-              >
+              <pre className="mt-1.5 whitespace-pre-wrap break-words rounded-md border bg-secondary p-2 font-mono text-[11.5px] leading-relaxed">
                 {JSON.stringify(activeSpec, null, 2)}
               </pre>
-              <div className="mt-1 text-[11px] text-muted-foreground">
-                点击用参考 spec 尝试运行
-              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-1.5"
+                disabled={busy}
+                title="以参考 spec 直接发起运行（覆盖表单当前 spec）"
+                onClick={() => submit({ ...activeSpec })}
+              >
+                用参考 spec 尝试运行
+              </Button>
             </>
           ) : (
-            <pre className="mt-1.5 overflow-x-auto rounded-md border bg-secondary p-2 font-mono text-[11.5px] leading-relaxed">
+            <pre className="mt-1.5 whitespace-pre-wrap break-words rounded-md border bg-secondary p-2 font-mono text-[11.5px] leading-relaxed">
               （模块未声明参考 spec——留空将使用模板缺省）
             </pre>
           )}

@@ -9,12 +9,14 @@
 // - onChange(spec, touched)：spec 为当前有效对象（可能 {}）；JSON 非法 → null
 //   （提交侧禁用）。touched = 用户动过任何字段（未动时提交侧传 null 走 CLI
 //   default_spec 回落）。
+// - 水印展示：未动过的字段渲染为空框 + 灰色 placeholder(=默认值)，聚焦即隐；
+//   values 状态里始终保留默认值，提交语义与实值预填完全一致（所见即所跑）。
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { jsonFieldError } from "../lib/json";
+import { Input, Textarea } from "./ui/input";
 
 const labelStyle: CSSProperties = { fontWeight: 600, marginBottom: 2 };
-const inputStyle: CSSProperties = { width: "100%", boxSizing: "border-box" };
 const monoStyle: CSSProperties = { fontFamily: "monospace" };
 const errStyle: CSSProperties = { color: "hsl(var(--destructive))", fontSize: 12 };
 const badOutline: CSSProperties = { outline: "2px solid hsl(var(--destructive))" };
@@ -53,31 +55,42 @@ function inferType(v: unknown): "str" | "int" | "float" | "bool" | "json" {
   }
 }
 
-/** 字段级 JSON 子编辑器：失焦即校验，错误就地显示。 */
+/** 字段级 JSON 子编辑器：失焦即校验，错误就地显示。
+ * pristine（未动过）时空值失焦不提交——默认值仍留在 values 里（水印语义）。 */
 function JsonField({
   value,
+  placeholder,
+  pristine,
   onCommit,
 }: {
-  value: unknown;
+  value: unknown; // 仅动过后传实际值；pristine 时为 undefined（text 初始为空）
+  placeholder?: string;
+  pristine: boolean;
   onCommit: (v: unknown) => void;
 }) {
   const [text, setText] = useState(() =>
     value === undefined ? "" : JSON.stringify(value, null, 2),
   );
+  const [selfDirty, setSelfDirty] = useState(!pristine);
   const [err, setErr] = useState<string | null>(null);
   return (
     <div>
-      <textarea
+      <Textarea
         value={text}
         rows={typeof value === "object" && value != null ? Math.min(8, Math.max(2, text.split("\n").length)) : 2}
         spellCheck={false}
-        onChange={(e) => setText(e.target.value)}
+        placeholder={pristine ? placeholder : undefined}
+        className="placeholder:text-muted-foreground focus:placeholder:text-transparent"
+        onChange={(e) => {
+          setText(e.target.value);
+          setSelfDirty(true);
+        }}
         onBlur={() => {
           const trimmed = text.trim();
           if (!trimmed) {
             setErr(null);
-            onCommit(undefined); // 清空 = 移除该字段
-            return;
+            if (selfDirty) onCommit(undefined); // 清空 = 移除该字段
+            return; // pristine 空值失焦：默认值原样保留
           }
           try {
             onCommit(JSON.parse(trimmed));
@@ -86,7 +99,7 @@ function JsonField({
             setErr("不是合法 JSON");
           }
         }}
-        style={{ ...inputStyle, ...monoStyle, ...(err ? badOutline : {}) }}
+        style={{ ...monoStyle, ...(err ? badOutline : {}) }}
       />
       {err && <div style={errStyle}>{err}</div>}
     </div>
@@ -108,6 +121,9 @@ export function SpecForm({ schema, defaultSpec, onChange }: SpecFormProps) {
     JSON.stringify(defaultSpec ?? {}, null, 2),
   );
   const touchedRef = useRef(false);
+  // 水印展示跟踪：未动过的字段渲染为空框 + 灰色 placeholder（=默认值），
+  // values 里仍保留默认值——提交语义不变（未动 → CLI 回落通道；动了 → 全量显式）。
+  const [dirtyKeys, setDirtyKeys] = useState<ReadonlySet<string>>(new Set());
   // 表单字段重挂载计数：JSON → 表单切换后 values 整体替换，JsonField 内部
   // text 需随新值重建（key 变化强制 remount）
   const [fieldEpoch, setFieldEpoch] = useState(0);
@@ -136,6 +152,7 @@ export function SpecForm({ schema, defaultSpec, onChange }: SpecFormProps) {
 
   const setField = (key: string, value: unknown) => {
     touchedRef.current = true;
+    setDirtyKeys((s) => (s.has(key) ? s : new Set(s).add(key)));
     const next = { ...values };
     if (value === undefined) delete next[key];
     else next[key] = value;
@@ -155,6 +172,8 @@ export function SpecForm({ schema, defaultSpec, onChange }: SpecFormProps) {
       if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) return;
       touchedRef.current = true;
       setValues(parsed);
+      // JSON 手工整理过的值都是真实内容，全部按实值显示（不再水印化）
+      setDirtyKeys(new Set(Object.keys(parsed)));
       setFieldEpoch((n) => n + 1);
       setMode("form");
       report(parsed);
@@ -213,6 +232,18 @@ export function SpecForm({ schema, defaultSpec, onChange }: SpecFormProps) {
       {mode === "form" && hasForm ? (
         fields.map(({ key, type }) => {
           const v = values[key];
+          // 水印渲染：未动过 → 空值 + 灰色 placeholder(=默认值)，聚焦即隐；
+          // 动过 → 实值。bool 无水印概念，checkbox 直接显示默认勾选态。
+          const dirty = dirtyKeys.has(key);
+          const shown = dirty ? (v == null ? "" : String(v)) : "";
+          const hint = dirty
+            ? undefined
+            : defaultSpec?.[key] == null
+              ? undefined
+              : typeof defaultSpec?.[key] === "string"
+                ? (defaultSpec?.[key] as string)
+                : JSON.stringify(defaultSpec?.[key]);
+          const phCls = "placeholder:text-muted-foreground focus:placeholder:text-transparent";
           return (
             <div key={`${key}:${fieldEpoch}`}>
               <div style={labelStyle}>
@@ -221,25 +252,29 @@ export function SpecForm({ schema, defaultSpec, onChange }: SpecFormProps) {
               </div>
               {type === "str" ? (
                 typeof v === "string" && (v.length > 60 || v.includes("\n")) ? (
-                  <textarea
-                    value={v}
+                  <Textarea
+                    value={shown}
                     rows={3}
                     spellCheck={false}
+                    placeholder={hint}
+                    className={phCls}
                     onChange={(e) => setField(key, e.target.value)}
-                    style={inputStyle}
                   />
                 ) : (
-                  <input
-                    value={v == null ? "" : String(v)}
+                  <Input
+                    value={shown}
+                    placeholder={hint}
+                    className={phCls}
                     onChange={(e) => setField(key, e.target.value)}
-                    style={inputStyle}
                   />
                 )
               ) : type === "int" || type === "float" ? (
-                <input
+                <Input
                   type="number"
                   step={type === "int" ? 1 : "any"}
-                  value={v == null ? "" : String(v)}
+                  value={shown}
+                  placeholder={hint}
+                  className={phCls}
                   onChange={(e) => {
                     const text = e.target.value;
                     if (text === "") {
@@ -251,7 +286,6 @@ export function SpecForm({ schema, defaultSpec, onChange }: SpecFormProps) {
                       : Number.parseFloat(text);
                     setField(key, Number.isNaN(n) ? undefined : n);
                   }}
-                  style={inputStyle}
                 />
               ) : type === "bool" ? (
                 <label>
@@ -263,7 +297,16 @@ export function SpecForm({ schema, defaultSpec, onChange }: SpecFormProps) {
                   {key}
                 </label>
               ) : (
-                <JsonField value={v} onCommit={(nv) => setField(key, nv)} />
+                <JsonField
+                  value={dirty ? v : undefined}
+                  placeholder={
+                    dirty || defaultSpec?.[key] == null
+                      ? undefined
+                      : JSON.stringify(defaultSpec?.[key], null, 2)
+                  }
+                  pristine={!dirty}
+                  onCommit={(nv) => setField(key, nv)}
+                />
               )}
             </div>
           );
@@ -273,12 +316,12 @@ export function SpecForm({ schema, defaultSpec, onChange }: SpecFormProps) {
           {!hasForm && (
             <div style={labelStyle}>spec（JSON）</div>
           )}
-          <textarea
+          <Textarea
             value={jsonText}
             rows={8}
             spellCheck={false}
             onChange={(e) => onJsonText(e.target.value)}
-            style={{ ...inputStyle, ...monoStyle, ...(jsonErr ? badOutline : {}) }}
+            style={{ ...monoStyle, ...(jsonErr ? badOutline : {}) }}
           />
           {jsonErr && <div style={errStyle}>spec {jsonErr}</div>}
         </div>

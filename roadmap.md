@@ -487,3 +487,8 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   全高侧栏（380px，与图区 flex 并排）。兼记一坑：Vite watcher 漏掉同批对 StatusNode 的
   第二次写入，模块缓存冻在半新半旧中间态（target 已 top / source 仍 right），reload 无效，
   对该文件再次真实内容修改强制重转换后才生效。`npm run build` 通过 + dev 页面截图走查。
+- 2026-09-18 **启动界面优化四：spec 表单水印 + spec 参考显式按钮**——SpecForm 未动过的
+  字段渲染为空框 + 灰色 placeholder(=默认值)，聚焦即隐；values 里始终保留默认值，提交
+  语义与实值预填完全一致（所见即所跑）。ModuleDetail「spec 参考」pre 由点击运行改为纯
+  展示（whitespace-pre-wrap 防长行溢出），另设「用参考 spec 尝试运行」outline 按钮显式
+  触发（上一会话遗留提交）。
