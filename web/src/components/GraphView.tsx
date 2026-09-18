@@ -11,7 +11,7 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { layoutGraph } from "../dagre";
+import { layoutGraph, NODE_SIZE } from "../dagre";
 import type { GraphPayload, StatusCore } from "../api";
 import { StatusNode, type StatusFlowNode, type StatusNodeData } from "./StatusNode";
 import { Button } from "./ui/button";
@@ -56,6 +56,8 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
       id: n.id,
       type: "status" as const,
       position: pos.get(n.id) ?? { x: 0, y: 0 },
+      width: NODE_SIZE.width,
+      height: NODE_SIZE.height,
       data: { label: n.label, type: n.type, isStart: n.is_start, state: live[n.id] },
       selected: selected === n.id,
     }));

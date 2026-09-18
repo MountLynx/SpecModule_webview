@@ -1,4 +1,5 @@
-// 节点面板：元信息 + 最新输出（实时）+ firing 历史（点击展开全文）+ 实时流文本。
+// 节点面板（右侧边栏）：元信息 + 最新输出（实时）+ firing 历史（点击展开全文）+
+// 实时流文本。与图区并排的全高侧栏。
 import { useEffect, useRef, useState } from "react";
 import { fetchNodeTimeline, type GraphNode, type TimelineEntry } from "../api";
 

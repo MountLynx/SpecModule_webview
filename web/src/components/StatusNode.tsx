@@ -39,12 +39,14 @@ function StatusNodeInner({ data }: NodeProps<StatusFlowNode>) {
         borderRadius: 8,
         padding: "6px 10px",
         minWidth: 150,
+        height: "100%",
+        boxSizing: "border-box",
         background: "hsl(var(--card))",
         color: "hsl(var(--card-foreground))",
         boxShadow: badge === "running" ? `0 0 0 4px color-mix(in srgb, ${color} 20%, transparent)` : undefined,
       }}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Top} />
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
         <strong>{data.label}</strong>
         {data.state && data.state.fired_count > 0 && (
@@ -67,7 +69,7 @@ function StatusNodeInner({ data }: NodeProps<StatusFlowNode>) {
         {data.isStart ? " · start" : ""}
         {badge === "running" ? " · 运行中" : ""}
       </div>
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Bottom} />
     </div>
   );
 }

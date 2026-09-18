@@ -478,3 +478,12 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   归档 tasklist」（与既有 tasklist 兜底同原则；存档模板已注销 → 报错不静默回落；webview
   零改动受益）。兼修 webview dev 环境两缺口（289c032）：补 pytest-asyncio/jsonschema——
   uv 迁移后上游基线 129 用例因缺插件假红。基线 676 passed 全绿。
+- 2026-09-18 **运行视图布局重排：图转竖向 + 连线上下进出 + 节点详情右侧栏**——运行图
+  dagre 分层 `rankdir` LR→TB：节点为宽扁长方形，沿短边纵向逐层延伸、同层节点横向并排，
+  一屏纵向可容纳更多层，信息密度高于横向；StatusNode 连接点左/右→上/下（连线自上节点
+  底部连至下节点顶部），内层盒子 `height:100%` 填满 wrapper 使连接点贴合节点边缘。
+  流节点显式携带布局标称尺寸（`NODE_SIZE`）——React Flow MiniMap 按 userNode 自身尺寸
+  过滤渲染，无尺寸会被整体画空（缩略图空白根因）。节点详情面板（NodePanel）为图区右侧
+  全高侧栏（380px，与图区 flex 并排）。兼记一坑：Vite watcher 漏掉同批对 StatusNode 的
+  第二次写入，模块缓存冻在半新半旧中间态（target 已 top / source 仍 right），reload 无效，
+  对该文件再次真实内容修改强制重转换后才生效。`npm run build` 通过 + dev 页面截图走查。

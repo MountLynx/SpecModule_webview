@@ -1,5 +1,5 @@
-// 运行视图容器：图视图 + 头部控制条 + 停滞黄条 + 节点面板（自 App 壳层搬迁，
-// 功能不变）。
+// 运行视图容器：图视图 + 头部控制条 + 停滞黄条 + 右侧节点面板（图竖向 TB 分层，
+// 连线自上节点底部连至下节点顶部，节点详情以全高侧栏并排于图区右侧）。
 //
 // 落盘等待门（materialized）：发起运行 202 → 子进程写出 status.json 有 ~1s
 // 窗口，期间 run 目录尚不存在——立即拉图会 404 黏住（无重试）、连 WS 会被
@@ -371,56 +371,58 @@ export function RunView({
           </Button>
         </div>
       )}
-      <div className="relative min-h-0 flex-1 overflow-y-auto">
-        {error && (
-          <div className="p-3 text-[12.5px] text-destructive">
-            图加载失败：{error.message}
-            {needModulePicker && (
-              <div className="mt-2 flex items-center gap-2">
-                <select
-                  onChange={(e) => setModuleOverride(e.target.value || null)}
-                  defaultValue=""
-                  className="rounded-control border border-input bg-transparent px-2 py-1 text-[12.5px]"
-                >
-                  <option value="">选择模块…</option>
-                  {modules.map((m) => (
-                    <option key={`${m.kind}:${m.name}`} value={m.name}>
-                      {m.name}（{m.kind}）
-                    </option>
-                  ))}
-                </select>
-                {moduleOverride && <span>已切换模块：{moduleOverride}</span>}
-              </div>
-            )}
-            {procLogView}
-          </div>
-        )}
-        {waitingMaterial && (
-          <div className="p-3 text-[12.5px] text-[var(--ph-truncated)]">
-            运行迟迟未落盘——可能启动失败，见下方日志
-            {procLogView}
-          </div>
-        )}
-        {payload ? (
-          <GraphView
-            payload={payload}
-            status={statusView}
-            selected={selected}
-            onSelect={setSelected}
+      <div className="flex min-h-0 flex-1">
+        <div className="relative min-w-0 flex-1 overflow-y-auto">
+          {error && (
+            <div className="p-3 text-[12.5px] text-destructive">
+              图加载失败：{error.message}
+              {needModulePicker && (
+                <div className="mt-2 flex items-center gap-2">
+                  <select
+                    onChange={(e) => setModuleOverride(e.target.value || null)}
+                    defaultValue=""
+                    className="rounded-control border border-input bg-transparent px-2 py-1 text-[12.5px]"
+                  >
+                    <option value="">选择模块…</option>
+                    {modules.map((m) => (
+                      <option key={`${m.kind}:${m.name}`} value={m.name}>
+                        {m.name}（{m.kind}）
+                      </option>
+                    ))}
+                  </select>
+                  {moduleOverride && <span>已切换模块：{moduleOverride}</span>}
+                </div>
+              )}
+              {procLogView}
+            </div>
+          )}
+          {waitingMaterial && (
+            <div className="p-3 text-[12.5px] text-[var(--ph-truncated)]">
+              运行迟迟未落盘——可能启动失败，见下方日志
+              {procLogView}
+            </div>
+          )}
+          {payload ? (
+            <GraphView
+              payload={payload}
+              status={statusView}
+              selected={selected}
+              onSelect={setSelected}
+            />
+          ) : (
+            !error && !waitingMaterial && <div className="p-3 text-[12.5px]">图加载中…</div>
+          )}
+        </div>
+        {payload && selected && selectedNode && (
+          <NodePanel
+            runId={runId}
+            node={selectedNode}
+            outputs={statusView?.outputs ?? {}}
+            liveText={liveText}
+            onClose={() => setSelected(null)}
           />
-        ) : (
-          !error && !waitingMaterial && <div className="p-3 text-[12.5px]">图加载中…</div>
         )}
       </div>
-      {payload && selected && selectedNode && (
-        <NodePanel
-          runId={runId}
-          node={selectedNode}
-          outputs={statusView?.outputs ?? {}}
-          liveText={liveText}
-          onClose={() => setSelected(null)}
-        />
-      )}
     </div>
   );
 }
