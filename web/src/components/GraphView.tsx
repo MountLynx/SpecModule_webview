@@ -1,5 +1,5 @@
 // 画布：dagre 分层布局 + 状态徽章 + guard 边标签 + 跟随镜头（手动即解锁）。
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -16,7 +16,8 @@ import "@xyflow/react/dist/style.css";
 import { layoutGraph, NODE_SIZE } from "../dagre";
 import type { GraphPayload, StatusCore } from "../api";
 import { badgeOf, StatusNode, type StatusFlowNode, type StatusNodeData } from "./StatusNode";
-import { Button } from "./ui/button";
+import { LocateFixed } from "lucide-react";
+import { cn } from "../lib/utils";
 
 const nodeTypes: NodeTypes = { status: StatusNode };
 
@@ -37,6 +38,7 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
   const { fitView } = useReactFlow();
   const colorMode = useMemo(() => themeColorMode(), []);
   const followRef = useRef(true); // 跟随模式（默认开；用户拖动即关）
+  const [follow, setFollow] = useState(true); // 按钮文案随动（ref 不触发渲染）
   const fitLockRef = useRef(false); // 程序化 fitView 期间不误判为手动
 
   const nodes = useMemo<StatusFlowNode[]>(() => {
@@ -112,29 +114,75 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
     [fitView],
   );
 
+  /** 跟随入口：按钮/F 共用。运行中回中当前 fireable 节点；否则 fitView 全图（回到当前）。 */
+  const engageFollow = useCallback(() => {
+    followRef.current = true;
+    setFollow(true);
+    const ids = fireableInView();
+    if (ids.length) {
+      centerOn(ids);
+    } else {
+      fitLockRef.current = true;
+      fitView({ duration: 600, padding: 0.2 }).then(() => {
+        window.setTimeout(() => {
+          fitLockRef.current = false;
+        }, 80);
+      });
+    }
+  }, [fireableInView, centerOn, fitView]);
+
   useEffect(() => {
     const ids = fireableInView();
     if (followRef.current && ids.length) centerOn(ids);
   }, [fireableInView, centerOn]);
 
   const onMoveStart = useCallback(() => {
-    if (!fitLockRef.current) followRef.current = false;
+    if (!fitLockRef.current) {
+      followRef.current = false;
+      setFollow(false);
+    }
   }, []);
+
+  // F 快捷键：重新跟随。输入框/文本域/下拉/contentEditable 聚焦时让位。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "f" && e.key !== "F") return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" ||
+          t.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      engageFollow();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [engageFollow]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <Button
-        variant="outline"
-        size="sm"
-        className="absolute left-2 top-2 z-10"
-        onClick={() => {
-          followRef.current = true;
-          const ids = fireableInView();
-          if (ids.length) centerOn(ids);
-        }}
-      >
-        回到当前
-      </Button>
+      {(() => {
+        const isRunning = status?.phase === "running";
+        const label = !isRunning ? "回到当前" : follow ? "跟随中 · F" : "已解锁 · F";
+        return (
+          <button
+            onClick={engageFollow}
+            title="重新跟随正在执行的节点（F）"
+            className={cn(
+              "absolute left-2 top-2 z-10 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              isRunning && follow
+                ? "border-[var(--ph-running-border)] bg-[var(--ph-running-bg)] text-[var(--ph-running-text)]"
+                : "border-border bg-card text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <LocateFixed className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        );
+      })()}
       <ReactFlow
         nodes={nodes}
         edges={edges}
