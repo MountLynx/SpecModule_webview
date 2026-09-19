@@ -25,7 +25,7 @@ export function TreePanel(p: Props) {
       <div className="flex h-full flex-col items-center justify-center gap-1.5 px-4 text-center text-muted-foreground">
         <div className="text-[28px]">🌿</div>
         <div className="text-[13px]">未激活对话页签</div>
-        <div className="text-[11.5px] opacity-70">从「对话」打开一个会话后，这里显示它的对话树</div>
+        <div className="text-[12px] opacity-70">从「对话」打开一个会话后，这里显示它的对话树</div>
       </div>
     );
   return <TreePanelInner {...p} conv={p.conv} />;
@@ -48,10 +48,10 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 px-3 pb-1.5 pt-3">
         <span className="text-[13px] font-semibold">对话树</span>
-        <span className="truncate text-[11.5px] text-muted-foreground">{p.conv.name}</span>
+        <span className="truncate text-[12px] text-muted-foreground">{p.conv.name}</span>
       </div>
       {/* 图例 */}
-      <div className="flex items-center gap-3 px-3 pb-1.5 text-[10.5px] text-muted-foreground">
+      <div className="flex items-center gap-3 px-3 pb-1.5 text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full bg-primary" /> 指针
         </span>
@@ -64,7 +64,7 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         {p.conv.nodes.length === 0 ? (
-          <div className="px-3 py-10 text-center text-[12.5px] text-muted-foreground">（空会话）</div>
+          <div className="px-3 py-10 text-center text-[12px] text-muted-foreground">（空会话）</div>
         ) : (
           <div className="relative" style={{ height: layout.height }}>
             {/* SVG 层：连线 + 节点圆点 */}
@@ -140,9 +140,9 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
                   )}
                   style={{ top: pos.row * ROW_H, height: ROW_H, paddingLeft: pos.x + DOT_R + 8 }}
                 >
-                  <span className="font-mono text-[10.5px] text-muted-foreground">#{pos.seq}</span>
+                  <span className="font-mono text-[11px] text-muted-foreground">#{pos.seq}</span>
                   {node.label && (
-                    <span className="max-w-[45%] truncate rounded-full bg-primary/10 px-1.5 py-px text-[10.5px] text-foreground">
+                    <span className="max-w-[45%] truncate rounded-full bg-primary/10 px-1.5 py-px text-[11px] text-foreground">
                       {node.label}
                     </span>
                   )}
@@ -151,7 +151,7 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
                   </span>
                   {cards.map((c) => (
                     <span key={c.id} title={`${c.id} · ${c.title}`}
-                          className="shrink-0 rounded-full border border-border px-1.5 py-px text-[10px] text-muted-foreground">
+                          className="shrink-0 rounded-full border border-border px-1.5 py-px text-[11px] text-muted-foreground">
                       [{c.id.replace("card_", "c_")}]
                     </span>
                   ))}
@@ -164,17 +164,17 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
 
       {/* 卡片提炼范围条（树图选点 → 自定义范围生成卡片） */}
       {p.cardSeqs.length > 0 && (
-        <div className="mx-2 mb-2 flex items-center gap-1.5 rounded-panel border border-primary/40 bg-primary/[0.06] px-2.5 py-1.5 text-[11.5px]">
+        <div className="mx-2 mb-2 flex items-center gap-1.5 rounded-panel border border-primary/40 bg-primary/[0.06] px-2.5 py-1.5 text-[12px]">
           <Layers className="h-3.5 w-3.5 shrink-0 text-primary" />
           <span className="shrink-0 text-muted-foreground">卡片范围</span>
-          <div className="min-w-0 flex-1 truncate font-mono text-[10.5px]">
+          <div className="min-w-0 flex-1 truncate font-mono text-[11px]">
             {p.cardSeqs.map((s) => `#${s}`).join(" ")}
           </div>
           <Button variant="ghost" size="sm" className="h-6 px-1.5" title="清除范围"
                   onClick={() => p.cardSeqs.forEach((s) => p.onToggleCardSeq(s))}>
             <X className="h-3 w-3" />
           </Button>
-          <Button size="sm" className="h-6 px-2 text-[11.5px]" onClick={p.onGenerateCard}>
+          <Button size="sm" className="h-6 px-2 text-[12px]" onClick={p.onGenerateCard}>
             <Plus className="h-3 w-3" /> 生成卡片
           </Button>
         </div>
@@ -185,11 +185,11 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
         <div className="mx-2 mb-2 rounded-panel border bg-card p-2.5">
           <div className="flex items-center gap-1.5 pb-1.5">
             <span className="font-mono text-[11px] text-muted-foreground">#{selected.seq}</span>
-            <span className="rounded-full bg-foreground/[0.07] px-1.5 py-px text-[10.5px]">
+            <span className="rounded-full bg-foreground/[0.07] px-1.5 py-px text-[11px]">
               {selected.role === "user" ? "用户" : "助手"}
             </span>
             {selected.model && (
-              <span className="truncate text-[10.5px] text-muted-foreground">{selected.model}</span>
+              <span className="truncate text-[11px] text-muted-foreground">{selected.model}</span>
             )}
             <div className="ml-auto flex gap-1">
               <Button variant="ghost" size="sm" onClick={() => setRenameTarget(selected)}>
@@ -206,7 +206,7 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
               </Button>
             </div>
           </div>
-          <div className="max-h-36 overflow-y-auto whitespace-pre-wrap break-words text-[12.5px] leading-6 text-foreground/85">
+          <div className="max-h-36 overflow-y-auto whitespace-pre-wrap break-words text-[12px] leading-6 text-foreground/85">
             {selected.text}
           </div>
         </div>

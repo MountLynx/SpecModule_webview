@@ -74,10 +74,10 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
   }, [name]);
 
   if (detailErr) {
-    return <div className="p-4 text-[12.5px] text-destructive">{detailErr}</div>;
+    return <div className="p-4 text-[12px] text-destructive">{detailErr}</div>;
   }
   if (!detail) {
-    return <div className="p-4 text-[12.5px] text-muted-foreground">加载中…</div>;
+    return <div className="p-4 text-[12px] text-muted-foreground">加载中…</div>;
   }
 
   // 选中模板派生值（per-template 解析对象已含库内回落；?? 仅服务无模板模块）
@@ -143,19 +143,19 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
         {detail.description && (
           <div className="mt-1.5 text-muted-foreground">{detail.description}</div>
         )}
-        <div className="mt-2 break-all font-mono text-[11.5px] text-muted-foreground">
+        <div className="mt-2 break-all font-mono text-[12px] text-muted-foreground">
           {detail.path}
         </div>
 
         {detail.submodules.length > 0 && (
           <div className="mt-4">
-            <div className="text-[12.5px] font-semibold">子模块</div>
+            <div className="text-[12px] font-semibold">子模块</div>
             <div className="mt-1">{detail.submodules.join("、")}</div>
           </div>
         )}
 
         <div className="mt-4">
-          <div className="text-[12.5px] font-semibold">模板</div>
+          <div className="text-[12px] font-semibold">模板</div>
           {detail.templates.length ? (
             <>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -193,7 +193,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
 
         {activeSchema && (
           <div className="mt-4">
-            <div className="text-[12.5px] font-semibold">spec 字段</div>
+            <div className="text-[12px] font-semibold">spec 字段</div>
             <table className="mt-1.5 border-collapse text-[12px]">
               <tbody>
                 {Object.entries(activeSchema).map(([k, t]) => (
@@ -210,10 +210,10 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
         )}
 
         <div className="mt-4">
-          <div className="text-[12.5px] font-semibold">spec 参考</div>
+          <div className="text-[12px] font-semibold">spec 参考</div>
           {activeSpec != null ? (
             <>
-              <pre className="mt-1.5 whitespace-pre-wrap break-words rounded-md border bg-secondary p-2 font-mono text-[11.5px] leading-relaxed">
+              <pre className="mt-1.5 whitespace-pre-wrap break-words rounded-md border bg-secondary p-2 font-mono text-[12px] leading-relaxed">
                 {JSON.stringify(activeSpec, null, 2)}
               </pre>
               <Button
@@ -228,7 +228,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
               </Button>
             </>
           ) : (
-            <pre className="mt-1.5 whitespace-pre-wrap break-words rounded-md border bg-secondary p-2 font-mono text-[11.5px] leading-relaxed">
+            <pre className="mt-1.5 whitespace-pre-wrap break-words rounded-md border bg-secondary p-2 font-mono text-[12px] leading-relaxed">
               （模块未声明参考 spec——留空将使用模板缺省）
             </pre>
           )}
@@ -236,7 +236,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
 
         {/* ── 发起运行（原 RunDialog 表单）── */}
         <div className="mt-5 border-t pt-4">
-          <div className="text-[12.5px] font-bold">发起运行</div>
+          <div className="text-[12px] font-bold">发起运行</div>
           <div className="mt-3">
             <SpecForm
               key={`${detail.name}:${template}`}
@@ -249,11 +249,11 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
             />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-1.5 text-[12.5px]">
+            <label className="flex items-center gap-1.5 text-[12px]">
               run id
               <Input value={runId} onChange={(e) => setRunId(e.target.value)} className="w-[200px]" />
             </label>
-            <label className="flex items-center gap-1.5 text-[12.5px]">
+            <label className="flex items-center gap-1.5 text-[12px]">
               max ticks
               <Input
                 type="number"
@@ -263,7 +263,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
                 className="w-[70px]"
               />
             </label>
-            <label className="flex items-center gap-1.5 text-[12.5px]">
+            <label className="flex items-center gap-1.5 text-[12px]">
               <input
                 type="checkbox"
                 checked={mock}
@@ -273,7 +273,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
             </label>
           </div>
           {hint && <div className="mt-2 text-[12px] text-[var(--ph-truncated)]">{hint}</div>}
-          {err && <div className="mt-2 text-[12.5px] text-destructive">{err}</div>}
+          {err && <div className="mt-2 text-[12px] text-destructive">{err}</div>}
           <div className="mt-4 flex items-center gap-3">
             <Button onClick={() => submit()} disabled={submitDisabled}>
               {busy ? "启动中…" : (

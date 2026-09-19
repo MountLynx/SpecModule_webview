@@ -323,7 +323,7 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
             </>
           )}
         </div>
-        {err && <div className="text-[12.5px] text-destructive">{err}</div>}
+        {err && <div className="text-[12px] text-destructive">{err}</div>}
         <div className="mt-1 flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
             取消

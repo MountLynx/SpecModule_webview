@@ -36,7 +36,7 @@ function EmptyState({ icon, title, hint }: { icon: string; title: string; hint: 
     <div className="flex h-full flex-col items-center justify-center gap-1.5 text-muted-foreground">
       <div className="text-[34px]">{icon}</div>
       <div className="text-[13.5px]">{title}</div>
-      <div className="text-[11.5px] opacity-70">{hint}</div>
+      <div className="text-[12px] opacity-70">{hint}</div>
     </div>
   );
 }

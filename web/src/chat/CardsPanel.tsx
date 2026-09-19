@@ -45,7 +45,7 @@ export function CardsPanel(p: Props) {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 px-3 pb-2 pt-3">
         <span className="text-[13px] font-semibold">卡片</span>
-        {conv && <span className="text-[11.5px] text-muted-foreground">{conv.name} · {conv.cards.length} 张</span>}
+        {conv && <span className="text-[12px] text-muted-foreground">{conv.name} · {conv.cards.length} 张</span>}
         <div className="ml-auto flex gap-1.5">
           <Button size="sm" variant="outline" className="h-7" disabled={!conv}
                   onClick={() => setImportOpen(true)}>
@@ -59,9 +59,9 @@ export function CardsPanel(p: Props) {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {!conv ? (
-          <div className="px-3 py-10 text-center text-[12.5px] text-muted-foreground">先打开一个对话</div>
+          <div className="px-3 py-10 text-center text-[12px] text-muted-foreground">先打开一个对话</div>
         ) : conv.cards.length === 0 ? (
-          <div className="px-3 py-10 text-center text-[12.5px] text-muted-foreground">
+          <div className="px-3 py-10 text-center text-[12px] text-muted-foreground">
             还没有卡片。把当前分支段提炼为「脱离原对话也能读懂」的结构化产出。
           </div>
         ) : (
@@ -76,10 +76,10 @@ export function CardsPanel(p: Props) {
                         className={cn("shrink-0", c.pinned ? "text-primary" : "text-muted-foreground/50 hover:text-foreground")}>
                   {c.pinned ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}
                 </button>
-                <span className="font-mono text-[10.5px] text-muted-foreground">{c.id}</span>
+                <span className="font-mono text-[11px] text-muted-foreground">{c.id}</span>
                 <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{c.title}</span>
               </div>
-              <div className="flex items-center gap-1 pt-0.5 text-[10.5px] text-muted-foreground/80">
+              <div className="flex items-center gap-1 pt-0.5 text-[11px] text-muted-foreground/80">
                 <MapPin className="h-3 w-3" />
                 来源 {c.fromPath.map((s) => `#${s}`).join(" → ") || "—"}
                 {c.instruction && <span className="truncate">· 指令「{c.instruction}」</span>}
@@ -88,15 +88,15 @@ export function CardsPanel(p: Props) {
                 <div className="mt-1.5 border-t border-border pt-1.5">
                   <Markdown text={c.body} />
                   <div className="flex gap-1 pt-1.5" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11.5px]"
+                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[12px]"
                             onClick={() => setEditTarget(c)}>
                       <Pencil className="h-3 w-3" /> 编辑
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11.5px]"
+                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[12px]"
                             onClick={() => download(c.id)}>
                       <Download className="h-3 w-3" /> 导出
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11.5px] text-destructive hover:text-destructive"
+                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[12px] text-destructive hover:text-destructive"
                             onClick={() => setDeleteTarget(c)}>
                       <Trash2 className="h-3 w-3" /> 删除
                     </Button>
@@ -199,7 +199,7 @@ function GenerateForm(p: {
       <div className="grid gap-2.5">
         <Textarea autoFocus placeholder="提炼指令（留空 = 总结为卡片）" value={instruction}
                   onChange={(e) => setInstruction(e.target.value)} />
-        <div className="flex flex-wrap gap-1.5 text-[12.5px]">
+        <div className="flex flex-wrap gap-1.5 text-[12px]">
           {([["branch", "当前分支段"], ["all", "全部路径"], ["range", "区间"], ["seqs", "自选节点"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMode(k)}
                     className={cn("rounded-control border px-2 py-1 transition-colors",
@@ -209,7 +209,7 @@ function GenerateForm(p: {
           ))}
         </div>
         {mode === "range" && (
-          <div className="flex items-center gap-2 text-[12.5px]">
+          <div className="flex items-center gap-2 text-[12px]">
             <Input className="h-7 w-20" placeholder="起始 seq" value={start} onChange={(e) => setStart(e.target.value)} />
             <span>→</span>
             <Input className="h-7 w-20" placeholder="结束 seq" value={end} onChange={(e) => setEnd(e.target.value)} />
@@ -350,17 +350,17 @@ function CardLibrary(p: { activeSid: string | null; canImport: boolean; onImport
         }
       }}
       className="mt-3 rounded-panel border border-dashed px-2.5 py-2 text-[12px] text-muted-foreground">
-      <summary className="cursor-pointer select-none text-[12.5px] font-medium">
+      <summary className="cursor-pointer select-none text-[12px] font-medium">
         <Library className="mr-1 inline h-3.5 w-3.5" /> 跨会话卡库（{items === null ? "…" : others.length} 张来自其他对话）
       </summary>
       <div className="pt-1.5">
         {others.length === 0 ? (
-          <div className="py-2 text-[11.5px]">其他对话还没有卡片。</div>
+          <div className="py-2 text-[12px]">其他对话还没有卡片。</div>
         ) : (
           others.map((c) => (
             <div key={`${c.sid}/${c.id}`} className="flex items-center gap-1.5 py-1">
               <span className="min-w-0 flex-1 truncate" title={c.body}>{c.title}</span>
-              <span className="max-w-[40%] shrink truncate text-[10.5px] opacity-70">{c.sessionName}</span>
+              <span className="max-w-[40%] shrink truncate text-[11px] opacity-70">{c.sessionName}</span>
               <Button variant="outline" size="sm" className="h-6 shrink-0 px-1.5 text-[11px]"
                       disabled={!p.canImport}
                       onClick={() => p.onImport(c)}>
@@ -369,7 +369,7 @@ function CardLibrary(p: { activeSid: string | null; canImport: boolean; onImport
             </div>
           ))
         )}
-        <div className="pt-1 text-[10.5px] opacity-70">导入会复制为当前对话的独立卡片，不随源卡片变化。</div>
+        <div className="pt-1 text-[11px] opacity-70">导入会复制为当前对话的独立卡片，不随源卡片变化。</div>
       </div>
     </details>
   );

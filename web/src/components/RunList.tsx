@@ -30,7 +30,7 @@ const PHASE_LABEL: Record<string, string> = {
 
 /** 行内小控制钮统一规格 */
 // 不含 rounded：twMerge 不识别自定义 rounded 键，与 size=sm 的 rounded-control 合并不会去重
-const ctlBtn = "h-5 px-1.5 text-[10.5px]";
+const ctlBtn = "h-5 px-1.5 text-[11px]";
 
 interface RunListProps {
   runs: RunSummary[];
@@ -84,20 +84,20 @@ export function RunList({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-3.5 pb-2 pt-2.5 text-[12.5px] font-bold">
+      <div className="flex items-center gap-2 px-3.5 pb-2 pt-2.5 text-[12px] font-bold">
         运行历史
         <span className="font-normal text-muted-foreground">{total} 条</span>
         <Button
           variant="outline"
           size="sm"
-          className="ml-auto h-5 px-1.5 text-[10.5px]"
+          className="ml-auto h-5 px-1.5 text-[11px]"
           onClick={onRefresh}
         >
           <RefreshCw className="h-3 w-3" />
           刷新
         </Button>
         {err && (
-          <span title={err} className="min-w-0 truncate font-normal text-[11.5px] text-destructive">
+          <span title={err} className="min-w-0 truncate font-normal text-[12px] text-destructive">
             {err}
           </span>
         )}
@@ -130,27 +130,27 @@ export function RunList({
                     PHASE_DOT[r.phase] ?? "bg-muted-foreground/60",
                   )}
                 />
-                <span className="truncate text-[12.5px] font-semibold">{moduleName}</span>
+                <span className="truncate text-[12px] font-semibold">{moduleName}</span>
                 {r.module == null && (
-                  <span className="shrink-0 text-[10px] font-normal text-muted-foreground">
+                  <span className="shrink-0 text-[11px] font-normal text-muted-foreground">
                     （启发式）
                   </span>
                 )}
-                <span className="ml-auto shrink-0 text-[10.5px] text-muted-foreground">
+                <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
                   {relativeTime(r.updated_at * 1000)}
                 </span>
               </div>
-              <div className="mt-0.5 truncate font-mono text-[10.5px] text-muted-foreground">
+              <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
                 {r.run_id}
               </div>
-              <div className="mt-0.5 text-[10.5px] text-muted-foreground">
+              <div className="mt-0.5 text-[11px] text-muted-foreground">
                 {PHASE_LABEL[r.phase] ?? r.phase}
                 {r.paused && <span className="text-[var(--ph-cancelled)]"> · 已暂停</span>}
                 {r.tick != null ? ` · tick ${r.tick}` : ""}
                 {!r.has_sqlite && " · 无 run.sqlite"}
               </div>
               {r.error && (
-                <div className="mt-0.5 text-[10.5px] leading-snug text-destructive">
+                <div className="mt-0.5 text-[11px] leading-snug text-destructive">
                   {oneLine(r.error, 80)}
                 </div>
               )}
@@ -205,7 +205,7 @@ export function RunList({
           </div>
         )}
         {!runs.length && (
-          <div className="px-3 py-3 text-[11.5px] leading-relaxed text-muted-foreground">
+          <div className="px-3 py-3 text-[12px] leading-relaxed text-muted-foreground">
             暂无运行记录——到「模块库」发起一个运行，或用 CLI 在运行根目录起 run。
           </div>
         )}

@@ -75,7 +75,7 @@ function MessageItem({ node, cards }: { node: Node; cards: Card[] }) {
     return (
       <div className="group flex flex-col items-end">
         <MessageMeta node={node} cards={cards} align="right" />
-        <div className="max-w-[min(85%,36rem)] whitespace-pre-wrap break-words rounded-panel rounded-br-lg bg-secondary/70 px-3.5 py-2 text-[14.5px] leading-6">
+        <div className="max-w-[min(85%,36rem)] whitespace-pre-wrap break-words rounded-panel rounded-br-lg bg-secondary/70 px-3.5 py-2 text-[15px] leading-6">
           {node.text}
         </div>
       </div>
@@ -91,7 +91,7 @@ function MessageItem({ node, cards }: { node: Node; cards: Card[] }) {
 
 function MessageMeta({ node, cards, align }: { node: Node; cards: Card[]; align: "left" | "right" }) {
   return (
-    <div className={cn("flex items-center gap-1.5 pb-1 text-[10.5px] text-muted-foreground/70",
+    <div className={cn("flex items-center gap-1.5 pb-1 text-[11px] text-muted-foreground/70",
                       align === "right" && "flex-row-reverse")}>
       <span className="font-mono">#{node.seq}</span>
       {node.label && <span className="rounded-full bg-primary/10 px-1.5 py-px text-foreground/80">{node.label}</span>}
@@ -144,7 +144,7 @@ function RunBlock({ run, onOpenCards }: { run: RunTrace; onOpenCards: () => void
               <div className="flex flex-wrap gap-1 pt-1">
                 {n.refs.map((r) => (
                   <button key={r.cardId} onClick={onOpenCards}
-                          className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-px text-[11.5px]
+                          className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-px text-[12px]
                                      text-muted-foreground hover:bg-foreground/[0.05]">
                     <FileText className="h-3 w-3 shrink-0" />
                     {r.title} → 已更新到卡片

@@ -35,11 +35,11 @@ export function ModuleList({ selected, onSelect }: ModuleListProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-3.5 pb-2 pt-2.5 text-[12.5px] font-bold">
+      <div className="flex items-center gap-2 px-3.5 pb-2 pt-2.5 text-[12px] font-bold">
         模块库
         <span className="font-normal text-muted-foreground">{modules.length} 个</span>
         {loadErr && (
-          <span title={loadErr} className="truncate font-normal text-[11.5px] text-destructive">
+          <span title={loadErr} className="truncate font-normal text-[12px] text-destructive">
             {loadErr}
           </span>
         )}
@@ -71,26 +71,26 @@ export function ModuleList({ selected, onSelect }: ModuleListProps) {
               >
                 {m.kind}
               </span>
-              <span className="truncate text-[12.5px] font-semibold">{m.name}</span>
+              <span className="truncate text-[12px] font-semibold">{m.name}</span>
               {m.version && (
-                <span className="ml-auto shrink-0 text-[10.5px] text-muted-foreground">
+                <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
                   v{m.version}
                 </span>
               )}
             </div>
             {m.description && (
-              <div className="mt-0.5 truncate text-[10.5px] text-muted-foreground">
+              <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
                 {m.description}
               </div>
             )}
           </div>
         ))}
         {!modules.length && !loadErr && (
-          <div className="px-3 py-3 text-[11.5px] text-muted-foreground">未发现模块</div>
+          <div className="px-3 py-3 text-[12px] text-muted-foreground">未发现模块</div>
         )}
       </div>
       {/* 扫描来源：排查「为什么看不到我的模块」 */}
-      <div className="border-t px-3.5 py-2 text-[10.5px] leading-relaxed text-muted-foreground">
+      <div className="border-t px-3.5 py-2 text-[11px] leading-relaxed text-muted-foreground">
         <div className="mb-1 font-semibold">扫描来源（优先序）</div>
         {searchPaths.length ? (
           searchPaths.map((p) => (

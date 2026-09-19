@@ -29,7 +29,7 @@ export function Composer(p: Props) {
     <div className="shrink-0 px-6 pb-4 pt-1">
       <div className="mx-auto max-w-3xl">
         {(p.branchParent !== null || p.leafMode) && (
-          <div className="flex items-center gap-1.5 pb-1.5 text-[11.5px] text-muted-foreground">
+          <div className="flex items-center gap-1.5 pb-1.5 text-[12px] text-muted-foreground">
             {p.branchParent !== null && (
               <span className="flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5">
                 <GitFork className="h-3 w-3" /> 从 #{p.branchParent} 分支

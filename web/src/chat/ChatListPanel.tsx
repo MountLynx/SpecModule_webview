@@ -49,7 +49,7 @@ export function ChatListPanel(p: Props) {
       <div className="flex h-full flex-col items-center justify-center gap-1.5 px-4 text-center text-muted-foreground">
         <div className="text-[28px]">💬</div>
         <div className="text-[13px]">对话服务未挂载</div>
-        <div className="text-[11.5px] opacity-70">对话功能内置于服务端——请确认后端已启动/升级后刷新</div>
+        <div className="text-[12px] opacity-70">对话功能内置于服务端——请确认后端已启动/升级后刷新</div>
       </div>
     );
   return <ChatListPanelInner {...p} />;
@@ -91,12 +91,12 @@ function ChatListPanelInner(p: Props) {
         <div className="flex items-center gap-1.5">
           <span className="truncate font-medium">{s.name}</span>
           {s.category && (
-            <span className="shrink-0 rounded-full bg-foreground/[0.07] px-1.5 py-px text-[10.5px] text-muted-foreground">
+            <span className="shrink-0 rounded-full bg-foreground/[0.07] px-1.5 py-px text-[11px] text-muted-foreground">
               {s.category}
             </span>
           )}
         </div>
-        <div className="text-[11.5px] text-muted-foreground/80">
+        <div className="text-[12px] text-muted-foreground/80">
           {s.nodeCount} 节点 · {relativeTime(s.mtimeMs)}
         </div>
       </div>
@@ -154,12 +154,12 @@ function ChatListPanelInner(p: Props) {
           placeholder="搜索对话…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="h-7 rounded-control bg-foreground/[0.03] text-[12.5px]"
+          className="h-7 rounded-control bg-foreground/[0.03] text-[12px]"
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {filtered.length === 0 && (
-          <div className="px-2 py-8 text-center text-[12.5px] text-muted-foreground">
+          <div className="px-2 py-8 text-center text-[12px] text-muted-foreground">
             {filter ? "无匹配对话" : "还没有对话，点上方「新对话」开始"}
           </div>
         )}

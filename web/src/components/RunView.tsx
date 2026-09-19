@@ -359,7 +359,7 @@ export function RunView({
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-      <header className="flex items-center gap-3 border-b px-3.5 py-2 text-[12.5px] text-muted-foreground">
+      <header className="flex items-center gap-3 border-b px-3.5 py-2 text-[12px] text-muted-foreground">
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate font-mono">{runId}</span>
           {(statusView?.phase ?? payload?.phase) && (
@@ -409,14 +409,14 @@ export function RunView({
       <div className="flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1 overflow-y-auto">
           {error && (
-            <div className="p-3 text-[12.5px] text-destructive">
+            <div className="p-3 text-[12px] text-destructive">
               图加载失败：{error.message}
               {needModulePicker && (
                 <div className="mt-2 flex items-center gap-2">
                   <select
                     onChange={(e) => setModuleOverride(e.target.value || null)}
                     defaultValue=""
-                    className="rounded-control border border-input bg-transparent px-2 py-1 text-[12.5px]"
+                    className="rounded-control border border-input bg-transparent px-2 py-1 text-[12px]"
                   >
                     <option value="">选择模块…</option>
                     {modules.map((m) => (
@@ -432,7 +432,7 @@ export function RunView({
             </div>
           )}
           {waitingMaterial && (
-            <div className="p-3 text-[12.5px] text-[var(--ph-truncated)]">
+            <div className="p-3 text-[12px] text-[var(--ph-truncated)]">
               运行迟迟未落盘——可能启动失败，见下方日志
               {procLogView}
             </div>
@@ -445,7 +445,7 @@ export function RunView({
               onSelect={setSelected}
             />
           ) : (
-            !error && !waitingMaterial && <div className="p-3 text-[12.5px]">图加载中…</div>
+            !error && !waitingMaterial && <div className="p-3 text-[12px]">图加载中…</div>
           )}
         </div>
         {payload && selected && selectedNode && (
