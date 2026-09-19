@@ -1,4 +1,4 @@
-// 画布：dagre 分层布局 + 状态徽章 + guard 边标签 + 跟随镜头（手动即解锁）。
+// 画布：dagre 分层布局 + 状态徽章 + guard 边标签 + 跟随镜头 + 溯源值卡/数据流虚线（手动即解锁）。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -46,7 +46,8 @@ function cardBody(
 ): string {
   if (trace.source.kind === "spec") {
     const { key } = trace.source;
-    if (!spec || !(key in spec)) return `{spec.${key}}（无存档值）`;
+    if (!spec || !Object.prototype.hasOwnProperty.call(spec, key))
+      return `{spec.${key}}（无存档值）`;
     const v = spec[key];
     return typeof v === "string" ? v : JSON.stringify(v, null, 2);
   }

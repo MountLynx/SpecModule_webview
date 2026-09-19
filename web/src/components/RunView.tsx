@@ -172,6 +172,21 @@ export function RunView({
     };
   }, [runId, materialized]);
 
+  // spec 缺档兜底：存档写入晚于 status.json（translating 期 404 窗口），点开 spec
+  // 值卡时缓存仍为 null 则补拉一次；无存档 run（spec 恒 null）不形成重拉循环
+  useEffect(() => {
+    if (trace?.source.kind !== "spec" || spec != null) return;
+    let cancelled = false;
+    fetchInputs(runId)
+      .then((d) => {
+        if (!cancelled) setSpec(d.spec);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [trace, spec, runId]);
+
   // 加载：落盘后 / run/moduleOverride 变化即重新拉取；cancelled 防止切换后旧响应覆盖新 run 的状态
   useEffect(() => {
     if (!materialized) return;

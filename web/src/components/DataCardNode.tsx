@@ -34,7 +34,12 @@ function DataCardNodeInner({ data }: NodeProps<DataCardFlowNode>) {
       <div className="flex-1 overflow-y-auto whitespace-pre-wrap break-all p-2 font-mono text-[11px]">
         {data.body}
       </div>
-      <Handle type="source" position={Position.Bottom} isConnectable={false} />
+      <Handle
+        type="source"
+        position={Position.Left}
+        isConnectable={false}
+        className="opacity-0"
+      />
     </div>
   );
 }
