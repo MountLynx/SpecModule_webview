@@ -3,6 +3,8 @@ import type { Card, ConvState, Node, RunTrace } from "./types";
 import { activePath } from "./types";
 import { cn } from "../lib/utils";
 import { Markdown } from "./Markdown";
+import { Check, Circle, FileText, X } from "lucide-react";
+import { ThinkBlock } from "../components/ThinkBlock";
 
 interface Props {
   conv: ConvState;
@@ -122,23 +124,30 @@ function RunBlock({ run, onOpenCards }: { run: RunTrace; onOpenCards: () => void
         {run.nodes.map((n) => (
           <div key={n.key}>
             <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-              <span>{n.outcome === "failed" ? "✗" : n.outcome === "ok" ? "✓" : "◌"}</span>
+              <span className="flex h-3.5 w-3.5 items-center justify-center">
+                {n.outcome === "failed" ? (
+                  <X className="h-3 w-3 text-[var(--ph-aborted)]" strokeWidth={3} />
+                ) : n.outcome === "ok" ? (
+                  <Check className="h-3 w-3 text-[var(--ph-done)]" strokeWidth={3} />
+                ) : (
+                  <Circle className="h-3 w-3 text-muted-foreground/50" />
+                )}
+              </span>
               <span className={n.outcome === "failed" ? "text-destructive" : ""}>{n.label}</span>
             </div>
             {/* 思考行：思考中流式展示（斜体低强调），正文到达自动收起 */}
             {n.outcome === "running" && n.thinking && !n.text && (
-              <div className="max-h-[240px] overflow-y-auto whitespace-pre-wrap border-l-2 border-border pl-2 text-[11.5px] italic text-muted-foreground">
-                {n.thinking.slice(-800)}
-              </div>
+              <ThinkBlock text={n.thinking.slice(-800)} className="mt-1" />
             )}
             {n.outcome === "running" && n.text && <Markdown text={n.text} />}
             {n.outcome === "ok" && n.refs.length > 0 && (
               <div className="flex flex-wrap gap-1 pt-1">
                 {n.refs.map((r) => (
                   <button key={r.cardId} onClick={onOpenCards}
-                          className="rounded-full border border-border px-2 py-px text-[11.5px]
+                          className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-px text-[11.5px]
                                      text-muted-foreground hover:bg-foreground/[0.05]">
-                    📄 {r.title} → 已更新到卡片
+                    <FileText className="h-3 w-3 shrink-0" />
+                    {r.title} → 已更新到卡片
                   </button>
                 ))}
               </div>
