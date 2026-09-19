@@ -67,7 +67,7 @@ export function ModuleList({ selected, onSelect }: ModuleListProps) {
             <div className="flex items-center gap-2">
               <span
                 className={cn(
-                  "shrink-0 rounded-full px-1.5 text-[9.5px] leading-4 text-white",
+                  "shrink-0 rounded-full px-1.5 text-[11px] leading-4 text-white",
                   KIND_BADGE[m.kind] ?? "bg-muted-foreground",
                 )}
               >

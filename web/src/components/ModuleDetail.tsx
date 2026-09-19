@@ -130,7 +130,7 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
           <span className="text-[16px] font-bold">{detail.name}</span>
           <span
             className={cn(
-              "rounded-full px-1.5 text-[9.5px] leading-4 text-white",
+              "rounded-full px-1.5 text-[11px] leading-4 text-white",
               KIND_BADGE[detail.kind] ?? "bg-muted-foreground",
             )}
           >
