@@ -1,7 +1,7 @@
 # 图上数据溯源（输入胶囊定位 + spec/上游值卡）设计
 
 - 日期：2026-09-19
-- 状态：已与用户逐项确认（浮现形态=按需 / 位置=B 镜头飞到消费节点旁 / 上游胶囊统一到消费节点 + 数据流虚线）；2026-09-19 修订：**删除 NodePanel 侧栏内联「输入值」卡片**——图上值卡已承载接线语义与值展示，侧栏卡片重复多余
+- 状态：已与用户逐项确认（浮现形态=按需 / 位置=B 镜头飞到消费节点旁 / 上游胶囊统一到消费节点 + 数据流虚线）；2026-09-19 修订：**删除 NodePanel 侧栏内联「输入值」卡片**——图上值卡已承载接线语义与值展示，侧栏卡片重复多余；2026-09-19 二次修订：**上游值卡改落在数据流路径上**——卡顶虚线接上游节点底、卡底虚线接消费节点顶，溯源期间隐藏原上游→消费控制流实线
 - 决策过程：brainstorm 视觉伴侣（`.superpowers/brainstorm/2036-1789817810/content/spec-card-placement.html`）
 - 范围：仅 `web/` 前端；后端与 specmodule 库零改动、无新依赖
 
@@ -37,7 +37,7 @@ webview 只做**展示层映射**（两形态判断 + 卡片展示时按单层�
 
 ### 3.2 值卡（React Flow 临时节点，新 nodeType `dataCard`）
 
-- 位置：消费节点坐标 + 固定右侧偏移（图坐标，随缩放平移；不参与 dagre）
+- 位置（2026-09-19 二次修订）：spec 卡 = 消费节点右侧固定偏移；上游卡 = 上游节点与消费节点缺口右侧、垂直居中于缺口——卡顶接上游底、卡底接消费顶，值卡落在数据流路径上（图坐标，随缩放平移；不参与 dagre）
 - 结构：头部 = 来源标识（spec 卡 `spec.<key>`；上游卡 `<上游节点> → <字段名>`）+ ✕ 关闭；正文 = 值（mono、卡整体固定 240×180 正文区滚动、`break-all`、`nowheel` 防滚轮缩放画布）（2026-09-19 终审修订：原 `max-h-[240px]` 落地为固定卡尺寸）
 - 视觉：B 语言中性卡（`border-border` + 头部 `bg-secondary` + 阴影 `shadow-[0_6px_24px_...]` 抬升层次区别于图上节点）；亮暗主题走既有变量
 - 回退：spec 无存档或字段缺失 → 正文显示引用串原文 + 尾注「（无存档值）」；上游尚无输出（`outputs[id] === undefined`）→「（尚无输出）」
@@ -45,11 +45,11 @@ webview 只做**展示层映射**（两形态判断 + 卡片展示时按单层�
 ### 3.3 数据流虚线（React Flow 临时边）
 
 - spec 卡：`dataCard → 消费节点`，dashed、中性色、无箭头
-- 上游卡：`上游节点 → 消费节点`，dashed、中性色（`hsl(var(--foreground) / 0.28)` 同默认边）、小箭头（MarkerType.ArrowClosed）指消费节点；与控制流实线边并存时可分辨（虚线 vs 实线）
+- 上游卡（2026-09-19 二次修订）：两段虚线代替原「上游直连消费」单段——`上游节点底 → 卡顶`、`卡底 → 消费节点顶`，dashed、中性色（`hsl(var(--foreground) / 0.28)` 同默认边）、每段带小箭头（MarkerType.ArrowClosed）指流向；**溯源期间隐藏原上游→消费控制流实线**（由卡 + 两段虚线承接其视觉，收起即恢复）
 
 ### 3.4 镜头与状态
 
-- 飞行复用 `centerOn`（fitView nodes 含消费节点 + 卡片节点，padding ≥0.3 容纳卡片；fitLock 既有防误判机制）
+- 飞行复用 `centerOn`（fitView nodes 含消费节点 + 卡片节点，上游溯源另含上游节点使整条接线路径可见；padding ≥0.3 容纳卡片；fitLock 既有防误判机制）
 - 飞行后跟随态置「已解锁」（与手动交互语义一致，F/按钮可再跟随）
 - NodePanel 切节点（key 重挂载）或 RunView 切 run：临时节点/边无残留（溯源状态归零）
 
@@ -72,7 +72,7 @@ webview 只做**展示层映射**（两形态判断 + 卡片展示时按单层�
 ## 6. 验收
 
 1. `cd web && npm run build` 通过
-2. academic_writer run：点 Loop1 的 `original_text`（值 `{spec.raw_text}`）→ 镜头飞 Loop1、右侧浮 spec 值卡显示草稿原文、卡↔节点虚线；点 `draft_text`（值 `Organize`）→ 镜头仍飞 Loop1、卡显示 Organize 输出 JSON、虚线 Organize→Loop1 带箭头
+2. academic_writer run：点 Loop1 的 `original_text`（值 `{spec.raw_text}`）→ 镜头飞 Loop1、右侧浮 spec 值卡显示草稿原文、卡↔节点虚线；点 `draft_text`（值 `Organize`）→ 镜头仍飞 Loop1、卡显示 Organize 输出 JSON、原 Organize→Loop1 实线隐藏、两段虚线 Organize 底→卡顶→Loop1 顶带箭头
 3. 三通道收起生效；点胶囊切换无叠卡；切节点/切 run 无残留
 4. 亮暗双主题目测值卡与虚线可辨
 5. 回退路径抽查：`{spec}` 整体 token（如有）胶囊不可点、无卡片浮现；侧栏不再出现内联「输入值」卡片

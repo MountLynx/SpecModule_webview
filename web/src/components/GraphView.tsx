@@ -15,9 +15,14 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { layoutGraph, NODE_SIZE } from "../dagre";
-import { DATA_CARD_NODE_ID, DataCardNode, type DataCardFlowNode } from "./DataCardNode";
+import {
+  DATA_CARD_NODE_ID,
+  DATA_CARD_SIZE,
+  DataCardNode,
+  type DataCardFlowNode,
+} from "./DataCardNode";
 import type { TraceState } from "../lib/inputSource";
-import type { GraphPayload, StatusCore } from "../api";
+import type { GraphEdge, GraphPayload, StatusCore } from "../api";
 import { badgeOf, StatusNode, type StatusFlowNode, type StatusNodeData } from "./StatusNode";
 import { LocateFixed } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -100,17 +105,25 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
       data: { label: n.label, type: n.type, isStart: n.is_start, state: live[n.id] },
       selected: selected === n.id,
     }));
-    // 溯源值卡：锚定消费节点右侧固定偏移（图坐标随缩放平移；不参与 dagre）。
-    // 消费节点不在当前图（换模块后引用失配）→ 不叠卡，trace 边同理（edges 处）。
+    // 溯源值卡（图坐标随缩放平移；不参与 dagre）。上游卡置于上游↔消费缺口右侧、
+    // 垂直居中于缺口——卡顶接上游底、卡底接消费顶，值卡落在数据流路径上；
+    // spec 卡 / 上游缺失回退 = 消费节点右侧固定偏移。消费节点不在当前图（换模块
+    // 后引用失配）→ 不叠卡，trace 边同理（edges 处）。
     if (trace) {
       const cp = pos.get(trace.consumerId);
       if (cp) {
+        const up = trace.source.kind === "node" ? pos.get(trace.source.nodeId) : null;
         list.push({
           id: DATA_CARD_NODE_ID,
           type: "dataCard",
-          position: { x: cp.x + NODE_SIZE.width + 48, y: cp.y },
-          width: 240,
-          height: 180,
+          position: {
+            x: (up ? Math.max(up.x, cp.x) : cp.x) + NODE_SIZE.width + 48,
+            y: up
+              ? (up.y + NODE_SIZE.height + cp.y) / 2 - DATA_CARD_SIZE.height / 2
+              : cp.y,
+          },
+          width: DATA_CARD_SIZE.width,
+          height: DATA_CARD_SIZE.height,
           draggable: false,
           selectable: false,
           data: {
@@ -125,45 +138,67 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
   }, [payload, status, selected, trace, spec, onClearTrace]);
 
   const edges = useMemo<Edge[]>(() => {
-    const list: Edge[] = payload.graph.edges.map((e, i) => {
-      const active =
-        !!status && status.phase === "running" && status.fireable.includes(e.from);
-      const stroke = active ? "var(--ph-running)" : "hsl(var(--foreground) / 0.28)";
-      return {
-        id: `e${i}`,
-        source: e.from,
-        target: e.to,
-        label: e.guard ?? undefined,
-        animated: active,
-        style: { stroke, strokeWidth: active ? 1.8 : 1.5 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
-      };
-    });
-    // 数据流虚线（与控制流实线可辨）：spec 卡 卡↔消费节点（无箭头）；
-    // 上游卡 上游节点→消费节点（小箭头指消费）。消费节点/上游节点不在当前图
-    //（trace 存续期间 moduleOverride 换图）→ 与卡一并缺席，防悬空边。
+    // 上游溯源时隐藏原上游→消费控制流实线（由卡 + 两段虚线承接其视觉；收起即恢复）。
+    // 先 map 带原索引再过滤，保持既有边 id 稳定（避免无关边无谓重挂载）。
+    const traceNode =
+      trace && trace.source.kind === "node"
+        ? { nodeId: trace.source.nodeId, consumerId: trace.consumerId }
+        : null;
+    const hidePair = traceNode
+      ? (e: GraphEdge) => e.from === traceNode.nodeId && e.to === traceNode.consumerId
+      : null;
+    const list: Edge[] = payload.graph.edges
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => !hidePair || !hidePair(e))
+      .map(({ e, i }) => {
+        const active =
+          !!status && status.phase === "running" && status.fireable.includes(e.from);
+        const stroke = active ? "var(--ph-running)" : "hsl(var(--foreground) / 0.28)";
+        return {
+          id: `e${i}`,
+          source: e.from,
+          target: e.to,
+          label: e.guard ?? undefined,
+          animated: active,
+          style: { stroke, strokeWidth: active ? 1.8 : 1.5 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
+        };
+      });
+    // 数据流虚线（dashed、中性色 `hsl(var(--foreground) / 0.28)` 同默认边）。
+    // spec 卡：卡→消费节点（左锚点出线、无箭头）。上游卡：两段——上游节点底→卡顶、
+    // 卡底→消费节点顶，每段带小箭头指流向。消费/上游节点不在当前图（换模块失配）
+    // → 与卡一并缺席，防悬空边。
     if (trace) {
       const inGraph = (id: string) => payload.graph.nodes.some((n) => n.id === id);
-      const drawable =
-        inGraph(trace.consumerId) &&
-        (trace.source.kind === "spec" || inGraph(trace.source.nodeId));
-      if (drawable) {
-        const stroke = "hsl(var(--foreground) / 0.28)";
+      const stroke = "hsl(var(--foreground) / 0.28)";
+      if (trace.source.kind === "spec") {
+        if (inGraph(trace.consumerId)) {
+          list.push({
+            id: "trace-edge",
+            source: DATA_CARD_NODE_ID,
+            sourceHandle: "l",
+            target: trace.consumerId,
+            style: { stroke, strokeWidth: 1.5, strokeDasharray: "6 4" },
+          });
+        }
+      } else if (inGraph(trace.consumerId) && inGraph(trace.source.nodeId)) {
         list.push(
-          trace.source.kind === "spec"
-            ? {
-                id: "trace-edge",
-                source: DATA_CARD_NODE_ID,
-                target: trace.consumerId,
-                style: { stroke, strokeWidth: 1.5, strokeDasharray: "6 4" },
-              }
-            : {
-                id: "trace-edge",
-                source: trace.source.nodeId,
-                target: trace.consumerId,
-                style: { stroke, strokeWidth: 1.5, strokeDasharray: "6 4" },
-                markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 12, height: 12 },
-              },
+          {
+            id: "trace-edge-in",
+            source: trace.source.nodeId,
+            target: DATA_CARD_NODE_ID,
+            targetHandle: "t",
+            style: { stroke, strokeWidth: 1.5, strokeDasharray: "6 4" },
+            markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 12, height: 12 },
+          },
+          {
+            id: "trace-edge-out",
+            source: DATA_CARD_NODE_ID,
+            sourceHandle: "b",
+            target: trace.consumerId,
+            style: { stroke, strokeWidth: 1.5, strokeDasharray: "6 4" },
+            markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 12, height: 12 },
+          },
         );
       }
     }
@@ -230,13 +265,17 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
     }
   }, []);
 
-  // 溯源变化：镜头飞消费节点 + 值卡（padding 放宽容纳卡片）；飞行即解锁跟随
-  //（与手动交互语义一致，F/按钮可再跟随）
+  // 溯源变化：镜头飞消费节点 + 值卡（上游溯源另含上游节点，整条接线路径可见；
+  // padding 放宽容纳卡片）；飞行即解锁跟随（与手动交互语义一致，F/按钮可再跟随）
   useEffect(() => {
     if (!trace) return;
     followRef.current = false;
     setFollow(false);
-    centerOn([trace.consumerId, DATA_CARD_NODE_ID], 0.3);
+    const ids =
+      trace.source.kind === "node"
+        ? [trace.source.nodeId, trace.consumerId, DATA_CARD_NODE_ID]
+        : [trace.consumerId, DATA_CARD_NODE_ID];
+    centerOn(ids, 0.3);
   }, [trace, centerOn]);
 
   // F 快捷键：重新跟随。输入框/文本域/下拉/contentEditable 聚焦时让位。

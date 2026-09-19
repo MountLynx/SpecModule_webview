@@ -5,8 +5,11 @@ import { memo } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { X } from "lucide-react";
 
-/** 临时值卡节点固定 id（不参与 dagre，位置 = 消费节点右侧偏移） */
+/** 临时值卡节点固定 id（不参与 dagre，位置随溯源形态锚定） */
 export const DATA_CARD_NODE_ID = "__dataCard";
+
+/** 值卡标称尺寸（GraphView 定位与 fitView 取景用） */
+export const DATA_CARD_SIZE = { width: 240, height: 180 };
 
 export type DataCardNodeData = {
   /** 头部来源标识：spec 卡 `spec.<key>`；上游卡 `<上游节点> → <字段名>` */
@@ -35,7 +38,23 @@ function DataCardNodeInner({ data }: NodeProps<DataCardFlowNode>) {
       <div className="nowheel flex-1 overflow-y-auto whitespace-pre-wrap break-all p-2 font-mono text-[11px]">
         {data.body}
       </div>
+      {/* 接线锚点（全隐藏）：t=上游虚线入（顶）、b=下游虚线出（底）、l=spec 卡出线（左） */}
       <Handle
+        id="t"
+        type="target"
+        position={Position.Top}
+        isConnectable={false}
+        className="opacity-0"
+      />
+      <Handle
+        id="b"
+        type="source"
+        position={Position.Bottom}
+        isConnectable={false}
+        className="opacity-0"
+      />
+      <Handle
+        id="l"
         type="source"
         position={Position.Left}
         isConnectable={false}
