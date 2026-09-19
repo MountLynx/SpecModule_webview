@@ -44,7 +44,7 @@ function CheckpointDialog({ runId, onClose, onCreated }: CheckpointDialogProps) 
   return (
     <div className={overlayCls} onClick={onClose}>
       <div className={cn(panelCls, panelNarrowCls)} onClick={(e) => e.stopPropagation()}>
-        <div className="text-[13.5px] font-bold">
+        <div className="text-[13px] font-bold">
           存手动检查点：<code>{runId}</code>
         </div>
         {done ? (

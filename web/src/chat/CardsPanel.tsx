@@ -1,4 +1,4 @@
-import { Download, Library, MapPin, Pencil, Pin, PinOff, Plus, Trash2, Upload } from "lucide-react";
+import { Download, Layers, Library, MapPin, Pencil, Pin, PinOff, Plus, Trash2, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import * as api from "./api";
 import type { Card, ConvState, LibraryCard } from "./types";
@@ -43,8 +43,9 @@ export function CardsPanel(p: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-3 pb-2 pt-3">
-        <span className="text-[13px] font-semibold">卡片</span>
+      <div className="flex items-center gap-1.5 px-3 pb-2 pt-3">
+        <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-[11px] font-semibold text-muted-foreground">卡片</span>
         {conv && <span className="text-[12px] text-muted-foreground">{conv.name} · {conv.cards.length} 张</span>}
         <div className="ml-auto flex gap-1.5">
           <Button size="sm" variant="outline" className="h-7" disabled={!conv}

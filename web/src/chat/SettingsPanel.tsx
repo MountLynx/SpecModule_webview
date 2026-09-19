@@ -11,7 +11,10 @@ interface Props {
 export function SettingsPanel({ health, serviceAvailable, modes }: Props) {
   return (
     <div className="flex h-full flex-col">
-      <div className="px-3 pb-2 pt-3 text-[13px] font-semibold">设置</div>
+      <div className="flex items-center gap-1.5 px-3 pb-2 pt-3">
+        <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-[11px] font-semibold text-muted-foreground">设置</span>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 text-[12px] leading-6 text-muted-foreground">
         {!serviceAvailable ? (
           <p className="rounded-panel border border-dashed px-2.5 py-3">

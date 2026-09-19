@@ -2,7 +2,7 @@
 // 错误摘要）+ 行内控制（暂停/继续/取消/恢复/删除）。语义与旧全宽 RunsView
 // 一致：整行点击打开 run；删除终态确认、running 提示先取消 + force 二次确认。
 import { useState } from "react";
-import { Ban, Pause, Play, RotateCcw, RefreshCw, Trash2 } from "lucide-react";
+import { Ban, List, Pause, Play, RotateCcw, RefreshCw, Trash2 } from "lucide-react";
 import {
   TERMINAL_PHASES,
   deleteRun,
@@ -84,7 +84,8 @@ export function RunList({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-3.5 pb-2 pt-2.5 text-[12px] font-bold">
+      <div className="flex items-center gap-1.5 px-3.5 pb-2 pt-2.5 text-[11px] font-semibold text-muted-foreground">
+        <List className="h-3.5 w-3.5" />
         运行历史
         <span className="font-normal text-muted-foreground">{total} 条</span>
         <Button

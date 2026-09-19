@@ -23,7 +23,7 @@ export function TreePanel(p: Props) {
   if (!p.conv)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1.5 px-4 text-center text-muted-foreground">
-        <div className="text-[28px]">🌿</div>
+        <GitFork className="h-8 w-8 text-muted-foreground/40" />
         <div className="text-[13px]">未激活对话页签</div>
         <div className="text-[12px] opacity-70">从「对话」打开一个会话后，这里显示它的对话树</div>
       </div>
@@ -46,8 +46,9 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-3 pb-1.5 pt-3">
-        <span className="text-[13px] font-semibold">对话树</span>
+      <div className="flex items-center gap-1.5 px-3 pb-1.5 pt-3">
+        <GitFork className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-[11px] font-semibold text-muted-foreground">对话树</span>
         <span className="truncate text-[12px] text-muted-foreground">{p.conv.name}</span>
       </div>
       {/* 图例 */}

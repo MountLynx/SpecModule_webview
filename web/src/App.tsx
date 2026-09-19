@@ -1,4 +1,4 @@
-// App 壳层（二期·页签制）：顶部页签栏——📦 模块库固定页签 + chat 会话 / run 视图
+// App 壳层（二期·页签制）：顶部页签栏——模块库固定页签 + chat 会话 / run 视图
 // 动态页签多实例共存。活动栏六页签：tree/cards 为「页签配套功能」（内容随激活
 // chat 页签切换）；chat/modules/runs/settings 为「全局功能」（不随页签变，只变
 // 列表选中高亮）。会话状态按 sid 多实例（一期 TreeChat webui 为单活动会话）。
@@ -6,7 +6,8 @@
 // 三期（chat as modules）：回合升级 SSE 流式——回调闭包绑定发起 sid，按 sid 多实例
 // 写入运行迹（后台页签的会话持续流式更新是多实例共存的题中之义，无需 active-tab 守卫）；
 // 模式 = 对话型 module（创建选择/徽章显示名/设置只读，全走 GET /api/modes 动态清单）。
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Boxes, MessageSquare } from "lucide-react";
 import {
   fetchRuns,
   postControl,
@@ -30,12 +31,12 @@ import { RunView, type ResumeRequestMsg } from "./components/RunView";
 import { ResizeHandle, useResizableWidth } from "./components/ResizeHandle";
 import { TabBar, type TabItem } from "./components/TabBar";
 
-/** 主区空态 */
-function EmptyState({ icon, title, hint }: { icon: string; title: string; hint: string }) {
+/** 主区空态（图标在标题上方，居中） */
+function EmptyState({ icon, title, hint }: { icon: ReactNode; title: string; hint: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1.5 text-muted-foreground">
-      <div className="text-[34px]">{icon}</div>
-      <div className="text-[13.5px]">{title}</div>
+      {icon}
+      <div className="text-[13px]">{title}</div>
       <div className="text-[12px] opacity-70">{hint}</div>
     </div>
   );
@@ -462,13 +463,13 @@ export default function App() {
             openModuleName ? (
               <ModuleDetail key={openModuleName} name={openModuleName} onLaunched={handleLaunched} />
             ) : (
-              <EmptyState icon="📦" title="未选择模块" hint="从左侧模块库选择，查看详情并发起运行" />
+              <EmptyState icon={<Boxes className="h-8 w-8 text-muted-foreground/40" />} title="未选择模块" hint="从左侧模块库选择，查看详情并发起运行" />
             )
           ) : activeChatSid ? (
             activeConv ? (
               <div className="flex h-full flex-col">
                 <header className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
-                  <span className="truncate text-[13.5px] font-semibold">{activeConv.name}</span>
+                  <span className="truncate text-[13px] font-semibold">{activeConv.name}</span>
                   {activeConv.category && (
                     <span className="rounded-full bg-foreground/[0.07] px-2 py-0.5 text-[11px] text-muted-foreground">
                       {modes.find((m) => m.key === activeConv.category)?.displayName ?? activeConv.category}
@@ -510,7 +511,7 @@ export default function App() {
               </div>
             ) : (
               <EmptyState
-                icon="💬"
+                icon={<MessageSquare className="h-8 w-8 text-muted-foreground/40" />}
                 title="加载会话…"
                 hint={activeUi.error ?? ""}
               />

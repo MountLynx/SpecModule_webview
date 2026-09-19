@@ -1,4 +1,4 @@
-import { Archive, FolderOpen, MoreHorizontal, Pencil, Plus, Tag, Trash2 } from "lucide-react";
+import { Archive, FolderOpen, MessageSquare, MoreHorizontal, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Mode, SessionSummary } from "./types";
 import { cn, relativeTime } from "../lib/utils";
@@ -47,7 +47,7 @@ export function ChatListPanel(p: Props) {
   if (!p.serviceAvailable)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1.5 px-4 text-center text-muted-foreground">
-        <div className="text-[28px]">💬</div>
+        <MessageSquare className="h-8 w-8 text-muted-foreground/40" />
         <div className="text-[13px]">对话服务未挂载</div>
         <div className="text-[12px] opacity-70">对话功能内置于服务端——请确认后端已启动/升级后刷新</div>
       </div>
@@ -143,8 +143,9 @@ function ChatListPanelInner(p: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-3 pb-2 pt-3">
-        <span className="text-[13px] font-semibold">对话</span>
+      <div className="flex items-center gap-1.5 px-3 pb-2 pt-3">
+        <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-[11px] font-semibold text-muted-foreground">对话</span>
         <Button size="sm" className="ml-auto h-7" onClick={() => setDialog({ kind: "create" })}>
           <Plus className="h-3.5 w-3.5" /> 新对话
         </Button>

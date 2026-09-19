@@ -181,7 +181,7 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
   return (
     <div className={overlayCls} onClick={onClose}>
       <div className={panelCls} onClick={(e) => e.stopPropagation()}>
-        <div className="text-[13.5px] font-bold">
+        <div className="text-[13px] font-bold">
           恢复 / 回退：<code>{runId}</code>
         </div>
         <div>

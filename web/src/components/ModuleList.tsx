@@ -1,6 +1,7 @@
 // 模块库侧栏列表：store.list_modules 摘要（模块数据归本组件自取）+
 // 「扫描来源」尾行。选中项由壳层持有（openModuleName），主区 ModuleDetail 联动。
 import { useCallback, useEffect, useState } from "react";
+import { Boxes } from "lucide-react";
 import { fetchModules, type ModuleInfo } from "../api";
 import { cn } from "../lib/utils";
 
@@ -35,7 +36,8 @@ export function ModuleList({ selected, onSelect }: ModuleListProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-3.5 pb-2 pt-2.5 text-[12px] font-bold">
+      <div className="flex items-center gap-1.5 px-3.5 pb-2 pt-2.5 text-[11px] font-semibold text-muted-foreground">
+        <Boxes className="h-3.5 w-3.5" />
         模块库
         <span className="font-normal text-muted-foreground">{modules.length} 个</span>
         {loadErr && (
