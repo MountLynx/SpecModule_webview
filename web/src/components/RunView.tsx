@@ -340,6 +340,11 @@ export function RunView({
     statusView?.phase === "running" && streamState?.runId === runId && selectedNode
       ? streamState.stream.thinking[selectedNode.id]
       : undefined;
+  // 节点级运行态：run 在跑且（该节点正在流式输出，或在当前 fireable 执行集中）
+  const nodeLive =
+    statusView?.phase === "running" &&
+    selectedNode != null &&
+    (liveText != null || statusView.fireable.includes(selectedNode.id));
   const needModulePicker = error?.code === "module_unresolved";
   const waitingMaterial = !materialized && materialTimeout;
 
@@ -449,7 +454,7 @@ export function RunView({
             runId={runId}
             node={selectedNode}
             outputs={statusView?.outputs ?? {}}
-            live={statusView?.phase === "running"}
+            live={nodeLive}
             liveText={liveText}
             liveThinking={liveThinking}
             onClose={() => setSelected(null)}

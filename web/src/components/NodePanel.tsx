@@ -40,7 +40,7 @@ export function NodePanel({
   runId: string;
   node: GraphNode;
   outputs: Record<string, unknown>;
-  /** run 处于 running phase——输出卡占位态判断用（首 token 到达前 liveText 仍为 undefined） */
+  /** 该节点正在执行（run 运行中且该节点在流式或 fireable 执行集）——输出卡占位态判断用 */
   live: boolean;
   /** 该节点当前执行的流式文本（终态后由 outputs 接管） */
   liveText?: string;
@@ -51,6 +51,8 @@ export function NodePanel({
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [openTick, setOpenTick] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  // copied 复位定时器：连点去重 + 卸载清理
+  const copyTimerRef = useRef<number | null>(null);
   // 右侧栏拖宽（持久化，节点切换重挂载后仍恢复；双击手柄复位）
   const bar = useResizableWidth({
     storageKey: "specmodule-webview.sidebar.right",
@@ -70,36 +72,44 @@ export function NodePanel({
     if (el) el.scrollTop = el.scrollHeight;
   }, [liveText, liveThinking, thinkShown]);
 
+  // timeline 拉取：挂载 + live 翻转（run 终态）各拉一次——终态后徽章/×N 随之刷新；
+  // 不清空旧 entries（key 重挂载已保证初始干净，翻转时清空会闪一下空白）
   useEffect(() => {
-    setEntries([]);
-    setOpenTick(null);
     let cancelled = false;
     fetchNodeTimeline(runId, node.id)
       .then((t) => { if (!cancelled) setEntries(t.entries); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [runId, node.id]);
+  }, [runId, node.id, live]);
+
+  useEffect(() => () => { if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current); }, []);
 
   const latest = outputs[node.id];
   const lastEntry = entries.length ? entries[entries.length - 1] : undefined;
   const badge = panelBadge(live, latest, lastEntry);
-  // 终态输出卡配色：失败红系，其余 done 绿系
+  // 终态输出卡配色：失败红系，done 绿系，未执行中性
   const terminalTint =
     badge.variant === "failed"
       ? {
           border: "border-[var(--ph-aborted-border)]",
           head: "border-[var(--ph-aborted-border)] bg-[var(--ph-aborted-bg)] text-[var(--ph-aborted-text)]",
         }
-      : {
-          border: "border-[var(--ph-done-border)]",
-          head: "border-[var(--ph-done-border)] bg-[var(--ph-done-bg)] text-[var(--ph-done-text)]",
-        };
+      : badge.variant === "done"
+        ? {
+            border: "border-[var(--ph-done-border)]",
+            head: "border-[var(--ph-done-border)] bg-[var(--ph-done-bg)] text-[var(--ph-done-text)]",
+          }
+        : {
+            border: "border-border",
+            head: "border-border bg-secondary text-muted-foreground",
+          };
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(pretty(latest));
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => setCopied(false), 1500);
     } catch {
       // 剪贴板不可用（非安全上下文等）：静默
     }
