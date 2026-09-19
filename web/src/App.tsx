@@ -27,6 +27,7 @@ import { ModuleDetail } from "./components/ModuleDetail";
 import { ModuleList } from "./components/ModuleList";
 import { RunList } from "./components/RunList";
 import { RunView, type ResumeRequestMsg } from "./components/RunView";
+import { ResizeHandle, useResizableWidth } from "./components/ResizeHandle";
 import { TabBar, type TabItem } from "./components/TabBar";
 
 /** 主区空态 */
@@ -71,6 +72,11 @@ export default function App() {
   const [runsTotal, setRunsTotal] = useState(0);
   // 打开恢复对话框的请求：runId + seq 守卫（一期机制原样）
   const [resumeRequest, setResumeRequest] = useState<ResumeRequestMsg | null>(null);
+  // 左侧栏拖宽（持久化，双击手柄复位）
+  const leftBar = useResizableWidth({
+    storageKey: "specmodule-webview.sidebar.left",
+    initial: 280, min: 200, max: 520, side: "left",
+  });
 
   // ── 对话（全局枚举 + 按 sid 多实例状态）──
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -375,7 +381,7 @@ export default function App() {
       <ActivityBar tab={sidebarTab} onTab={setSidebarTab} />
 
       {/* 侧边栏：内容随活动栏页签切换（全局列表 + 页签配套面板） */}
-      <aside className="flex h-full w-[280px] shrink-0 flex-col border-r bg-sidebar">
+      <aside className="flex h-full shrink-0 flex-col border-r bg-sidebar" style={{ width: leftBar.width }}>
         {sidebarTab === "chat" && (
           <ChatListPanel
             serviceAvailable={chatServiceUp !== false}
@@ -445,6 +451,8 @@ export default function App() {
           <SettingsPanel health={health} serviceAvailable={chatServiceUp !== false} modes={modes} />
         )}
       </aside>
+
+      <ResizeHandle dragging={leftBar.dragging} {...leftBar.handleProps} />
 
       {/* 主区：顶部页签栏 + 激活页签内容 */}
       <main className="flex h-full min-w-0 flex-1 flex-col bg-background">

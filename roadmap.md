@@ -503,3 +503,9 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   帧 ~16ms 合帧刷入）。兼收上游测试卫生根修（a9fb175：module_harness 测试 run 工件锚定
   tmp_path，基线跑不再向 cwd 泄漏垃圾）。设计：
   docs/superpowers/specs/2026-09-18-llm-thinking-streaming-design.md
+- 2026-09-18 **两侧侧边栏可拖宽**：新增共用 `ResizeHandle` 组件 + `useResizableWidth` hook
+  （components/ResizeHandle.tsx）——手柄为夹在侧栏与相邻区之间的细竖条（pointer capture
+  拖拽，拖动期间 body 禁选中 + 全局 col-resize 光标；双击复位），左侧栏（280px，
+  200–520）与右侧节点面板（380px，260–720）各接一份，宽度 localStorage 持久化
+  （`specmodule-webview.sidebar.*`；右栏随节点切换重挂载靠持久化恢复）。`npm run build`
+  通过 + mock run 全链路浏览器走查（拖宽/钳制/持久化/复位/节点切换保持）。

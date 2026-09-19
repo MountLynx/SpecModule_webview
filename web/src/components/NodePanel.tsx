@@ -2,6 +2,7 @@
 // 实时流文本。与图区并排的全高侧栏。
 import { useEffect, useRef, useState } from "react";
 import { fetchNodeTimeline, type GraphNode, type TimelineEntry } from "../api";
+import { ResizeHandle, useResizableWidth } from "./ResizeHandle";
 
 function pretty(v: unknown): string {
   if (v === undefined) return "（尚无输出）";
@@ -27,6 +28,11 @@ export function NodePanel({
 }) {
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [openTick, setOpenTick] = useState<number | null>(null);
+  // 右侧栏拖宽（持久化，节点切换重挂载后仍恢复；双击手柄复位）
+  const bar = useResizableWidth({
+    storageKey: "specmodule-webview.sidebar.right",
+    initial: 380, min: 260, max: 720, side: "right",
+  });
   // 思考块展开态：null = 自动（思考中展开、正文到达收起）；用户点击后以手动为准
   const [thinkExpand, setThinkExpand] = useState<boolean | null>(null);
   const thinkAuto = !liveText;
@@ -54,8 +60,10 @@ export function NodePanel({
   const latest = outputs[node.id];
 
   return (
-    <aside className="w-[380px] shrink-0 overflow-y-auto border-l bg-sidebar">
-      <header className="flex items-center justify-between px-3.5 py-2.5">
+    <>
+      <ResizeHandle dragging={bar.dragging} {...bar.handleProps} />
+      <aside className="shrink-0 overflow-y-auto border-l bg-sidebar" style={{ width: bar.width }}>
+        <header className="flex items-center justify-between px-3.5 py-2.5">
         <h3 className="m-0 text-[13px] font-bold">{node.id}</h3>
         <button
           aria-label="关闭面板"
@@ -143,6 +151,7 @@ export function NodePanel({
             ))}
         </section>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
