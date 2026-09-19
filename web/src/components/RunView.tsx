@@ -7,11 +7,12 @@
 // WS 与图加载；120s 未落盘在错误区示错并挂 process.log（启动失败界面可见）。
 // 自愈：WS 已连后图仍处失败态（如 translating 期 module_inputs 未归档的 404），
 // phase 前进说明归档可能已写——按 phase 去抖各重拉一次 graph。
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   fetchControl,
   fetchGraph,
+  fetchInputs,
   fetchModules,
   fetchProcess,
   fetchStatus,
@@ -22,6 +23,7 @@ import {
   type StatusCore,
   type StatusResp,
 } from "../api";
+import { resolveInputSource, type TraceState } from "../lib/inputSource";
 import { useRunStream } from "../ws";
 import { GraphView } from "./GraphView";
 import { NodePanel } from "./NodePanel";
@@ -74,6 +76,8 @@ export function RunView({
   const [procRunning, setProcRunning] = useState(false);
   // 图加载失败区的 process.log 尾（CLI 启动期失败界面可见）
   const [procLog, setProcLog] = useState<string | null>(null);
+  // 溯源状态（图上值卡 + 数据流虚线的唯一事实源）：null = 无
+  const [trace, setTrace] = useState<TraceState | null>(null);
   // 落盘等待门：false = run 尚未确认落盘（不连 WS、不拉图）
   const [materialized, setMaterialized] = useState(false);
   // 落盘等待超时示错（轮询不停止，落盘即自愈清零）
@@ -96,6 +100,7 @@ export function RunView({
     setError(null);
     setInitialStatus(null);
     setModuleOverride(null);
+    setTrace(null);
     setPaused(false);
     setProcLog(null);
     setMaterialized(false);
@@ -260,6 +265,34 @@ export function RunView({
     lastMsgAtRef.current = Date.now();
     setStalled(false);
   }, [streamState, runId]);
+
+  const nodeIds = useMemo(
+    () => new Set(payload?.graph.nodes.map((n) => n.id) ?? []),
+    [payload],
+  );
+
+  // 溯源上报：可定位输入胶囊 → 记录消费节点+字段+来源；再点同一胶囊收起。
+  // 消费节点以当前选中节点为准（胶囊只存在于其面板中）。
+  const handleTraceInput = useCallback(
+    (field: string, value: string) => {
+      if (!selected) return;
+      const src = resolveInputSource(value, nodeIds);
+      if (!src) return;
+      setTrace((prev) =>
+        prev && prev.consumerId === selected && prev.field === field
+          ? null
+          : { consumerId: selected, field, source: src },
+      );
+    },
+    [selected, nodeIds],
+  );
+
+  // 切节点 / 点画布空白（selected 变化）→ 溯源归零（图上值卡与虚线随 trace 清除）
+  useEffect(() => {
+    setTrace(null);
+  }, [selected]);
+
+  const clearTrace = useCallback(() => setTrace(null), []);
 
   const statusView: StatusCore | null = stream ?? initialStatus;
 
@@ -457,6 +490,9 @@ export function RunView({
             live={nodeLive}
             liveText={liveText}
             liveThinking={liveThinking}
+            nodeIds={nodeIds}
+            trace={trace}
+            onTraceInput={handleTraceInput}
             onClose={() => setSelected(null)}
           />
         )}

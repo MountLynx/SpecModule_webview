@@ -1,9 +1,10 @@
 // 节点面板（右侧边栏，V2）：粘性状态头部（状态图标+节点名+状态·次数胶囊）+
-// 输入标签胶囊（hover 看完整 JSON）+ 共享思考块 + 状态色输出卡（运行中占位/
+// 输入标签胶囊（可定位引用可点溯源，hover 看完整 JSON）+ 共享思考块 + 状态色输出卡（运行中占位/
 // 流式/终态三态 + 复制）+ 时间线式运行记录。与图区并排的全高侧栏。
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Circle, Copy, X } from "lucide-react";
 import { fetchNodeTimeline, type GraphNode, type TimelineEntry } from "../api";
+import { resolveInputSource, type TraceState } from "../lib/inputSource";
 import { cn } from "../lib/utils";
 import { ResizeHandle, useResizableWidth } from "./ResizeHandle";
 import { ThinkBlock } from "./ThinkBlock";
@@ -35,6 +36,9 @@ export function NodePanel({
   live,
   liveText,
   liveThinking,
+  nodeIds,
+  trace,
+  onTraceInput,
   onClose,
 }: {
   runId: string;
@@ -46,13 +50,17 @@ export function NodePanel({
   liveText?: string;
   /** 该节点当前执行的思考文本（正文 token 到达后自动收起） */
   liveThinking?: string;
+  /** 当前图全部节点 id（输入引用来源判定用） */
+  nodeIds: Set<string>;
+  /** 当前溯源态（null = 无）；来源胶囊 emphasis 依据 */
+  trace: TraceState | null;
+  /** 点可定位输入胶囊上报（RunView 持有溯源状态） */
+  onTraceInput: (field: string, value: string) => void;
   onClose: () => void;
 }) {
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [openTick, setOpenTick] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
-  // 展开显示值卡的输入键（null = 无；节点切换随 key 重挂载自动复位）
-  const [openInput, setOpenInput] = useState<string | null>(null);
   // copied 复位定时器：连点去重 + 卸载清理
   const copyTimerRef = useRef<number | null>(null);
   // 右侧栏拖宽（持久化，节点切换重挂载后仍恢复；双击手柄复位）
@@ -156,8 +164,10 @@ export function NodePanel({
         </header>
 
         <div className="px-3.5 pb-3.5 text-[12px]">
-          {/* 输入行：「输入」前缀标签 + 键名胶囊（可点——展开该输入的值卡片，
-              激活键名胶囊 primary 反色强调，再点收起；整组 hover 仍显示完整 JSON）。
+          {/* 输入行：「输入」前缀标签 + 键名胶囊。可定位引用（{spec.key} / 裸节点名）
+              可点——上报溯源（镜头飞消费节点 + 图上值卡，强调态跟随 trace，再点同一
+              胶囊收起）；「其他」类值为普通胶囊不可点（hover 见完整 JSON）。
+              侧栏内联「输入值」卡片已删除（图上值卡承载，避免重复）。
               节点类型已上移至头部名字旁，无输入键的节点整行不渲染 */}
           {Object.keys(node.inputs ?? {}).length > 0 && (
             <div
@@ -165,31 +175,28 @@ export function NodePanel({
               title={JSON.stringify(node.inputs)}
             >
               <span className="mr-0.5 text-[11px] text-muted-foreground">输入</span>
-              {Object.keys(node.inputs ?? {}).map((k) => (
-                <button
-                  key={k}
-                  aria-expanded={openInput === k}
-                  title={`查看输入 ${k}`}
-                  className={cn(
-                    pillVariants({ variant: openInput === k ? "emphasis" : "default" }),
-                    "cursor-pointer font-mono transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                  )}
-                  onClick={() => setOpenInput(openInput === k ? null : k)}
-                >
-                  {k}
-                </button>
-              ))}
-            </div>
-          )}
-          {openInput != null && node.inputs?.[openInput] !== undefined && (
-            <div className="mt-2 overflow-hidden rounded-control border border-border">
-              <div className="flex items-center justify-between border-b border-border bg-secondary px-2.5 py-1 text-[11px] text-muted-foreground">
-                <span className="font-mono">{openInput}</span>
-                <span>输入值</span>
-              </div>
-              <div className="max-h-[240px] overflow-y-auto whitespace-pre-wrap break-all p-2 font-mono text-[11px]">
-                {String(node.inputs[openInput])}
-              </div>
+              {Object.keys(node.inputs ?? {}).map((k) => {
+                const src = resolveInputSource(node.inputs[k], nodeIds);
+                const active = trace != null && trace.consumerId === node.id && trace.field === k;
+                return src ? (
+                  <button
+                    key={k}
+                    aria-expanded={active}
+                    title={`定位输入 ${k}`}
+                    className={cn(
+                      pillVariants({ variant: active ? "emphasis" : "default" }),
+                      "cursor-pointer font-mono transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    )}
+                    onClick={() => onTraceInput(k, node.inputs[k])}
+                  >
+                    {k}
+                  </button>
+                ) : (
+                  <Pill key={k} variant="default" className="font-mono">
+                    {k}
+                  </Pill>
+                );
+              })}
             </div>
           )}
 
