@@ -27,6 +27,8 @@ import { GraphView } from "./GraphView";
 import { NodePanel } from "./NodePanel";
 import { RunControls } from "./RunControls";
 import { Button } from "./ui/button";
+import { Pill, type PillVariant } from "./ui/pill";
+import { Spinner } from "./ui/spinner";
 
 export interface ResumeRequestMsg {
   runId: string;
@@ -35,6 +37,15 @@ export interface ResumeRequestMsg {
 
 /** 落盘等待上限：超过则示错（轮询不停止，落盘即自愈）。 */
 const MATERIALIZE_TIMEOUT_MS = 120_000;
+
+/** phase → 胶囊变体（未知 phase 走 default 中性） */
+const PHASE_PILL: Record<string, PillVariant> = {
+  running: "running",
+  done: "done",
+  aborted: "failed",
+  cancelled: "cancelled",
+  truncated: "truncated",
+};
 
 interface RunViewProps {
   runId: string;
@@ -344,10 +355,25 @@ export function RunView({
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b px-3.5 py-2 text-[12.5px] text-muted-foreground">
-        <span className="truncate font-mono">
-          {`${runId} · ${statusView?.phase ?? payload?.phase ?? "…"}${
-            statusView?.tick != null ? ` · tick ${statusView.tick}` : ""
-          }${statusView?.error ? ` · ${statusView.error}` : ""}`}
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-mono">{runId}</span>
+          {(statusView?.phase ?? payload?.phase) && (
+            <Pill
+              variant={PHASE_PILL[statusView?.phase ?? payload?.phase ?? ""] ?? "default"}
+              className="shrink-0"
+            >
+              {statusView?.phase === "running" && (
+                <Spinner className="h-2.5 w-2.5 border-[1.5px]" />
+              )}
+              {statusView?.phase ?? payload?.phase}
+              {statusView?.tick != null ? ` · tick ${statusView.tick}` : ""}
+            </Pill>
+          )}
+          {statusView?.error && (
+            <span className="truncate" title={statusView.error}>
+              {statusView.error}
+            </span>
+          )}
         </span>
         <RunControls
           key={runId}
@@ -423,6 +449,7 @@ export function RunView({
             runId={runId}
             node={selectedNode}
             outputs={statusView?.outputs ?? {}}
+            live={statusView?.phase === "running"}
             liveText={liveText}
             liveThinking={liveThinking}
             onClose={() => setSelected(null)}
