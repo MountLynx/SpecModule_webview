@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AlertTriangle, Check, X } from "lucide-react";
 import {
   ApiError,
   fetchCheckpoints,
@@ -295,16 +296,29 @@ function ResumeDialog({ runId, moduleHint, phaseRunning, onClose, onStarted }: R
             <>
               {preflight.hard_errors.length > 0 && (
                 <div className={errTextCls}>
-                  {preflight.hard_errors.map((e, i) => <div key={i}>✗ {e}</div>)}
+                  {preflight.hard_errors.map((e, i) => (
+                    <div key={i} className="flex items-start gap-1">
+                      <X className="mt-0.5 h-3 w-3 shrink-0" strokeWidth={3} />
+                      <span>{e}</span>
+                    </div>
+                  ))}
                 </div>
               )}
               {preflight.warnings.length > 0 && (
                 <div className={warnTextCls}>
-                  {preflight.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+                  {preflight.warnings.map((w, i) => (
+                    <div key={i} className="flex items-start gap-1">
+                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                      <span>{w}</span>
+                    </div>
+                  ))}
                 </div>
               )}
               {preflight.hard_errors.length === 0 && preflight.warnings.length === 0 && (
-                <div className={okTextCls}>✓ 未发现兼容性问题（回退目标 tick {preflight.target_tick}）</div>
+                <div className={`${okTextCls} flex items-start gap-1`}>
+                  <Check className="mt-0.5 h-3 w-3 shrink-0" strokeWidth={3} />
+                  <span>未发现兼容性问题（回退目标 tick {preflight.target_tick}）</span>
+                </div>
               )}
             </>
           )}

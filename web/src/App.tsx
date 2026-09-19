@@ -313,7 +313,7 @@ export default function App() {
 
   // ── run 操作（一期语义平移到页签制）──
 
-  // RunList 行内 ↻：打开目标 run 页签并请求恢复对话框（runId + seq 守卫不变）
+  // RunList 行内恢复按钮：打开目标 run 页签并请求恢复对话框（runId + seq 守卫不变）
   const handleListResume = useCallback((rid: string) => {
     openRunTab(rid);
     setResumeRequest({ runId: rid, seq: Date.now() });

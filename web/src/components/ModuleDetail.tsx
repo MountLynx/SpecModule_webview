@@ -2,6 +2,7 @@
 // 弹窗退役）。按 name 自取详情；发起成功经 onLaunched 上抛壳层（切运行页签开 run）。
 // 壳层契约：须以 key={name} 使用（切模块即重挂载，双保险防串态）。
 import { useEffect, useState } from "react";
+import { Play } from "lucide-react";
 import {
   fetchModuleDetail,
   postLaunch,
@@ -275,7 +276,12 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
           {err && <div className="mt-2 text-[12.5px] text-destructive">{err}</div>}
           <div className="mt-4 flex items-center gap-3">
             <Button onClick={() => submit()} disabled={submitDisabled}>
-              {busy ? "启动中…" : "▶ 发起运行"}
+              {busy ? "启动中…" : (
+                <>
+                  <Play className="h-3.5 w-3.5" />
+                  发起运行
+                </>
+              )}
             </Button>
             <span className="text-[11px] text-muted-foreground">
               202 后自动切到「运行历史」打开新 run

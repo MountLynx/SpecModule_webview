@@ -1,8 +1,10 @@
 // 头部控制条：phase 感知的运行控制（暂停/继续/取消/终止恢复进程）+ 存检查点 +
 // 终态恢复/回退入口。控制逻辑（含 resumeRequest runId+seq 守卫）不变，仅换皮。
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Ban, Bookmark, Pause, Play, RotateCcw, Square } from "lucide-react";
 import { postControl, TERMINAL_PHASES, type ControlAction } from "../api";
 import { Button } from "./ui/button";
+import { Pill } from "./ui/pill";
 import { ResumeDialog } from "./ResumeDialog";
 import { CheckpointDialog } from "./CheckpointDialog";
 import { errTextCls } from "./dialogTheme";
@@ -76,16 +78,19 @@ export function RunControls({
   return (
     <div className="ml-auto flex items-center gap-2">
       {paused && (
-        <span className="text-[12.5px] font-semibold text-[var(--ph-cancelled)]">⏸ 已暂停</span>
+        <Pill variant="cancelled">
+          <Pause className="h-3 w-3" />
+          已暂停
+        </Pill>
       )}
       {running && !paused && (
         <Button variant="outline" size="sm" disabled={busy} onClick={() => act("pause")}>
-          暂停
+          <Pause className="h-3.5 w-3.5" />暂停
         </Button>
       )}
       {running && paused && (
         <Button variant="outline" size="sm" disabled={busy} onClick={() => act("unpause")}>
-          继续
+          <Play className="h-3.5 w-3.5" />继续
         </Button>
       )}
       {running && (
@@ -98,11 +103,11 @@ export function RunControls({
             if (window.confirm("取消该运行？（已落盘，可稍后恢复/回退）")) act("cancel");
           }}
         >
-          取消
+          <Ban className="h-3.5 w-3.5" />取消
         </Button>
       )}
       <Button variant="outline" size="sm" disabled={busy} onClick={() => setCpOpen(true)}>
-        存检查点…
+        <Bookmark className="h-3.5 w-3.5" />存检查点…
       </Button>
       {procRunning && (
         <Button
@@ -116,12 +121,12 @@ export function RunControls({
             }
           }}
         >
-          终止进程
+          <Square className="h-3.5 w-3.5" />终止进程
         </Button>
       )}
       {resumable && (
         <Button variant="outline" size="sm" disabled={busy} onClick={() => setDialogOpen(true)}>
-          恢复 / 回退…
+          <RotateCcw className="h-3.5 w-3.5" />恢复 / 回退…
         </Button>
       )}
       {err && <span className={errTextCls}>{err}</span>}

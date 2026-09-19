@@ -2,6 +2,7 @@
 // 错误摘要）+ 行内控制（暂停/继续/取消/恢复/删除）。语义与旧全宽 RunsView
 // 一致：整行点击打开 run；删除终态确认、running 提示先取消 + force 二次确认。
 import { useState } from "react";
+import { Ban, Pause, Play, RotateCcw, RefreshCw, Trash2 } from "lucide-react";
 import {
   TERMINAL_PHASES,
   deleteRun,
@@ -92,7 +93,8 @@ export function RunList({
           className="ml-auto h-5 px-1.5 text-[10.5px]"
           onClick={onRefresh}
         >
-          ↻ 刷新
+          <RefreshCw className="h-3 w-3" />
+          刷新
         </Button>
         {err && (
           <span title={err} className="min-w-0 truncate font-normal text-[11.5px] text-destructive">
@@ -156,13 +158,15 @@ export function RunList({
                 {r.phase === "running" && !r.paused && (
                   <Button variant="outline" size="sm" className={ctlBtn} title="暂停"
                     onClick={() => onControl(r.run_id, "pause")}>
-                    ⏸ 暂停
+                    <Pause className="h-3 w-3" />
+                    暂停
                   </Button>
                 )}
                 {r.phase === "running" && r.paused && (
                   <Button variant="outline" size="sm" className={ctlBtn} title="继续"
                     onClick={() => onControl(r.run_id, "unpause")}>
-                    ▶ 继续
+                    <Play className="h-3 w-3" />
+                    继续
                   </Button>
                 )}
                 {r.phase === "running" && (
@@ -171,19 +175,22 @@ export function RunList({
                     onClick={() => {
                       if (window.confirm(`取消运行 ${r.run_id}？`)) onControl(r.run_id, "cancel");
                     }}>
-                    ✕ 取消
+                    <Ban className="h-3 w-3" />
+                    取消
                   </Button>
                 )}
                 {terminal && (
                   <Button variant="outline" size="sm" className={ctlBtn} title="恢复/回退"
                     onClick={() => onResume(r.run_id)}>
-                    ↻ 恢复
+                    <RotateCcw className="h-3 w-3" />
+                    恢复
                   </Button>
                 )}
                 <Button variant="outline" size="sm"
                   className={cn(ctlBtn, "text-destructive")} title="删除该 run 目录"
                   disabled={busyId === r.run_id}
                   onClick={() => del(r)}>
+                  <Trash2 className="h-3 w-3" />
                   删除
                 </Button>
               </div>
