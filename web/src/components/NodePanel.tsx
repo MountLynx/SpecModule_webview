@@ -181,7 +181,7 @@ export function NodePanel({
                 return src ? (
                   <button
                     key={k}
-                    aria-expanded={active}
+                    aria-pressed={active}
                     title={`定位输入 ${k}`}
                     className={cn(
                       pillVariants({ variant: active ? "emphasis" : "default" }),

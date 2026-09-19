@@ -22,7 +22,7 @@ function DataCardNodeInner({ data }: NodeProps<DataCardFlowNode>) {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden rounded-[10px] border border-border bg-card shadow-[0_6px_24px_rgba(0,0,0,0.18)]">
       <div className="flex shrink-0 items-center justify-between gap-1.5 border-b border-border bg-secondary px-2.5 py-1 text-[11px] text-muted-foreground">
-        <span className="truncate font-mono">{data.heading}</span>
+        <span title={data.heading} className="truncate font-mono">{data.heading}</span>
         <button
           aria-label="关闭值卡"
           className="shrink-0 rounded-[5px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -31,7 +31,8 @@ function DataCardNodeInner({ data }: NodeProps<DataCardFlowNode>) {
           <X className="h-3 w-3" />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto whitespace-pre-wrap break-all p-2 font-mono text-[11px]">
+      {/* nowheel：滚轮留给正文滚动，不缩放画布（React Flow 节点内滚动区约定） */}
+      <div className="nowheel flex-1 overflow-y-auto whitespace-pre-wrap break-all p-2 font-mono text-[11px]">
         {data.body}
       </div>
       <Handle
