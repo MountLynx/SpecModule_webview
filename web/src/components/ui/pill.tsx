@@ -29,6 +29,8 @@ const pillVariants = cva(
 
 export type PillVariant = NonNullable<VariantProps<typeof pillVariants>["variant"]>;
 
+export { pillVariants };
+
 export interface PillProps extends ComponentProps<"span">, VariantProps<typeof pillVariants> {}
 
 export function Pill({ className, variant, ...props }: PillProps) {

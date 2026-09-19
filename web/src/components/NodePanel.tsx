@@ -7,7 +7,7 @@ import { fetchNodeTimeline, type GraphNode, type TimelineEntry } from "../api";
 import { cn } from "../lib/utils";
 import { ResizeHandle, useResizableWidth } from "./ResizeHandle";
 import { ThinkBlock } from "./ThinkBlock";
-import { Pill, type PillVariant } from "./ui/pill";
+import { Pill, pillVariants, type PillVariant } from "./ui/pill";
 import { Spinner } from "./ui/spinner";
 
 function pretty(v: unknown): string {
@@ -51,6 +51,8 @@ export function NodePanel({
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [openTick, setOpenTick] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  // 展开显示值卡的输入键（null = 无；节点切换随 key 重挂载自动复位）
+  const [openInput, setOpenInput] = useState<string | null>(null);
   // copied 复位定时器：连点去重 + 卸载清理
   const copyTimerRef = useRef<number | null>(null);
   // 右侧栏拖宽（持久化，节点切换重挂载后仍恢复；双击手柄复位）
@@ -148,18 +150,39 @@ export function NodePanel({
         </header>
 
         <div className="px-3.5 pb-3.5 text-[12px]">
-          {/* 输入：类型/起始/键名 标签胶囊（整组 hover 显示完整 JSON） */}
+          {/* 输入：类型/起始为静态胶囊；键名胶囊可点——展开该输入的值卡片，
+              激活键名胶囊 primary 反色强调，再点收起（整组 hover 仍显示完整 JSON） */}
           <div className="mt-2.5 flex flex-wrap gap-1" title={JSON.stringify(node.inputs)}>
             <Pill className="font-mono">
               {node.type}
               {node.is_start ? " · start" : ""}
             </Pill>
             {Object.keys(node.inputs ?? {}).map((k) => (
-              <Pill key={k} className="font-mono">
+              <button
+                key={k}
+                aria-expanded={openInput === k}
+                title={`查看输入 ${k}`}
+                className={cn(
+                  pillVariants({ variant: openInput === k ? "emphasis" : "default" }),
+                  "cursor-pointer font-mono transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                )}
+                onClick={() => setOpenInput(openInput === k ? null : k)}
+              >
                 {k}
-              </Pill>
+              </button>
             ))}
           </div>
+          {openInput != null && node.inputs?.[openInput] !== undefined && (
+            <div className="mt-2 overflow-hidden rounded-control border border-border">
+              <div className="flex items-center justify-between border-b border-border bg-secondary px-2.5 py-1 text-[11px] text-muted-foreground">
+                <span className="font-mono">{openInput}</span>
+                <span>输入值</span>
+              </div>
+              <div className="max-h-[240px] overflow-y-auto whitespace-pre-wrap break-all p-2 font-mono text-[11px]">
+                {String(node.inputs[openInput])}
+              </div>
+            </div>
+          )}
 
           {/* 思考块（与 chat 同源组件） */}
           {liveThinking ? (
