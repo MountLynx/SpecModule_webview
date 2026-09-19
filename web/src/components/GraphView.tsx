@@ -71,7 +71,7 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
     return payload.graph.edges.map((e, i) => {
       const active =
         !!status && status.phase === "running" && status.fireable.includes(e.from);
-      const stroke = active ? "var(--ph-running)" : "hsl(var(--border))";
+      const stroke = active ? "var(--ph-running)" : "hsl(var(--foreground) / 0.28)";
       return {
         id: `e${i}`,
         source: e.from,
@@ -84,13 +84,13 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
     });
   }, [payload, status]);
 
-  /** MiniMap 节点底色：与画布节点同一状态色（取 bg 变量） */
+  /** MiniMap 节点底色：取状态主色（bg 洗淡变体在小图上几乎不可见） */
   const minimapColor = useCallback((n: StatusFlowNode): string => {
     const b = badgeOf(n.data.state);
-    if (b === "running") return "var(--ph-running-bg)";
-    if (b === "done") return "var(--ph-done-bg)";
-    if (b === "failed" || b === "aborted") return "var(--ph-aborted-bg)";
-    return "hsl(var(--muted))";
+    if (b === "running") return "var(--ph-running)";
+    if (b === "done") return "var(--ph-done)";
+    if (b === "failed" || b === "aborted") return "var(--ph-aborted)";
+    return "hsl(var(--muted-foreground) / 0.5)";
   }, []);
 
   const fireableInView = useCallback((): string[] => {
