@@ -95,6 +95,8 @@ chat RunBlock 现有 `✓ ✗ ◌` 字符图标全部替换为 lucide。全应�
 2. **输入胶囊区**：`类型 harness` / `start` / 各输入键名为标签胶囊（mono 键名）；整组 hover `title` 显示完整输入 JSON（信息不丢失）
 3. **思考块**：**与 chat RunBlock 思考行同一组件/类**（见 §6.1）——左边框 2px（running 蓝）、斜体、muted、240px 滚动上限、点击展开/收起（保留现有自动收起逻辑）
 4. **最新输出卡**：头部条（「输出 · 流式/终态」标签 + Copy 按钮，复制成功 1.5s 内变 Check）+ 正文区；边框/头部条随节点状态色（`--ph-*-border/bg`）
+   - **运行中占位态**：节点 running 且尚无 liveText 时，正文区显示 spinner + 占位文案（script 节点「脚本执行中…」，其余「运行中…」），卡片整体 running 洗淡色——不再显示空白或「（尚无输出）」。script 节点全程无流式输出（不走 LLM），此态会贯穿其整个执行期；harness/submodule 首 token 到达前同理
+   - liveText 到达后由流式文本接管；终态后由 outputs 接管（现有 `pretty()` 空值文案仅在非 running 且无输出时出现）
 5. **运行记录时间线**：左侧竖线 + 状态圆点（ok=绿实心 / failed=红），行内「tick N + 状态词」；点击展开全文（现有 openTick 逻辑保留）
 
 面板宽度拖拽（ResizeHandle 未提交改动）保留；流式正文/思考的自动滚动逻辑不动。
@@ -130,6 +132,7 @@ chat RunBlock 现有 `✓ ✗ ◌` 字符图标全部替换为 lucide。全应�
 3. 无字符/emoji 图标残留（grep `✓|✗|◌|📄` 于 web/src 应为 0 命中——合法文本内容除外）
 4. 思考块：chat 与 NodePanel 同屏对比视觉一致
 5. F 快捷键：画布聚焦时切换跟随；输入框聚焦时无效
+6. script 节点运行中：NodePanel 输出卡显示 spinner 占位态（非空白）；终态后显示 outputs
 
 ## 9. 实施切分建议（供 writing-plans 展开）
 
