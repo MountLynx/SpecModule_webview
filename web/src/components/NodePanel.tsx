@@ -135,7 +135,13 @@ export function NodePanel({
           ) : (
             <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
           )}
-          <h3 className="m-0 flex-1 truncate text-[13px] font-bold">{node.id}</h3>
+          <div className="m-0 flex min-w-0 flex-1 items-baseline gap-1.5">
+            <h3 className="m-0 truncate text-[13px] font-bold">{node.id}</h3>
+            <span className="shrink-0 text-[11px] text-muted-foreground">
+              {node.type}
+              {node.is_start ? " · start" : ""}
+            </span>
+          </div>
           <Pill variant={badge.variant} className="shrink-0">
             {badge.label}
             {entries.length > 0 && ` · ×${entries.length}`}
@@ -150,28 +156,31 @@ export function NodePanel({
         </header>
 
         <div className="px-3.5 pb-3.5 text-[12px]">
-          {/* 输入：类型/起始为静态胶囊；键名胶囊可点——展开该输入的值卡片，
-              激活键名胶囊 primary 反色强调，再点收起（整组 hover 仍显示完整 JSON） */}
-          <div className="mt-2.5 flex flex-wrap gap-1" title={JSON.stringify(node.inputs)}>
-            <Pill className="font-mono">
-              {node.type}
-              {node.is_start ? " · start" : ""}
-            </Pill>
-            {Object.keys(node.inputs ?? {}).map((k) => (
-              <button
-                key={k}
-                aria-expanded={openInput === k}
-                title={`查看输入 ${k}`}
-                className={cn(
-                  pillVariants({ variant: openInput === k ? "emphasis" : "default" }),
-                  "cursor-pointer font-mono transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                )}
-                onClick={() => setOpenInput(openInput === k ? null : k)}
-              >
-                {k}
-              </button>
-            ))}
-          </div>
+          {/* 输入行：「输入」前缀标签 + 键名胶囊（可点——展开该输入的值卡片，
+              激活键名胶囊 primary 反色强调，再点收起；整组 hover 仍显示完整 JSON）。
+              节点类型已上移至头部名字旁，无输入键的节点整行不渲染 */}
+          {Object.keys(node.inputs ?? {}).length > 0 && (
+            <div
+              className="mt-2.5 flex flex-wrap items-center gap-1"
+              title={JSON.stringify(node.inputs)}
+            >
+              <span className="mr-0.5 text-[11px] text-muted-foreground">输入</span>
+              {Object.keys(node.inputs ?? {}).map((k) => (
+                <button
+                  key={k}
+                  aria-expanded={openInput === k}
+                  title={`查看输入 ${k}`}
+                  className={cn(
+                    pillVariants({ variant: openInput === k ? "emphasis" : "default" }),
+                    "cursor-pointer font-mono transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  )}
+                  onClick={() => setOpenInput(openInput === k ? null : k)}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+          )}
           {openInput != null && node.inputs?.[openInput] !== undefined && (
             <div className="mt-2 overflow-hidden rounded-control border border-border">
               <div className="flex items-center justify-between border-b border-border bg-secondary px-2.5 py-1 text-[11px] text-muted-foreground">
