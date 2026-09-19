@@ -509,3 +509,14 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   200–520）与右侧节点面板（380px，260–720）各接一份，宽度 localStorage 持久化
   （`specmodule-webview.sidebar.*`；右栏随节点切换重挂载靠持久化恢复）。`npm run build`
   通过 + mock run 全链路浏览器走查（拖宽/钳制/持久化/复位/节点切换保持）。
+
+- 2026-09-19 **界面美化（B·状态染色方向）全量落地**：状态色三阶令牌（`--ph-*-bg/border/text`
+  亮暗）+ Pill 胶囊两态（选中=primary 反色）/Spinner 基件；图视图染色节点（浸染底+
+  lucide 状态图标+运行光环）与活跃边蓝色流动、Minimap 着色、跟随状态按钮（跟随中/
+  已解锁/回到当前 + F 快捷键，修饰键组合让位）；NodePanel V2（粘性状态头部/输入标签
+  胶囊/输出卡三态——script 运行占位+流式+终态复制，节点级 live 判定（run 运行中且该
+  节点在流式或 fireable 执行集）/时间线运行记录（终态自动刷新））；ThinkBlock 共享
+  思考块（chat 与 run 侧栏同源）；控制条/列表/对话框/页签 lucide 图标化 + TabBar 激活
+  胶囊（primary 反色）；字号阶收敛 11/12/13/15。设计：
+  docs/superpowers/specs/2026-09-19-ui-polish-status-tint-design.md；实施计划：
+  docs/superpowers/plans/2026-09-19-ui-polish-status-tint.md
