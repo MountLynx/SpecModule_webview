@@ -62,11 +62,12 @@ function StatusNodeInner({ data, selected }: NodeProps<StatusFlowNode>) {
       <StatusIcon badge={badge} />
       <div className="min-w-0 flex-1 text-left">
         <div
+          title={data.label}
           className={`truncate text-[12px] font-semibold leading-tight ${TEXT[badge] ?? TEXT.idle}`}
         >
           {data.label}
         </div>
-        <div className="truncate text-[11px] leading-tight text-muted-foreground/80">
+        <div className="truncate text-[11px] leading-tight text-muted-foreground">
           {data.type}
           {data.isStart ? " · start" : ""}
         </div>
