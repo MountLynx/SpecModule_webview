@@ -78,6 +78,8 @@ export function RunView({
   const [procLog, setProcLog] = useState<string | null>(null);
   // 溯源状态（图上值卡 + 数据流虚线的唯一事实源）：null = 无
   const [trace, setTrace] = useState<TraceState | null>(null);
+  // spec 存档缓存（溯源值卡正文）：随 run 拉一次；无存档（旧 run / 未归档）→ null 容忍
+  const [spec, setSpec] = useState<Record<string, unknown> | null>(null);
   // 落盘等待门：false = run 尚未确认落盘（不连 WS、不拉图）
   const [materialized, setMaterialized] = useState(false);
   // 落盘等待超时示错（轮询不停止，落盘即自愈清零）
@@ -101,6 +103,7 @@ export function RunView({
     setInitialStatus(null);
     setModuleOverride(null);
     setTrace(null);
+    setSpec(null);
     setPaused(false);
     setProcLog(null);
     setMaterialized(false);
@@ -148,6 +151,22 @@ export function RunView({
         if (!cancelled) setPaused(c.paused);
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, materialized]);
+
+  // spec 存档：落盘后拉一次（module_inputs 存档）；404/缺失静默 → null（值卡走无存档回退）
+  useEffect(() => {
+    if (!materialized) return;
+    let cancelled = false;
+    fetchInputs(runId)
+      .then((d) => {
+        if (!cancelled) setSpec(d.spec);
+      })
+      .catch(() => {
+        if (!cancelled) setSpec(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -476,6 +495,9 @@ export function RunView({
               status={statusView}
               selected={selected}
               onSelect={setSelected}
+              trace={trace}
+              spec={spec}
+              onClearTrace={clearTrace}
             />
           ) : (
             !error && !waitingMaterial && <div className="p-3 text-[12px]">图加载中…</div>

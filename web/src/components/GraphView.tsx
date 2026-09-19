@@ -10,16 +10,19 @@ import {
   ReactFlowProvider,
   useReactFlow,
   type Edge,
+  type Node,
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { layoutGraph, NODE_SIZE } from "../dagre";
+import { DATA_CARD_NODE_ID, DataCardNode, type DataCardFlowNode } from "./DataCardNode";
+import type { TraceState } from "../lib/inputSource";
 import type { GraphPayload, StatusCore } from "../api";
 import { badgeOf, StatusNode, type StatusFlowNode, type StatusNodeData } from "./StatusNode";
 import { LocateFixed } from "lucide-react";
 import { cn } from "../lib/utils";
 
-const nodeTypes: NodeTypes = { status: StatusNode };
+const nodeTypes: NodeTypes = { status: StatusNode, dataCard: DataCardNode };
 
 /** 与 index.html 初始化同优先级：localStorage 覆盖 > 跟随系统 */
 function themeColorMode(): "light" | "dark" | "system" {
@@ -27,21 +30,52 @@ function themeColorMode(): "light" | "dark" | "system" {
   return t === "dark" || t === "light" ? t : "system";
 }
 
+/** 值卡头部来源标识：spec 卡 `spec.<key>`；上游卡 `<上游节点> → <字段名>` */
+function cardHeading(trace: TraceState): string {
+  return trace.source.kind === "spec"
+    ? `spec.${trace.source.key}`
+    : `${trace.source.nodeId} → ${trace.field}`;
+}
+
+/** 值卡正文：spec 卡 = spec 实际值（无存档/字段缺失 → 引用串原文 + 尾注）；
+ * 上游卡 = 上游节点最新输出（尚无输出 → 尾注）。字符串原样，其余 JSON 化。 */
+function cardBody(
+  trace: TraceState,
+  spec: Record<string, unknown> | null,
+  outputs: Record<string, unknown>,
+): string {
+  if (trace.source.kind === "spec") {
+    const { key } = trace.source;
+    if (!spec || !(key in spec)) return `{spec.${key}}（无存档值）`;
+    const v = spec[key];
+    return typeof v === "string" ? v : JSON.stringify(v, null, 2);
+  }
+  const out = outputs[trace.source.nodeId];
+  if (out === undefined) return "（尚无输出）";
+  return typeof out === "string" ? out : JSON.stringify(out, null, 2);
+}
+
 type Props = {
   payload: GraphPayload;
   status: StatusCore | null;
   selected: string | null;
   onSelect: (id: string | null) => void;
+  /** 当前溯源态（null = 无）——非空时叠加值卡节点与数据流虚线 */
+  trace: TraceState | null;
+  /** run 的 spec 存档（spec 引用值卡正文；null = 无存档） */
+  spec: Record<string, unknown> | null;
+  /** 值卡 ✕ 关闭（清溯源） */
+  onClearTrace: () => void;
 };
 
-function GraphCanvas({ payload, status, selected, onSelect }: Props) {
+function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClearTrace }: Props) {
   const { fitView } = useReactFlow();
   const colorMode = useMemo(() => themeColorMode(), []);
   const followRef = useRef(true); // 跟随模式（默认开；用户拖动即关）
   const [follow, setFollow] = useState(true); // 按钮文案随动（ref 不触发渲染）
   const fitLockRef = useRef(false); // 程序化 fitView 期间不误判为手动
 
-  const nodes = useMemo<StatusFlowNode[]>(() => {
+  const nodes = useMemo<(StatusFlowNode | DataCardFlowNode)[]>(() => {
     const pos = layoutGraph(payload.graph.nodes, payload.graph.edges);
     const live: Record<string, (StatusNodeData & { state?: StatusNodeData["state"] })["state"]> = {
       ...payload.node_states,
@@ -56,7 +90,7 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
         };
       }
     }
-    return payload.graph.nodes.map((n) => ({
+    const list: (StatusFlowNode | DataCardFlowNode)[] = payload.graph.nodes.map((n) => ({
       id: n.id,
       type: "status" as const,
       position: pos.get(n.id) ?? { x: 0, y: 0 },
@@ -65,10 +99,32 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
       data: { label: n.label, type: n.type, isStart: n.is_start, state: live[n.id] },
       selected: selected === n.id,
     }));
-  }, [payload, status, selected]);
+    // 溯源值卡：锚定消费节点右侧固定偏移（图坐标随缩放平移；不参与 dagre）。
+    // 消费节点不在当前图（换模块后引用失配）→ 不叠卡，trace 边同理（edges 处）。
+    if (trace) {
+      const cp = pos.get(trace.consumerId);
+      if (cp) {
+        list.push({
+          id: DATA_CARD_NODE_ID,
+          type: "dataCard",
+          position: { x: cp.x + NODE_SIZE.width + 48, y: cp.y },
+          width: 240,
+          height: 180,
+          draggable: false,
+          selectable: false,
+          data: {
+            heading: cardHeading(trace),
+            body: cardBody(trace, spec, status?.outputs ?? {}),
+            onClose: onClearTrace,
+          },
+        });
+      }
+    }
+    return list;
+  }, [payload, status, selected, trace, spec, onClearTrace]);
 
   const edges = useMemo<Edge[]>(() => {
-    return payload.graph.edges.map((e, i) => {
+    const list: Edge[] = payload.graph.edges.map((e, i) => {
       const active =
         !!status && status.phase === "running" && status.fireable.includes(e.from);
       const stroke = active ? "var(--ph-running)" : "hsl(var(--foreground) / 0.28)";
@@ -82,11 +138,41 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
         markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
       };
     });
-  }, [payload, status]);
+    // 数据流虚线（与控制流实线可辨）：spec 卡 卡↔消费节点（无箭头）；
+    // 上游卡 上游节点→消费节点（小箭头指消费）。消费节点/上游节点不在当前图
+    //（trace 存续期间 moduleOverride 换图）→ 与卡一并缺席，防悬空边。
+    if (trace) {
+      const inGraph = (id: string) => payload.graph.nodes.some((n) => n.id === id);
+      const drawable =
+        inGraph(trace.consumerId) &&
+        (trace.source.kind === "spec" || inGraph(trace.source.nodeId));
+      if (drawable) {
+        const stroke = "hsl(var(--foreground) / 0.28)";
+        list.push(
+          trace.source.kind === "spec"
+            ? {
+                id: "trace-edge",
+                source: DATA_CARD_NODE_ID,
+                target: trace.consumerId,
+                style: { stroke, strokeWidth: 1.5, strokeDasharray: "6 4" },
+              }
+            : {
+                id: "trace-edge",
+                source: trace.source.nodeId,
+                target: trace.consumerId,
+                style: { stroke, strokeWidth: 1.5, strokeDasharray: "6 4" },
+                markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 12, height: 12 },
+              },
+        );
+      }
+    }
+    return list;
+  }, [payload, status, trace]);
 
   /** MiniMap 节点底色：取状态主色（bg 洗淡变体在小图上几乎不可见） */
-  const minimapColor = useCallback((n: StatusFlowNode): string => {
-    const b = badgeOf(n.data.state);
+  const minimapColor = useCallback((n: Node): string => {
+    if (n.type === "dataCard") return "hsl(var(--muted-foreground) / 0.5)";
+    const b = badgeOf((n as StatusFlowNode).data.state);
     if (b === "running") return "var(--ph-running)";
     if (b === "done") return "var(--ph-done)";
     if (b === "failed" || b === "aborted") return "var(--ph-aborted)";
@@ -101,9 +187,9 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
   }, [status, payload]);
 
   const centerOn = useCallback(
-    (ids: string[]) => {
+    (ids: string[], padding = 0.25) => {
       fitLockRef.current = true;
-      fitView({ nodes: ids.map((id) => ({ id })), duration: 600, padding: 0.25 }).then(
+      fitView({ nodes: ids.map((id) => ({ id })), duration: 600, padding }).then(
         () => {
           window.setTimeout(() => {
             fitLockRef.current = false;
@@ -142,6 +228,15 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
       setFollow(false);
     }
   }, []);
+
+  // 溯源变化：镜头飞消费节点 + 值卡（padding 放宽容纳卡片）；飞行即解锁跟随
+  //（与手动交互语义一致，F/按钮可再跟随）
+  useEffect(() => {
+    if (!trace) return;
+    followRef.current = false;
+    setFollow(false);
+    centerOn([trace.consumerId, DATA_CARD_NODE_ID], 0.3);
+  }, [trace, centerOn]);
 
   // F 快捷键：重新跟随。输入框/文本域/下拉/contentEditable 聚焦时让位。
   useEffect(() => {
@@ -189,7 +284,10 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
         edges={edges}
         nodeTypes={nodeTypes}
         onMoveStart={onMoveStart}
-        onNodeClick={(_, n) => onSelect(n.id)}
+        onNodeClick={(_, n) => {
+          if (n.type === "dataCard") return;
+          onSelect(n.id);
+        }}
         onPaneClick={() => onSelect(null)}
         colorMode={colorMode}
         fitView
