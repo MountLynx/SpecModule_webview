@@ -2,7 +2,9 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Background,
+  BackgroundVariant,
   Controls,
+  MarkerType,
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
@@ -13,7 +15,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { layoutGraph, NODE_SIZE } from "../dagre";
 import type { GraphPayload, StatusCore } from "../api";
-import { StatusNode, type StatusFlowNode, type StatusNodeData } from "./StatusNode";
+import { badgeOf, StatusNode, type StatusFlowNode, type StatusNodeData } from "./StatusNode";
 import { Button } from "./ui/button";
 
 const nodeTypes: NodeTypes = { status: StatusNode };
@@ -64,17 +66,30 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
   }, [payload, status, selected]);
 
   const edges = useMemo<Edge[]>(() => {
-    return payload.graph.edges.map((e, i) => ({
-      id: `e${i}`,
-      source: e.from,
-      target: e.to,
-      label: e.guard ?? undefined,
-      animated:
-        !!status &&
-        status.phase === "running" &&
-        status.fireable.includes(e.from),
-    }));
+    return payload.graph.edges.map((e, i) => {
+      const active =
+        !!status && status.phase === "running" && status.fireable.includes(e.from);
+      const stroke = active ? "var(--ph-running)" : "hsl(var(--border))";
+      return {
+        id: `e${i}`,
+        source: e.from,
+        target: e.to,
+        label: e.guard ?? undefined,
+        animated: active,
+        style: { stroke, strokeWidth: active ? 1.8 : 1.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
+      };
+    });
   }, [payload, status]);
+
+  /** MiniMap 节点底色：与画布节点同一状态色（取 bg 变量） */
+  const minimapColor = useCallback((n: StatusFlowNode): string => {
+    const b = badgeOf(n.data.state);
+    if (b === "running") return "var(--ph-running-bg)";
+    if (b === "done") return "var(--ph-done-bg)";
+    if (b === "failed" || b === "aborted") return "var(--ph-aborted-bg)";
+    return "hsl(var(--muted))";
+  }, []);
 
   const fireableInView = useCallback((): string[] => {
     if (!status || status.phase !== "running") return [];
@@ -132,9 +147,9 @@ function GraphCanvas({ payload, status, selected, onSelect }: Props) {
         minZoom={0.2}
         maxZoom={2}
       >
-        <MiniMap />
+        <MiniMap nodeColor={minimapColor} pannable zoomable />
         <Controls />
-        <Background />
+        <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
       </ReactFlow>
     </div>
   );
