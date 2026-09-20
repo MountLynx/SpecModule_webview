@@ -270,9 +270,10 @@ export default function App() {
     }
   }, [updRun, updUi, refreshSessions, bufferDelta]);
 
-  // 树图导航 / 轮末「从此分支」：指针挪到目标轮（后端内存态）+ 主区聚焦该轮
+  // 树图导航 / 轮末「从此分支」：指针挪到目标轮（后端内存态）+ 主区聚焦该轮；
+  // 回合运行迹随导航清除（它只属于发起时的分支上下文，切换即过期）
   const navigateTurn = useCallback(async (sid: string, seq: number) => {
-    updUi(sid, { focusSeq: null });
+    updUi(sid, { focusSeq: null, run: null });
     try {
       const st = await chatApi.setPointer(sid, seq);
       setConvs((prev) => ({ ...prev, [sid]: st }));
