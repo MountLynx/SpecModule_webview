@@ -83,12 +83,19 @@ class AssembledContext:
 
 def assemble(path: list[MsgNode], system: str, cards: list[Card],
              strategy: WindowStrategy | None = None) -> AssembledContext:
-    """path = path_to(本条 user 节点)；末条即 current（叶子分支 path 长度 1 → history 空）。"""
-    if not path or path[-1].role != "user":
-        raise TreeChatError("assemble 需要以 user 节点结尾的路径")
-    history = [{"role": n.role, "content": n.text} for n in path[:-1]]
+    """path = path_to(本条轮次)；末轮 input 即 current（叶子分支 path 长度 1 → history 空）。
+
+    中间轮按 user/assistant 两条消息展开；output 为空的悬而未答轮只贡献 user 侧。
+    """
+    if not path or path[-1].output is not None:
+        raise TreeChatError("assemble 需以未答轮次结尾的路径")
+    history: list[dict[str, str]] = []
+    for n in path[:-1]:
+        history.append({"role": "user", "content": n.input})
+        if n.output is not None:
+            history.append({"role": "assistant", "content": n.output})
     history = _merge_consecutive(history)
     sys_text = build_system(system, cards)
     if strategy is not None:
         sys_text, history, _ = strategy.fit(sys_text, history)
-    return AssembledContext(system=sys_text, history=history, current=path[-1].text)
+    return AssembledContext(system=sys_text, history=history, current=path[-1].input)
