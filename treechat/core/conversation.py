@@ -1,8 +1,13 @@
 """Conversation —— 会话：SessionStore + 重放派生视图。
 
-指针不变量：指向最新完成轮次的 assistant 节点（或 None）；它是下一条
-user_msg 的默认 parent。分支 = set_pointer(历史节点) 后继续输入；叶子 =
-append_user(leaf=True) 强制 parent=None。指针推进只发生在 assistant 落盘时。
+节点 = 轮次（一问一答）：user_msg 建轮，assistant_msg 回填父轮 output 并把
+指针推进到该轮（不新建节点）。指针不变量：指向最新完成轮次（或 None）；它
+是下一条 user_msg 的默认 parent。分支 = set_pointer(历史轮) 后继续输入；
+叶子 = append_user(leaf=True) 强制 parent=None。
+
+旧格式兼容：历史上 assistant_msg 曾新建独立节点；重放语义改为回填后，旧
+文件自动合并为轮、零迁移。重放期记录 legacy（assistant 事件 seq → 轮 seq），
+供卡片 fromPath 等历史引用归一化。
 """
 from __future__ import annotations
 
@@ -23,12 +28,15 @@ from .store import SessionStore
 
 @dataclass
 class MsgNode:
-    """消息节点。id = seq（稳定可引用）。label = 用户命名（node_rename 事件派生）。"""
+    """轮次节点（一问一答）。id = seq（user_msg 事件行号）；output=None = 悬而未答。
+
+    label = 用户命名（node_rename 事件派生）。
+    """
 
     seq: int
     parent: int | None
-    role: str  # "user" | "assistant"
-    text: str
+    input: str
+    output: str | None = None
     model: str = ""
     label: str = ""
 
@@ -56,6 +64,8 @@ class Conversation:
         self.pointer: int | None = None
         self.nodes: dict[int, MsgNode] = {}
         self.children: dict[int | None, list[int]] = {}
+        self.legacy: dict[int, int] = {}
+        """旧格式 assistant 事件 seq → 轮 seq（历史引用归一化，如卡片 fromPath）。"""
         self.cards = CardRegistry()
 
     # ── 构造 ──
@@ -89,10 +99,9 @@ class Conversation:
             case SystemUpdate():
                 self.system = ev.text
             case UserMsg():
-                self._add_node(seq, ev.parent, "user", ev.text)
+                self._add_node(seq, ev.parent, ev.text)
             case AssistantMsg():
-                self._add_node(seq, ev.parent, "assistant", ev.text, model=ev.model)
-                self.pointer = seq
+                self._fill_assistant(seq, ev.parent, ev.text, model=ev.model)
             case CardCreate():
                 self.cards.add(Card(
                     id=ev.card_id, title=ev.title, body=ev.body,
@@ -120,12 +129,23 @@ class Conversation:
             case _:
                 raise TreeChatError(f"不可重放的事件: {ev!r}")
 
-    def _add_node(self, seq: int, parent: int | None, role: str, text: str,
-                  model: str = "") -> None:
+    def _add_node(self, seq: int, parent: int | None, text: str) -> None:
         if parent is not None and parent not in self.nodes:
             raise TreeChatError(f"parent 指向不存在的节点: seq={seq} parent={parent}")
-        self.nodes[seq] = MsgNode(seq=seq, parent=parent, role=role, text=text, model=model)
+        self.nodes[seq] = MsgNode(seq=seq, parent=parent, input=text)
         self.children.setdefault(parent, []).append(seq)
+
+    def _fill_assistant(self, event_seq: int, parent: int, text: str, *,
+                        model: str) -> None:
+        """assistant_msg 回填父轮 output（不新建节点）；重复回填 = 最后事件胜。"""
+        node = self.nodes.get(parent)
+        if node is None:
+            raise TreeChatError(
+                f"assistant_msg 目标轮不存在: seq={event_seq} parent={parent}")
+        self.legacy[event_seq] = parent
+        node.output = text
+        node.model = model
+        self.pointer = parent
 
     # ── 追加（持久化即真相）──
 
@@ -139,14 +159,13 @@ class Conversation:
 
     def append_assistant(self, user_seq: int, text: str, *,
                          model: str = "", usage: dict[str, int] | None = None) -> int:
-        """在 user 节点下追加 assistant 回复并推进指针。"""
-        node = self.nodes.get(user_seq)
-        if node is None or node.role != "user":
-            raise TreeChatError(f"append_assistant 目标必须是 user 节点: {user_seq}")
+        """回填目标轮的 assistant 回复并推进指针到该轮，返回轮 seq。"""
+        if user_seq not in self.nodes:
+            raise TreeChatError(f"append_assistant 目标轮不存在: {user_seq}")
         ev = AssistantMsg(parent=user_seq, text=text, model=model, usage=dict(usage or {}))
         seq = self.store.append(ev)
         self._apply(seq, ev)
-        return seq
+        return user_seq
 
     def add_card(self, title: str, body: str, from_path: list[int],
                  instruction: str = "", card_id: str | None = None) -> str:
@@ -213,7 +232,7 @@ class Conversation:
     # ── 视图 ──
 
     def path_to(self, seq: int) -> list[MsgNode]:
-        """根到该节点的消息路径（即该分支的完整上下文）。"""
+        """根到该节点的轮次路径（即该分支的完整上下文）。"""
         if seq not in self.nodes:
             raise TreeChatError(f"节点不存在: {seq}")
         path = []
@@ -245,13 +264,12 @@ class Conversation:
         t = self.trunk()
         return t[-1].seq if t else None
 
-    def unanswered_user(self) -> int | None:
-        """最新的悬而未答 user 节点（无子节点）；/retry 的目标。无则 None。"""
+    def unanswered(self) -> int | None:
+        """最新的悬而未答轮（无 output）；/retry 的目标。无则 None。"""
         best: int | None = None
         for s, n in self.nodes.items():
-            if n.role == "user" and not self.children.get(s):
-                if best is None or s > best:
-                    best = s
+            if n.output is None and (best is None or s > best):
+                best = s
         return best
 
     def fork_point(self, seq: int) -> int | None:

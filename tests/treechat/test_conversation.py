@@ -18,21 +18,33 @@ def test_create_and_first_user_is_root(tmp_path):
     assert conv.pointer is None  # 指针只在 assistant 后推进
 
 
-def test_turn_appends_and_pointer_advances(tmp_path):
+def test_assistant_fills_parent_turn_and_pointer_advances(tmp_path):
     conv = _conv(tmp_path)
     u = conv.append_user("q")
-    a = conv.append_assistant(u, "a", model="m")
-    assert conv.pointer == a
-    assert conv.nodes[a].parent == u
+    ret = conv.append_assistant(u, "a", model="m")
+    assert ret == u                       # 返回轮 seq，无新节点
+    assert conv.pointer == u              # 指针推进到轮
+    assert conv.nodes[u].output == "a"
+    assert conv.nodes[u].model == "m"
     u2 = conv.append_user("q2")
-    assert conv.nodes[u2].parent == a
+    assert conv.nodes[u2].parent == u
+
+
+def test_legacy_assistant_seq_recorded(tmp_path):
+    """assistant 事件 seq 记入 legacy（→ 轮 seq），供历史引用归一化。"""
+    conv = _conv(tmp_path)
+    u = conv.append_user("q")
+    conv.append_assistant(u, "a")
+    assert len(conv.legacy) == 1
+    assert next(iter(conv.legacy.values())) == u
+    assert next(iter(conv.legacy)) > u    # 事件行号在 user 事件之后
 
 
 def test_branch_semantics_via_set_pointer(tmp_path):
     conv = _conv(tmp_path)
     u = conv.append_user("q")
-    a = conv.append_assistant(u, "a")
-    conv.set_pointer(u)  # 回到 user 节点开分支
+    conv.append_assistant(u, "a")
+    conv.set_pointer(u)  # 回到该轮开分支
     b = conv.append_user("追问")
     assert conv.nodes[b].parent == u
 
@@ -44,55 +56,55 @@ def test_leaf_creates_second_root(tmp_path):
     assert conv.nodes[leaf].parent is None
 
 
-def test_append_assistant_requires_user_target(tmp_path):
+def test_append_assistant_requires_existing_turn(tmp_path):
     conv = _conv(tmp_path)
-    u = conv.append_user("q")
-    a = conv.append_assistant(u, "a")
-    with pytest.raises(TreeChatError, match="user 节点"):
-        conv.append_assistant(a, "x")
+    conv.append_user("q")
+    with pytest.raises(TreeChatError, match="目标轮不存在"):
+        conv.append_assistant(99, "x")
 
 
 def test_path_to_and_trunk_longest_wins(tmp_path):
     conv = _conv(tmp_path)
     u1 = conv.append_user("q1")
-    a1 = conv.append_assistant(u1, "a1")
+    conv.append_assistant(u1, "a1")
     u2 = conv.append_user("q2")
-    a2 = conv.append_assistant(u2, "a2")          # 主干：1-2-3-4
+    conv.append_assistant(u2, "a2")               # 主干：2 轮
     conv.set_pointer(u1)
-    b1 = conv.append_user("分支问")               # 分支：1-5
-    conv.append_assistant(b1, "分支答")           # 1-5-6
-    assert [n.seq for n in conv.path_to(a2)] == [u1, a1, u2, a2]
-    assert conv.trunk_end() == a2                 # 4 节点 > 3 节点
-    assert conv.nodes[conv.trunk_end()].role == "assistant"
+    b1 = conv.append_user("分支问")               # 分支：2 轮（平局）
+    conv.append_assistant(b1, "分支答")
+    assert [n.seq for n in conv.path_to(u2)] == [u1, u2]
+    u3 = conv.append_user("q3")                   # 回主干续一轮 → 3 轮胜出
+    assert conv.trunk_end() == u3
+    assert conv.nodes[conv.trunk_end()].input == "q3"
 
 
 def test_trunk_tie_prefers_newer_end(tmp_path):
     conv = _conv(tmp_path)
     u1 = conv.append_user("q1")
-    a1 = conv.append_assistant(u1, "a1")          # 路径1：2 节点
+    conv.append_assistant(u1, "a1")               # 路径1：1 轮
     conv.set_pointer(None)
     u2 = conv.append_user("leaf", leaf=True)
-    conv.append_assistant(u2, "a2")               # 路径2：2 节点，末端更新
+    conv.append_assistant(u2, "a2")               # 路径2：1 轮，末端更新
     assert conv.trunk_end() == conv.pointer
 
 
 def test_fork_point(tmp_path):
     conv = _conv(tmp_path)
     u1 = conv.append_user("q")
-    a1 = conv.append_assistant(u1, "a")
+    conv.append_assistant(u1, "a")
     u2 = conv.append_user("q2")
-    conv.set_pointer(a1)
+    conv.set_pointer(u1)
     b1 = conv.append_user("分支问")
-    assert conv.fork_point(u2) == a1              # a1 有两个子节点
-    assert conv.fork_point(b1) == a1
-    assert conv.fork_point(a1) is None            # 不含自身
+    assert conv.fork_point(u2) == u1              # u1 有两个子轮
+    assert conv.fork_point(b1) == u1
+    assert conv.fork_point(u1) is None            # 不含自身
 
 
 def test_cards_default_pinned_and_pin_events(tmp_path):
     conv = _conv(tmp_path)
     u = conv.append_user("q")
     conv.append_assistant(u, "a")
-    cid = conv.add_card("标题", "正文", from_path=[u, conv.pointer], instruction="总结")
+    cid = conv.add_card("标题", "正文", from_path=[u], instruction="总结")
     assert [c.id for c in conv.cards.pinned_cards()] == [cid]
     conv.unpin(cid)
     assert conv.cards.pinned_cards() == []
@@ -106,31 +118,33 @@ def test_system_update_event(tmp_path):
     assert conv.system == "新指令"
 
 
-def test_unanswered_user(tmp_path):
+def test_unanswered_latest_without_output(tmp_path):
     conv = _conv(tmp_path)
     u = conv.append_user("q")                      # 悬而未答
-    assert conv.unanswered_user() == u
-    a = conv.append_assistant(u, "a")
-    assert conv.unanswered_user() is None
+    assert conv.unanswered() == u
+    conv.append_assistant(u, "a")
+    assert conv.unanswered() is None
     leaf = conv.append_user("q2", leaf=True)       # 新悬而未答叶子
-    assert conv.unanswered_user() == leaf
+    assert conv.unanswered() == leaf
     conv.append_assistant(leaf, "a2")
-    assert conv.unanswered_user() is None
+    assert conv.unanswered() is None
+    leaf2 = conv.append_user("q3", leaf=True)
+    assert conv.unanswered() == leaf2              # 多个未答取最新
 
 
 def test_reopen_replays_identical_view(tmp_path):
     p = tmp_path / "s.jsonl"
     conv = Conversation.create(p, name="t", system="s")
     u = conv.append_user("q")
-    a = conv.append_assistant(u, "a", model="m")
-    cid = conv.add_card("t", "b", from_path=[u, a])
+    conv.append_assistant(u, "a", model="m")
+    cid = conv.add_card("t", "b", from_path=[u])
     conv.unpin(cid)
     conv.update_system("s2")
-    conv.set_pointer(u)
+    conv.set_pointer(None)
     conv2 = Conversation.open(p)
     assert conv2.name == "t" and conv2.system == "s2"
-    # set_pointer 不落事件 → 重放后指针 = 文件序最后一个 assistant（spec §2.2）
-    assert conv2.pointer == a
+    # set_pointer 不落事件 → 重放后指针 = 最新完成轮次（spec §2.2）
+    assert conv2.pointer == u
     assert set(conv2.nodes) == set(conv.nodes)
     assert conv2.cards.get(cid) == conv.cards.get(cid)
     assert conv2.cards.pinned_cards() == []
