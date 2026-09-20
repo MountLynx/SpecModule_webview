@@ -1,8 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { GitFork, Layers, Pencil } from "lucide-react";
 import type { Card, ConvState, Node, RunTrace } from "./types";
 import { activePath } from "./types";
 import { cn } from "../lib/utils";
 import { Markdown } from "./Markdown";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Dialog, DialogContent, DialogFooter, DialogTitle } from "../components/ui/dialog";
 import { Check, Circle, FileText, X } from "lucide-react";
 import { ThinkBlock } from "../components/ThinkBlock";
 
@@ -11,11 +15,17 @@ interface Props {
   busy: boolean;
   error: string | null;
   run: RunTrace | null;
+  /** 树图导航聚焦轮（滚动 + 闪烁高亮） */
+  focusSeq: number | null;
+  cardSeqs: number[];
+  onToggleCardSeq: (seq: number) => void;
+  onRenameTurn: (seq: number, label: string) => Promise<void>;
+  onBranchFrom: (seq: number) => void;
   onRetry: () => void;
   onOpenCards: () => void;
 }
 
-/** 主区聊天视图：活跃路径（path_to 指针）消息流 */
+/** 主区聊天视图：活跃路径（path_to 指针）轮次流；节点 = 轮次（一问一答） */
 export function ChatView(p: Props) {
   const conv = p.conv;
   const path = activePath(conv);
@@ -23,24 +33,43 @@ export function ChatView(p: Props) {
   for (const c of conv.cards)
     for (const s of c.fromPath) cardsBySeq.set(s, [...(cardsBySeq.get(s) ?? []), c]);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
+  // 滚动单效应：树导航（focusSeq）聚焦滚动胜出；否则新消息/回合态变化贴底
   useEffect(() => {
+    if (p.focusSeq != null) {
+      rootRef.current?.querySelector(`[data-seq="${p.focusSeq}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [path.length, p.busy]);
+  }, [path.length, p.busy, p.focusSeq]);
+
+  // 聚焦闪烁：focusSeq 变化 → 高亮 1.5s
+  const [flash, setFlash] = useState<number | null>(null);
+  useEffect(() => {
+    if (p.focusSeq == null) return;
+    setFlash(p.focusSeq);
+    const t = setTimeout(() => setFlash(null), 1500);
+    return () => clearTimeout(t);
+  }, [p.focusSeq]);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div ref={rootRef} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
         {path.length === 0 && !p.busy && (
           <div className="pt-24 text-center text-muted-foreground">
             <div className="text-base font-medium text-foreground">开始对话</div>
             <div className="pt-1 text-[13px]">
-              输入消息开始；在树页签点选任意节点可「从此分支」，开启无上下文叶子提问也可。
+              输入消息开始；在树页签点选任意节点可跳转查看它所在的分支对话。
             </div>
           </div>
         )}
         {path.map((n) => (
-          <MessageItem key={n.seq} node={n} cards={cardsBySeq.get(n.seq) ?? []} />
+          <TurnItem key={n.seq} node={n} cards={cardsBySeq.get(n.seq) ?? []}
+                    flash={flash === n.seq} cardSeqs={p.cardSeqs}
+                    onToggleCardSeq={p.onToggleCardSeq}
+                    onRenameTurn={p.onRenameTurn} onBranchFrom={p.onBranchFrom} />
         ))}
         {p.run && <RunBlock run={p.run} onOpenCards={p.onOpenCards} />}
         {p.busy && (
@@ -56,10 +85,10 @@ export function ChatView(p: Props) {
         {p.error && (
           <div className="flex items-center gap-2 rounded-panel border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-[13px] text-destructive">
             <span className="min-w-0 flex-1 break-words">{p.error}</span>
-            {conv.unansweredUser !== null && (
+            {conv.unanswered !== null && (
               <button onClick={p.onRetry}
                       className="shrink-0 rounded-control border border-destructive/50 px-2 py-1 text-[12px] hover:bg-destructive/20">
-                重试（#{conv.unansweredUser}）
+                重试（#{conv.unanswered}）
               </button>
             )}
           </div>
@@ -70,32 +99,82 @@ export function ChatView(p: Props) {
   );
 }
 
-function MessageItem({ node, cards }: { node: Node; cards: Card[] }) {
-  if (node.role === "user") {
-    return (
-      <div className="group flex flex-col items-end">
-        <MessageMeta node={node} cards={cards} align="right" />
+/** 一轮 = 用户气泡 + 助手回复 + 轮末操作条（悬停浮现） */
+function TurnItem({ node, cards, flash, cardSeqs, onToggleCardSeq, onRenameTurn, onBranchFrom }: {
+  node: Node;
+  cards: Card[];
+  flash: boolean;
+  cardSeqs: number[];
+  onToggleCardSeq: (seq: number) => void;
+  onRenameTurn: (seq: number, label: string) => Promise<void>;
+  onBranchFrom: (seq: number) => void;
+}) {
+  const [renameOpen, setRenameOpen] = useState(false);
+  const inCardRange = cardSeqs.includes(node.seq);
+  return (
+    <div data-seq={node.seq}
+         className={cn("group flex flex-col gap-3 rounded-panel transition-shadow",
+                       flash && "ring-1 ring-primary/50")}>
+      <div className="flex flex-col items-end">
+        <MessageMeta seq={node.seq} label={node.label} cards={cards} align="right" />
         <div className="max-w-[min(85%,36rem)] whitespace-pre-wrap break-words rounded-panel rounded-br-lg bg-secondary/70 px-3.5 py-2 text-[15px] leading-6">
-          {node.text}
+          {node.input}
         </div>
       </div>
-    );
-  }
-  return (
-    <div className="group flex w-full flex-col">
-      <MessageMeta node={node} cards={cards} align="left" />
-      <Markdown text={node.text} />
+      {node.output !== null && (
+        <div className="flex w-full flex-col">
+          <MessageMeta model={node.model} cards={[]} align="left" />
+          <Markdown text={node.output} />
+        </div>
+      )}
+      {/* 轮末操作条：命名 / 选入卡片范围 / 从此分支 */}
+      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[12px] text-muted-foreground"
+                onClick={() => setRenameOpen(true)}>
+          <Pencil className="h-3 w-3" /> 命名
+        </Button>
+        <Button variant="ghost" size="sm"
+                className={cn("h-6 px-1.5 text-[12px]", inCardRange ? "text-primary" : "text-muted-foreground")}
+                onClick={() => onToggleCardSeq(node.seq)}>
+          <Layers className="h-3 w-3" /> {inCardRange ? "移出卡片范围" : "选入卡片范围"}
+        </Button>
+        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[12px] text-muted-foreground"
+                onClick={() => onBranchFrom(node.seq)}>
+          <GitFork className="h-3 w-3" /> 从此分支
+        </Button>
+      </div>
+      <Dialog open={renameOpen} onOpenChange={(o) => !o && setRenameOpen(false)}>
+        <DialogContent>
+          <DialogTitle>
+            <Pencil className="mr-1 inline h-4 w-4" /> 命名轮次 #{node.seq}
+          </DialogTitle>
+          <NodeRenameForm
+            initial={node.label}
+            onSubmit={async (v) => {
+              await onRenameTurn(node.seq, v);
+              setRenameOpen(false);
+            }}
+            onCancel={() => setRenameOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function MessageMeta({ node, cards, align }: { node: Node; cards: Card[]; align: "left" | "right" }) {
+function MessageMeta({ seq, label, model, cards, align }: {
+  seq?: number;
+  label?: string;
+  model?: string;
+  cards: Card[];
+  align: "left" | "right";
+}) {
   return (
     <div className={cn("flex items-center gap-1.5 pb-1 text-[11px] text-muted-foreground/70",
                       align === "right" && "flex-row-reverse")}>
-      <span className="font-mono">#{node.seq}</span>
-      {node.label && <span className="rounded-full bg-primary/10 px-1.5 py-px text-foreground/80">{node.label}</span>}
-      {node.model && <span className="truncate">{node.model}</span>}
+      {seq !== undefined && <span className="font-mono">#{seq}</span>}
+      {label && <span className="rounded-full bg-primary/10 px-1.5 py-px text-foreground/80">{label}</span>}
+      {model && <span className="truncate">{model}</span>}
       {cards.map((c) => (
         <span key={c.id} title={`${c.id} · ${c.title}`}
               className="rounded-full border border-border px-1.5 py-px">
@@ -103,6 +182,27 @@ function MessageMeta({ node, cards, align }: { node: Node; cards: Card[]; align:
         </span>
       ))}
     </div>
+  );
+}
+
+function NodeRenameForm(p: { initial: string; onSubmit: (v: string) => Promise<void>; onCancel: () => void }) {
+  const [v, setV] = useState(p.initial);
+  const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <Input autoFocus value={v} placeholder="节点名称（留空 = 清除）"
+             onChange={(e) => setV(e.target.value)} onFocus={(e) => e.target.select()} />
+      <DialogFooter>
+        <Button variant="outline" onClick={p.onCancel}>取消</Button>
+        <Button disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try { await p.onSubmit(v.trim()); } finally { setBusy(false); }
+                }}>
+          保存
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 

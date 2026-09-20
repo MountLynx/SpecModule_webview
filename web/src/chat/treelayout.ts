@@ -2,14 +2,15 @@
  * git 图式树布局 —— 纯函数。
  *
  * 行序 = seq 序（追加序，新消息在底部）。lane 分配规则：
- * - 根（含叶子链起点、孤儿兜底）取最低空闲 lane
+ * - 根（含叶子链起点、孤儿兜底）取「最低空闲且前一 lane 也空闲」的 lane——
+ *   与既有链强制隔一 lane，避免叶子链贴着主干线被误读成分支
  * - 首子继承父 lane（主干延续）；其余子节点（新枝）取「最低空闲且 ≠ 父 lane」
  * - lane 占用至该 lane 上链条的末端（chainEnd = 只沿首子链延伸），过后释放复用
  */
 import type { Node } from "./types";
 
 export const ROW_H = 44;
-export const LANE_W = 22;
+export const LANE_W = 26;
 export const X0 = 22;
 /** 节点圆点半径 */
 export const DOT_R = 5;
@@ -62,10 +63,20 @@ export function layoutTree(nodes: Node[]): TreeLayout {
   };
 
   const laneUntil = new Map<number, number>();
+  const isFree = (lane: number, seq: number): boolean =>
+    (laneUntil.get(lane) ?? -1) < seq;
   const takeFreeLane = (seq: number, exclude?: number): number => {
     let lane = 0;
-    while (lane === exclude || (laneUntil.get(lane) ?? -1) >= seq) lane++;
+    while (lane === exclude || !isFree(lane, seq)) lane++;
     return lane;
+  };
+  /** 根链落点：最低空闲且前一 lane 也空闲（与既有链隔一 lane，消除贴干错觉） */
+  const takeRootLane = (seq: number): number => {
+    let lane = 0;
+    for (;;) {
+      if (isFree(lane, seq) && (lane === 0 || isFree(lane - 1, seq))) return lane;
+      lane++;
+    }
   };
 
   const out: LayoutNode[] = [];
@@ -77,7 +88,7 @@ export function layoutTree(nodes: Node[]): TreeLayout {
     let parentPos: LayoutNode | undefined;
     if (n.parent !== null) parentPos = out.find((p) => p.seq === n.parent);
     if (!parentPos) {
-      lane = takeFreeLane(n.seq); // 根 / 叶子链起点 / 孤儿兜底
+      lane = takeRootLane(n.seq); // 根 / 叶子链起点 / 孤儿兜底
     } else if (firstKid.get(n.parent!) === n.seq) {
       lane = parentPos.lane; // 首子：主干延续
     } else {

@@ -9,12 +9,12 @@ export interface SessionSummary {
   mtimeMs: number;
 }
 
-/** 消息节点（id = seq，稳定可引用） */
+/** 轮次节点（一问一答；id = seq 稳定可引用）。output = null 悬而未答 */
 export interface Node {
   seq: number;
   parent: number | null;
-  role: "user" | "assistant";
-  text: string;
+  input: string;
+  output: string | null;
   label: string;
   model: string;
 }
@@ -39,7 +39,7 @@ export interface ConvState {
   archived: boolean;
   pointer: number | null;
   trunkEnd: number | null;
-  unansweredUser: number | null;
+  unanswered: number | null;
   nodes: Node[];
   cards: Card[];
 }

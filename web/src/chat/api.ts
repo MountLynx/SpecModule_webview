@@ -54,6 +54,9 @@ export const setArchived = (sid: string, archived: boolean) =>
   req<ConvState>(`/treechat/api/sessions/${encodeURIComponent(sid)}/archive`, json("POST", { archived }));
 export const renameNode = (sid: string, seq: number, label: string) =>
   req<ConvState>(`/treechat/api/sessions/${encodeURIComponent(sid)}/nodes/${seq}/rename`, json("POST", { label }));
+/** 树图导航：指针挪到目标轮（内存语义，不落事件） */
+export const setPointer = (sid: string, seq: number | null) =>
+  req<ConvState>(`/treechat/api/sessions/${encodeURIComponent(sid)}/pointer`, json("POST", { seq }));
 
 // ── 轮次（SSE 流式）──
 

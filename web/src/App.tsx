@@ -44,9 +44,9 @@ function EmptyState({ icon, title, hint }: { icon: ReactNode; title: string; hin
 
 /** 单个会话的随行 UI 态（切页签不丢） */
 interface ChatUi {
-  branchParent: number | null;
   leafMode: boolean;
-  selectedSeq: number | null;
+  /** 树图导航聚焦轮（滚动 + 闪烁）；发送/回合收口即清，恢复贴底 */
+  focusSeq: number | null;
   cardSeqs: number[];
   cardGenOpen: boolean;
   busy: boolean;
@@ -55,7 +55,7 @@ interface ChatUi {
   run: RunTrace | null;
 }
 const EMPTY_CHAT_UI: ChatUi = {
-  branchParent: null, leafMode: false, selectedSeq: null,
+  leafMode: false, focusSeq: null,
   cardSeqs: [], cardGenOpen: false, busy: false, error: null, run: null,
 };
 
@@ -261,7 +261,7 @@ export default function App() {
     } else if (ev.event === "done") {
       setConvs((prev) => ({ ...prev, [sid]: d.state }));
       updRun(sid, (r) => r && { ...r, finished: true });
-      updUi(sid, { error: null });
+      updUi(sid, { error: null, focusSeq: null }); // 新轮落位 → 贴底跟随
       refreshSessions();
     } else if (ev.event === "error") {
       if (d.state) setConvs((prev) => ({ ...prev, [sid]: d.state }));
@@ -270,14 +270,25 @@ export default function App() {
     }
   }, [updRun, updUi, refreshSessions, bufferDelta]);
 
+  // 树图导航 / 轮末「从此分支」：指针挪到目标轮（后端内存态）+ 主区聚焦该轮
+  const navigateTurn = useCallback(async (sid: string, seq: number) => {
+    updUi(sid, { focusSeq: null });
+    try {
+      const st = await chatApi.setPointer(sid, seq);
+      setConvs((prev) => ({ ...prev, [sid]: st }));
+      updUi(sid, { focusSeq: seq });
+    } catch (e) {
+      updUi(sid, { error: e instanceof Error ? e.message : String(e) });
+    }
+  }, [updUi]);
+
   const send = async (sid: string, text: string) => {
     const ui = getChatUi(sid);
     if (ui.busy) return;
-    const parent = ui.branchParent ?? undefined;
     const leaf = ui.leafMode || undefined;
-    updUi(sid, { busy: true, error: null, branchParent: null, leafMode: false, run: null });
+    updUi(sid, { busy: true, error: null, leafMode: false, focusSeq: null, run: null });
     try {
-      await chatApi.turn(sid, { text, parent, leaf }, (ev) => handleEvent(sid, ev));
+      await chatApi.turn(sid, { text, leaf }, (ev) => handleEvent(sid, ev));
       refreshSessions();
     } catch (e) {
       updUi(sid, { error: e instanceof Error ? e.message : String(e) });
@@ -400,12 +411,7 @@ export default function App() {
         {sidebarTab === "tree" && (
           <TreePanel
             conv={activeConv}
-            selectedSeq={activeUi.selectedSeq}
-            onSelect={(seq) => activeChatSid && updUi(activeChatSid, { selectedSeq: seq })}
-            onRenameNode={async (seq, label) => {
-              if (activeChatSid) await mutateConv(activeChatSid, (s) => chatApi.renameNode(s, seq, label));
-            }}
-            onBranchFrom={(seq) => activeChatSid && updUi(activeChatSid, { branchParent: seq })}
+            onNavigate={(seq) => activeChatSid && navigateTurn(activeChatSid, seq)}
             cardSeqs={activeUi.cardSeqs}
             onToggleCardSeq={(seq) => activeChatSid && updUi(activeChatSid, {
               cardSeqs: activeUi.cardSeqs.includes(seq)
@@ -496,15 +502,25 @@ export default function App() {
                   busy={activeUi.busy}
                   error={activeUi.error}
                   run={activeUi.run}
+                  focusSeq={activeUi.focusSeq}
+                  cardSeqs={activeUi.cardSeqs}
+                  onToggleCardSeq={(seq) => activeChatSid && updUi(activeChatSid, {
+                    cardSeqs: activeUi.cardSeqs.includes(seq)
+                      ? activeUi.cardSeqs.filter((s) => s !== seq)
+                      : [...activeUi.cardSeqs, seq],
+                  })}
+                  onRenameTurn={async (seq, label) => {
+                    if (activeChatSid) await mutateConv(activeChatSid, (s) => chatApi.renameNode(s, seq, label));
+                  }}
+                  onBranchFrom={(seq) => activeChatSid && navigateTurn(activeChatSid, seq)}
                   onRetry={() => activeChatSid && retry(activeChatSid)}
                   onOpenCards={() => setSidebarTab("cards")}
                 />
                 <Composer
-                  branchParent={activeUi.branchParent}
+                  branchFrom={activeConv.pointer !== activeConv.trunkEnd ? activeConv.pointer : null}
                   leafMode={activeUi.leafMode}
                   busy={activeUi.busy}
                   disabled={false}
-                  onClearBranch={() => activeChatSid && updUi(activeChatSid, { branchParent: null })}
                   onToggleLeaf={() => activeChatSid && updUi(activeChatSid, { leafMode: !activeUi.leafMode })}
                   onSend={(text) => activeChatSid && send(activeChatSid, text)}
                 />

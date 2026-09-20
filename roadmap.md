@@ -520,3 +520,15 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   胶囊（primary 反色）；字号阶收敛 11/12/13/15。设计：
   docs/superpowers/specs/2026-09-19-ui-polish-status-tint-design.md；实施计划：
   docs/superpowers/plans/2026-09-19-ui-polish-status-tint.md
+- 2026-09-20（chat 轮次节点合并 + 树图导航化）：节点改为「一轮一问答」（事件日志零改动
+  零迁移——assistant_msg 重放语义改为回填父轮 output 并推进指针到轮；旧会话中 user 的
+  parent 指向 assistant seq 的真实旧数据经 legacy 映射重放归一化，卡片 fromPath 序列化
+  同步归一化）。`unanswered_user` → `unanswered`（无 output 最新轮）；上下文组装按轮展开
+  input/output；branch_segment 恒含 fork 轮；node_count 计轮数。新增
+  `POST /api/sessions/{sid}/pointer`（内存 set_pointer 导航端点）。前端：树图点选 = 纯
+  导航（指针挪到该轮 + 主区切分支 + 滚动闪烁聚焦），侧栏详情卡删除，命名/选入卡片范围/
+  从此分支迁至主区轮末悬停操作条；Composer「从 #N 分支」提示改直读 pointer≠trunkEnd
+  （branchParent 暂存态退役）；treelayout 根链落 lane 强制隔一 lane（修叶子链贴主干被
+  误读成分支）+ LANE_W 22→26。旧会话实测（test直答 12 消息 → 6 轮）全链路走查通过。
+  设计：docs/superpowers/specs/2026-09-20-chat-turn-node-ux-design.md；实施计划：
+  docs/superpowers/plans/2026-09-20-chat-turn-node-ux.md
