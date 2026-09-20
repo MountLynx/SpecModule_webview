@@ -123,13 +123,17 @@ class Conversation:
             case SessionArchive():
                 self.archived = ev.archived
             case NodeRename():
-                if ev.node not in self.nodes:
+                target = self.legacy.get(ev.node, ev.node)  # 旧格式改名指向 assistant seq
+                if target not in self.nodes:
                     raise TreeChatError(f"node_rename 目标不存在: seq={ev.node}")
-                self.nodes[ev.node].label = ev.label
+                self.nodes[target].label = ev.label
             case _:
                 raise TreeChatError(f"不可重放的事件: {ev!r}")
 
     def _add_node(self, seq: int, parent: int | None, text: str) -> None:
+        if parent is not None and parent not in self.nodes:
+            # 旧格式兼容：user_msg 的 parent 指向 assistant 节点 seq（旧指针语义）
+            parent = self.legacy.get(parent)
         if parent is not None and parent not in self.nodes:
             raise TreeChatError(f"parent 指向不存在的节点: seq={seq} parent={parent}")
         self.nodes[seq] = MsgNode(seq=seq, parent=parent, input=text)

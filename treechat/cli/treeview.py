@@ -13,7 +13,7 @@ def render_tree(conv: Conversation) -> str:
     card_by_seq: dict[int, list[str]] = {}
     for c in conv.cards.all_cards():
         for s in c.from_path:
-            card_by_seq.setdefault(s, []).append(c.id)
+            card_by_seq.setdefault(conv.legacy.get(s, s), []).append(c.id)
 
     def emit(seq: int, prefix: str = "", branch: str = "") -> None:
         n = conv.nodes[seq]

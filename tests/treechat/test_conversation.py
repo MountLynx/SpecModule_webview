@@ -150,6 +150,27 @@ def test_reopen_replays_identical_view(tmp_path):
     assert conv2.cards.pinned_cards() == []
 
 
+def test_replay_old_format_chained_parents(tmp_path):
+    """旧格式真实形态：user 消息 parent 指向 assistant 节点 seq（旧指针语义）→ 重放归一化为轮。"""
+    p = tmp_path / "old.jsonl"
+    lines = [
+        '{"seq":1,"type":"session_meta","name":"old","created_at":"t","system":""}',
+        '{"seq":2,"type":"user_msg","parent":null,"text":"q1"}',
+        '{"seq":3,"type":"assistant_msg","parent":2,"text":"a1","model":"","usage":{}}',
+        '{"seq":4,"type":"user_msg","parent":3,"text":"q2"}',
+        '{"seq":5,"type":"assistant_msg","parent":4,"text":"a2","model":"","usage":{}}',
+        '{"seq":6,"type":"node_rename","node":5,"label":"旧命名"}',
+    ]
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    conv = Conversation.open(p)
+    assert [n.seq for n in conv.nodes.values()] == [2, 4]
+    assert conv.nodes[4].parent == 2              # user4.parent=3(assistant seq) → 轮2
+    assert conv.nodes[4].output == "a2"
+    assert conv.nodes[2].label == ""
+    assert conv.nodes[4].label == "旧命名"        # rename node=5(assistant seq) → 轮4
+    assert conv.pointer == 4
+
+
 def test_replay_rejects_dangling_parent(tmp_path):
     p = tmp_path / "s.jsonl"
     Conversation.create(p, name="t")
