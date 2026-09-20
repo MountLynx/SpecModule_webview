@@ -153,16 +153,17 @@ def test_turn_success(env):
     assert "node_start" in kinds and "token" in kinds
     assert kinds[-1] == "done"
     st = events[-1][1]["state"]
-    assert [n["role"] for n in st["nodes"]] == ["user", "assistant"]
-    assert st["nodes"][1]["text"] == "这是回复"
-    assert st["nodes"][1]["model"] == "fake-model"
-    # seq 计数含 meta 事件（首节点 seq=2），指针落在末节点——不硬编码具体值
+    # 节点 = 轮次（一问一答）：单轮 input/output 同体
+    assert [n["input"] for n in st["nodes"]] == ["你好"]
+    assert st["nodes"][-1]["output"] == "这是回复"
+    assert st["nodes"][-1]["model"] == "fake-model"
+    # seq 计数含 meta 事件（首节点 seq=2），指针落在最新完成轮——不硬编码具体值
     assert st["pointer"] == st["nodes"][-1]["seq"]
-    assert st["unansweredUser"] is None
+    assert st["unanswered"] is None
 
 
 def test_turn_llm_failure_contract(env):
-    """LLM 失败 → SSE error 帧（REST 502 契约退役）：user 节点已落盘（悬而未答）。"""
+    """LLM 失败 → SSE error 帧：轮已落盘（悬而未答，output 为空）。"""
     c, _, reg = env
     c.post("/treechat/api/sessions", json={"name": "f"})
     _reopen_with(reg, "f", FakeChatClient(fail=True))
@@ -170,15 +171,15 @@ def test_turn_llm_failure_contract(env):
     assert events[-1][0] == "error"
     assert "模拟基础设施故障" in events[-1][1]["error"]
     st = events[-1][1]["state"]
-    assert [n["role"] for n in st["nodes"]] == ["user"]
-    assert st["unansweredUser"] == st["nodes"][0]["seq"]
+    assert st["nodes"][0]["output"] is None
+    assert st["unanswered"] == st["nodes"][0]["seq"]
     # 重试换好客户端 → done 帧补 assistant，问题不丢不重复
     _reopen_with(reg, "f", FakeChatClient(reply="补上了"))
     events = sse_events(c, "/treechat/api/sessions/f/retry")
     assert events[-1][0] == "done"
     st = events[-1][1]["state"]
-    assert [n["role"] for n in st["nodes"]] == ["user", "assistant"]
-    assert st["nodes"][0]["text"] == "你好"
+    assert st["nodes"][0]["output"] == "补上了"
+    assert st["nodes"][0]["input"] == "你好"
 
 
 def test_modes_endpoint_and_categorized_session(env):
