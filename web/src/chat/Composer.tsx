@@ -1,10 +1,8 @@
-import { GitFork, Leaf, SendHorizontal, X } from "lucide-react";
+import { Leaf, SendHorizontal, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { cn } from "../lib/utils";
 
 interface Props {
-  /** 分支提示（事实陈述）：指针 ≠ 主干末端时的指针轮；null = 主干末端 */
-  branchFrom: number | null;
   leafMode: boolean;
   busy: boolean;
   disabled: boolean;
@@ -12,7 +10,7 @@ interface Props {
   onSend: (text: string) => void;
 }
 
-/** 输入区：分支提示（不可关闭——所见即分支点）/ 叶子模式 chip + 发送 */
+/** 输入区：叶子模式 chip + 发送。分支 = 点节点/轮末「从此分支」后发送（指针位置见头部） */
 export function Composer(p: Props) {
   const [text, setText] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -28,21 +26,14 @@ export function Composer(p: Props) {
   return (
     <div className="shrink-0 px-6 pb-4 pt-1">
       <div className="mx-auto max-w-3xl">
-        {(p.branchFrom !== null || p.leafMode) && (
+        {p.leafMode && (
           <div className="flex items-center gap-1.5 pb-1.5 text-[12px] text-muted-foreground">
-            {p.branchFrom !== null && (
-              <span className="flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5">
-                <GitFork className="h-3 w-3" /> 从 #{p.branchFrom} 分支
-              </span>
-            )}
-            {p.leafMode && (
-              <span className="flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5">
-                <Leaf className="h-3 w-3" /> 叶子模式（无上下文）
-                <button title="取消叶子模式" onClick={p.onToggleLeaf}>
-                  <X className="h-3 w-3 hover:text-foreground" />
-                </button>
-              </span>
-            )}
+            <span className="flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5">
+              <Leaf className="h-3 w-3" /> 叶子模式（无上下文）
+              <button title="取消叶子模式" onClick={p.onToggleLeaf}>
+                <X className="h-3 w-3 hover:text-foreground" />
+              </button>
+            </span>
           </div>
         )}
         <div className={cn(

@@ -517,7 +517,6 @@ export default function App() {
                   onOpenCards={() => setSidebarTab("cards")}
                 />
                 <Composer
-                  branchFrom={activeConv.pointer !== activeConv.trunkEnd ? activeConv.pointer : null}
                   leafMode={activeUi.leafMode}
                   busy={activeUi.busy}
                   disabled={false}
