@@ -1,9 +1,10 @@
 """TreeChat WebUI 服务 —— FastAPI 应用工厂（轮次 SSE 流式；其余 REST；静态托管 webui/dist）。
 
 约定：除枚举/健康检查外，所有变更接口返回变更后的完整会话状态（ConvState），
-会话规模小，全量最简单且无客户端同步 bug。轮次（/turn、/retry）为 text/event-stream：
-start → (node_start | (token | thinking)* | node_end)* → done | error；LLM 失败发 error 帧
-——user 节点已落盘（悬而未答），前端展示错误条并可 /retry。
+会话规模小，全量最简单且无客户端同步 bug。节点 = 轮次（一问一答）。轮次
+（/turn、/retry）为 text/event-stream：start → (node_start | (token | thinking)*
+| node_end)* → done | error；LLM 失败发 error 帧——轮已落盘（悬而未答），
+前端展示错误条并可 /retry。
 """
 from __future__ import annotations
 
@@ -50,6 +51,11 @@ class LabelBody(BaseModel):
     label: str
 
 
+class PointerBody(BaseModel):
+    seq: int | None
+    """导航目标轮 seq（内存 set_pointer，不落事件）；null = 清指针。"""
+
+
 class TurnBody(BaseModel):
     text: str
     parent: int | None = None
@@ -85,7 +91,7 @@ class CardImportBody(BaseModel):
 # ── 序列化 ──
 
 def _state(sid: str, s: Any) -> dict[str, Any]:
-    """TreeChatSession → ConvState dict（全量会话状态）。"""
+    """TreeChatSession → ConvState dict（全量会话状态；节点 = 轮次）。"""
     conv = s.conversation
     return {
         "sid": sid,
@@ -95,14 +101,15 @@ def _state(sid: str, s: Any) -> dict[str, Any]:
         "archived": conv.archived,
         "pointer": conv.pointer,
         "trunkEnd": conv.trunk_end(),
-        "unansweredUser": conv.unanswered_user(),
+        "unanswered": conv.unanswered(),
         "nodes": [
-            {"seq": n.seq, "parent": n.parent, "role": n.role, "text": n.text,
-             "label": n.label, "model": n.model}
+            {"seq": n.seq, "parent": n.parent, "input": n.input,
+             "output": n.output, "label": n.label, "model": n.model}
             for n in conv.nodes.values()
         ],
         "cards": [
-            {"id": c.id, "title": c.title, "body": c.body, "fromPath": list(c.from_path),
+            {"id": c.id, "title": c.title, "body": c.body,
+             "fromPath": [conv.legacy.get(seq, seq) for seq in c.from_path],
              "instruction": c.instruction, "createdAt": c.created_at,
              "pinned": conv.cards.is_pinned(c.id)}
             for c in conv.cards.all_cards()
@@ -249,6 +256,17 @@ def create_app(config: TreeChatConfig | None = None, *,
                 raise HTTPException(400, str(exc)) from exc
             return _state(sid, s)
 
+    @app.post("/api/sessions/{sid}/pointer")
+    async def pointer(sid: str, body: PointerBody) -> dict[str, Any]:
+        """导航 = 内存 set_pointer（不落事件）；树图点选跳转的落点。"""
+        async with registry.lock(sid):
+            s = _open(sid)
+            try:
+                s.conversation.set_pointer(body.seq)
+            except TreeChatError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            return _state(sid, s)
+
     # ── 轮次 ──
 
     def _sse(event: str, data: dict[str, Any]) -> str:
@@ -268,8 +286,8 @@ def create_app(config: TreeChatConfig | None = None, *,
                 async with registry.lock(sid):
                     try:
                         s = registry.get(sid)
-                        if body is None:  # retry：悬而未答节点（端点已预检 409）
-                            seq = s.conversation.unanswered_user()
+                        if body is None:  # retry：悬而未答轮（端点已预检 409）
+                            seq = s.conversation.unanswered()
                         else:
                             if body.leaf:
                                 seq = s.send(body.text, leaf=True)
@@ -326,8 +344,8 @@ def create_app(config: TreeChatConfig | None = None, *,
     @app.post("/api/sessions/{sid}/retry")
     async def retry(sid: str):
         s0 = _open(sid)
-        if s0.conversation.unanswered_user() is None:
-            raise HTTPException(409, "没有待重试的节点")
+        if s0.conversation.unanswered() is None:
+            raise HTTPException(409, "没有待重试的轮次")
         return StreamingResponse(_turn_stream(sid, None),
                                  media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache"})

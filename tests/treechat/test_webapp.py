@@ -169,8 +169,8 @@ def test_turn_sse_sequence_and_state(api):
     assert "node_start" in kinds and "token" in kinds
     assert kinds[-1] == "done"
     state = events[-1][1]["state"]
-    assert state["pointer"] == 3
-    assert next(n for n in state["nodes"] if n["seq"] == 3)["text"] == "直答正文"
+    assert state["pointer"] == 2                       # 指针 = 轮（assistant 事件 seq=3 已回填）
+    assert next(n for n in state["nodes"] if n["seq"] == 2)["output"] == "直答正文"
 
 
 def test_turn_sse_grilling_refreshes_spec_cards(api):
@@ -197,9 +197,9 @@ def test_turn_sse_grilling_refreshes_spec_cards(api):
     cards = {c["id"]: c for c in state["cards"]}
     assert cards["spec:tree"]["title"] == "设计树"
     assert cards["spec:glossary"]["pinned"] is True
-    assert next(n for n in state["nodes"] if n["seq"] == 3)["text"] == "做个订单系统"
-    # meta=1 → category=2, user=3, spec 卡片 4/5（卡片也是事件）→ assistant=6
-    assert next(n for n in state["nodes"] if n["seq"] == 6)["text"] == "❓ Q1"
+    assert next(n for n in state["nodes"] if n["seq"] == 3)["input"] == "做个订单系统"
+    # meta=1 → category=2, user=3, spec 卡片 4/5（卡片也是事件）→ assistant=6 回填轮 3
+    assert next(n for n in state["nodes"] if n["seq"] == 3)["output"] == "❓ Q1"
     assert events[-1][1]["done"] is False
 
 
@@ -210,12 +210,12 @@ def test_turn_sse_llm_failure_error_frame_then_retry(api):
     events = sse_events(api, f"/api/sessions/{sid}/turn", json={"text": "问题"})
     assert events[-1][0] == "error"
     assert "模拟基础设施故障" in events[-1][1]["error"]
-    assert events[-1][1]["state"]["unansweredUser"] == 2  # 悬而未答已落盘
+    assert events[-1][1]["state"]["unanswered"] == 2  # 悬而未答轮已落盘
     api.fake.fail = False
     api.fake.responses = ["回复"]
     events = sse_events(api, f"/api/sessions/{sid}/retry")
     assert events[-1][0] == "done"
-    assert events[-1][1]["state"]["pointer"] == 3
+    assert events[-1][1]["state"]["pointer"] == 2
 
 
 def test_turn_sse_unexpected_error_terminates_stream(api, monkeypatch):
@@ -243,10 +243,10 @@ def test_turn_sse_branch_leaf_and_node_rename(api):
     api.post("/api/sessions", json={"name": sid})
     api.fake.responses = ["答一", "答分支", "答叶子"]
     ev = sse_events(api, f"/api/sessions/{sid}/turn", json={"text": "问一"})
-    assert ev[-1][1]["state"]["pointer"] == 3
+    assert ev[-1][1]["state"]["pointer"] == 2
     ev = sse_events(api, f"/api/sessions/{sid}/turn", json={"text": "分支问", "parent": 2})
     st = ev[-1][1]["state"]
-    assert st["pointer"] == 5
+    assert st["pointer"] == 4
     assert next(n for n in st["nodes"] if n["seq"] == 4)["parent"] == 2
     ev = sse_events(api, f"/api/sessions/{sid}/turn", json={"text": "叶子问", "leaf": True})
     st = ev[-1][1]["state"]
@@ -261,7 +261,7 @@ def test_turn_sse_leaf_wins_over_parent(api):
     api.post("/api/sessions", json={"name": sid})
     api.fake.responses = ["答一", "答叶子"]
     ev = sse_events(api, f"/api/sessions/{sid}/turn", json={"text": "问一"})
-    assert ev[-1][1]["state"]["pointer"] == 3
+    assert ev[-1][1]["state"]["pointer"] == 2
     ev = sse_events(api, f"/api/sessions/{sid}/turn",
                     json={"text": "叶子问", "parent": 2, "leaf": True})
     st = ev[-1][1]["state"]
@@ -302,12 +302,14 @@ def test_cards_flow(api):
     # 非法区间 → 400
     assert api.post(f"/api/sessions/{sid}/cards",
                     json={"mode": "range", "start": 9, "end": 99}).status_code == 400
-    # seqs 模式：显式节点列表；空列表 → 400；未知节点 → 400
+    # seqs 模式：显式节点列表；空列表 → 400；assistant 事件 seq 已非节点 → 400；未知节点 → 400
     st = api.post(f"/api/sessions/{sid}/cards",
-                  json={"mode": "seqs", "seqs": [2, 3]}).json()
+                  json={"mode": "seqs", "seqs": [2]}).json()
     assert len(st["cards"]) == 3
     assert api.post(f"/api/sessions/{sid}/cards",
                     json={"mode": "seqs", "seqs": []}).status_code == 400
+    assert api.post(f"/api/sessions/{sid}/cards",
+                    json={"mode": "seqs", "seqs": [2, 3]}).status_code == 400
     assert api.post(f"/api/sessions/{sid}/cards",
                     json={"mode": "seqs", "seqs": [2, 99]}).status_code == 400
 
@@ -322,7 +324,7 @@ def test_card_edit_delete_export_import(api):
     st = api.patch(f"/api/sessions/{sid}/cards/{cid}",
                    json={"title": "新标题", "body": "新正文"}).json()
     card = st["cards"][0]
-    assert (card["title"], card["body"], card["fromPath"]) == ("新标题", "新正文", [2, 3])
+    assert (card["title"], card["body"], card["fromPath"]) == ("新标题", "新正文", [2])
     # 导出：markdown 附件
     r = api.get(f"/api/sessions/{sid}/cards/{cid}/export")
     assert r.status_code == 200
@@ -363,6 +365,40 @@ def test_cards_library_across_sessions(api):
                         "instruction": f"导入自「{jia['sessionName']}」"}).json()
     assert [c["title"] for c in st["cards"]] == ["乙卡", "卡片标题"]
     assert st["cards"][1]["id"] != jia["id"]  # 新 id，不建立跨文件引用
+
+
+def test_pointer_endpoint_navigates_in_memory(api):
+    sid = "t"
+    api.post("/api/sessions", json={"name": sid})
+    api.fake.responses = ["答一", "答二"]
+    sse_events(api, f"/api/sessions/{sid}/turn", json={"text": "问一"})
+    sse_events(api, f"/api/sessions/{sid}/turn", json={"text": "问二"})
+    st = api.post(f"/api/sessions/{sid}/pointer", json={"seq": 2}).json()
+    assert st["pointer"] == 2                       # 导航 = 内存挪指针
+    assert api.get(f"/api/sessions/{sid}").json()["pointer"] == 2
+    assert api.post(f"/api/sessions/{sid}/pointer", json={"seq": 99}).status_code == 400
+    st = api.post(f"/api/sessions/{sid}/pointer", json={"seq": None}).json()
+    assert st["pointer"] is None
+
+
+def test_legacy_card_from_path_normalized(tmp_path):
+    """旧格式引用（卡片 from_path 指向 assistant 事件 seq）经 legacy 映射归一化为轮 seq。"""
+    fake = FakeLLM()
+    config = TreeChatConfig(data_dir=tmp_path)
+    config.sessions_dir().mkdir(parents=True)
+    lines = [
+        '{"seq":1,"type":"session_meta","name":"old","created_at":"t","system":""}',
+        '{"seq":2,"type":"user_msg","parent":null,"text":"问"}',
+        '{"seq":3,"type":"assistant_msg","parent":2,"text":"答","model":"","usage":{}}',
+        '{"seq":4,"type":"card_create","card_id":"card_old","title":"T","body":"B",'
+        '"from_path":[3],"instruction":"","created_at":"t"}',
+    ]
+    (config.sessions_dir() / "old.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with TestClient(create_app(config, client_factory=lambda model=None: fake)) as client:
+        st = client.get("/api/sessions/old").json()
+        assert [n["seq"] for n in st["nodes"]] == [2]      # 重放自动合并为轮
+        assert st["nodes"][0]["output"] == "答"
+        assert st["cards"][0]["fromPath"] == [2]           # 旧 assistant seq 归一化 → 轮
 
 
 def test_sid_path_traversal_rejected(api):
