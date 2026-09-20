@@ -112,12 +112,12 @@ def test_repl_branch_trunk_leaf_flow(tmp_path, fake_module, fake_card_client):
     run_repl(
         s, TreeChatConfig(data_dir=tmp_path),
         input_fn=_make_input([
-            "主干一问",            # 2u 3a
+            "主干一问",            # 轮2（assistant 事件3）
             "/branch 2",           # 指针 → #2
-            "分支一问",            # 4u 5a（此链 3 节点 > 主干 2 节点，分支即成主干）
-            "/trunk",              # 谁最长谁是主干 → 指针 #5
+            "分支一问",            # 轮4（2 轮 > 主干 1 轮，分支即成主干）
+            "/trunk",              # 谁最长谁是主干 → 指针 #4
             "/leaf",               # 下一条 = 叶子
-            "叶子一问",            # 6u 7a
+            "叶子一问",            # 叶子轮6
             "/quit",
         ]),
         say=say,
@@ -125,7 +125,7 @@ def test_repl_branch_trunk_leaf_flow(tmp_path, fake_module, fake_card_client):
     conv = s.conversation
     assert conv.nodes[4].parent == 2          # 分支挂在 #2
     assert conv.nodes[6].parent is None       # 叶子根
-    assert conv.pointer == 7                  # /trunk 后又轮转到叶子链末端
+    assert conv.pointer == 6                  # /trunk 后又轮转到叶子轮末端
     assert any("新枝" in line for line in out)
     assert any("叶子" in line for line in out)
 

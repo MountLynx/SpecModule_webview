@@ -47,11 +47,11 @@ async def _repl_async(session: TreeChatSession, config: TreeChatConfig, *,
                 say("…")
                 await session.complete(seq)
                 node = conv.nodes[conv.pointer]
-                say(_reply_line(node.seq, node.text))
+                say(_reply_line(node.seq, node.output))
         except LLMError as exc:
-            dangling = conv.unanswered_user()
+            dangling = conv.unanswered()
             say(f"LLM 调用失败：{exc}"
-                + (f"\n节点 #{dangling} 悬而未答；/retry 重试" if dangling else ""))
+                + (f"\n轮次 #{dangling} 悬而未答；/retry 重试" if dangling else ""))
         except TreeChatError as exc:
             say(f"错误：{exc}")
 

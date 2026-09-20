@@ -1,7 +1,7 @@
 """斜杠命令路由。返回 True 表示退出 REPL。
 
 state（REPL 会话态，repl 层持有）：{"leaf_next": bool}；/retry 目标由
-`conv.unanswered_user()` 视图给出（跨 REPL 打开仍然有效）。
+`conv.unanswered()` 视图给出（跨 REPL 打开仍然有效）。
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ _HELP = """\
   /branch <seq>         指针挪到历史节点 → 下一条输入长新枝
   /trunk                指针跳回主干末端
   /leaf                 下一条输入 = 无上下文叶子提问
-  /retry                对最后一个悬而未答节点重新调 LLM
+  /retry                对最后一个悬而未答轮次重新调 LLM
   /card [all|<a>-<b>|指令]   提炼卡片（默认当前分支段）
   /cards；/card show <id>；/card edit <id> [新标题]；/card delete <id>
   /pin /unpin <id>；/card export <id> <file>
@@ -128,13 +128,13 @@ async def handle_command(session: TreeChatSession, config: TreeChatConfig,
             state["leaf_next"] = True
             say("下一条输入 = 无上下文叶子提问")
         elif cmd == "retry":
-            seq = conv.unanswered_user()
+            seq = conv.unanswered()
             if seq is None:
-                say("没有待重试的节点")
+                say("没有待重试的轮次")
             else:
                 await session.complete(seq)
                 node = conv.nodes[conv.pointer]
-                say(_reply_line_of(node.seq, node.text))
+                say(_reply_line_of(node.seq, node.output))
         elif cmd == "card":
             await _card_command(session, rest, say)
         elif cmd == "cards":
@@ -166,9 +166,9 @@ async def handle_command(session: TreeChatSession, config: TreeChatConfig,
         else:
             say(f"未知命令: /{cmd}（/help 查看命令）")
     except LLMError as exc:
-        dangling = conv.unanswered_user()
+        dangling = conv.unanswered()
         say(f"LLM 调用失败：{exc}"
-            + (f"\n节点 #{dangling} 悬而未答；/retry 重试" if dangling else ""))
+            + (f"\n轮次 #{dangling} 悬而未答；/retry 重试" if dangling else ""))
     except TreeChatError as exc:
         say(f"错误：{exc}")
     return False

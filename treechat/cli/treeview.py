@@ -24,9 +24,11 @@ def render_tree(conv: Conversation) -> str:
             marks.append("*")
         if seq in card_by_seq:
             marks.append("[" + ",".join(card_by_seq[seq]) + "]")
-        text = n.text.replace("\n", " ")[:32]
+        text = n.input.replace("\n", " ")[:32]
+        if n.output is not None:
+            text += " → " + n.output.replace("\n", " ")[:32]
         suffix = (" " + " ".join(marks)) if marks else ""
-        lines.append(f"{prefix}{branch}#{seq} {n.role}{suffix} {text}")
+        lines.append(f"{prefix}{branch}#{seq}{suffix} {text}")
 
     def walk(seq: int, prefix: str) -> None:
         kids = conv.children.get(seq, [])
