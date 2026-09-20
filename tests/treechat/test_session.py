@@ -28,26 +28,28 @@ def _session(tmp_path, fake_module, fake_card_client, name="t"):
 
 def test_turn_persists_user_first_then_assistant(tmp_path, fake_module, fake_card_client):
     s = _session(tmp_path, fake_module, fake_card_client)
-    # 让 LLM 失败：user 节点已落盘，无 assistant
+    # 让 LLM 失败：轮已落盘（input 有、output 无）
     fake_module.fail = True
     with pytest.raises(RuntimeError):
         asyncio.run(s.turn("问题"))
-    assert s.conversation.nodes[2].role == "user"          # seq1=meta, seq2=user
+    assert s.conversation.nodes[2].input == "问题"         # seq1=meta, seq2=轮
+    assert s.conversation.nodes[2].output is None
     assert s.conversation.pointer is None
-    # 恢复后 retry：在原节点下补 assistant，不重复问题
+    # 恢复后 retry：回填原轮 output，不重复问题
     fake_module.fail = False
     a = asyncio.run(s.turn_retry(2))
-    assert s.conversation.pointer == a
-    assert s.conversation.nodes[a].parent == 2
+    assert a == 2
+    assert s.conversation.pointer == 2
+    assert s.conversation.nodes[2].output == "mock reply"
     assert [n.seq for n in s.conversation.nodes.values()].count(2) == 1
 
 
 def test_turn_happy_path(tmp_path, fake_module, fake_card_client):
     s = _session(tmp_path, fake_module, fake_card_client)
     a = asyncio.run(s.turn("你好"))
-    assert s.conversation.nodes[a].text == "mock reply"
+    assert a == 2                                          # 返回轮 seq
+    assert s.conversation.nodes[a].output == "mock reply"
     assert s.conversation.nodes[a].model == "fake-model"
-    assert s.conversation.path_to(a)[-1].role == "assistant"
 
 
 def test_turn_leaf_no_context(tmp_path, fake_module, fake_card_client):
@@ -59,36 +61,29 @@ def test_turn_leaf_no_context(tmp_path, fake_module, fake_card_client):
     assert "[user]" not in prompt        # 叶子：无 history 转录
 
 
-def test_branch_segment_default_and_user_fork(tmp_path, fake_module, fake_card_client):
+def test_branch_segment_fork_turn_included(tmp_path, fake_module, fake_card_client):
     s = _session(tmp_path, fake_module, fake_card_client)
-    a1 = asyncio.run(s.turn("主干问"))            # meta=1 → user=2, assistant=3
+    asyncio.run(s.turn("主干问"))                  # meta=1 → 轮=2（assistant 事件 seq=3）
     conv = s.conversation
-    conv.set_pointer(2)                            # 回 user 节点
-    asyncio.run(s.turn("分支问"))                  # user=4, assistant=5
-    assert conv.pointer == 5
-    assert s.branch_segment() == [2, 4, 5]         # fork 在 #2(user) → 含其自身
-    # fork 在 user 节点的情形：#2 下再开一支 → #2 有三个子
+    conv.set_pointer(2)                            # 回该轮开分支
+    asyncio.run(s.turn("分支问"))                  # 轮=4（assistant 事件 seq=5）
+    assert conv.pointer == 4
+    assert s.branch_segment() == [2, 4]            # 无分叉（#2 单子）→ 整段路径
     conv.set_pointer(2)
-    asyncio.run(s.turn("另一支"))                  # user=6, assistant=7
-    assert s.branch_segment() == [2, 6, 7]
-    # 从 user 节点分叉：#4 变成有两个子的 fork（4 的孩子是 5）——构造 user fork：
-    conv.set_pointer(4)                            # 指回 user#4
-    b = conv.append_user("user fork 下的问题")     # user=8, parent=4
-    a = conv.append_assistant(b, "答")             # assistant=9
-    assert s.branch_segment(9) == [4, 8, 9]        # fork #4 是 user → 含其自身
+    asyncio.run(s.turn("另一支"))                  # 轮=6 → #2 有两个子轮，成 fork
+    assert s.branch_segment() == [2, 6]            # fork 轮 #2 含其自身
+    conv.set_pointer(4)
+    b = conv.append_user("user fork 下的问题")     # 轮=8, parent=4 → #4 亦成 fork
+    conv.append_assistant(b, "答")
+    assert s.branch_segment(8) == [2, 4, 8]        # 最近的 fork 是 #2（#4 单子）
 
 
-def test_branch_segment_assistant_fork_excluded(tmp_path, fake_module, fake_card_client):
+def test_pointer_cannot_target_assistant_event_seq(tmp_path, fake_module, fake_card_client):
+    """assistant 事件不再产生节点：旧式「回 assistant 节点」指针目标不存在。"""
     s = _session(tmp_path, fake_module, fake_card_client)
-    asyncio.run(s.turn("主干问"))                  # user=2, assistant=3
-    conv = s.conversation
-    conv.set_pointer(3)                            # 回 assistant 节点
-    asyncio.run(s.turn("甲支"))                    # user=4, assistant=5
-    conv.set_pointer(3)                            # 同一 assistant 下再开一支
-    asyncio.run(s.turn("乙支"))                    # user=6, assistant=7
-    assert conv.pointer == 7
-    # fork 在 #3(assistant) → 不含其自身，从分支的 user 节点起
-    assert s.branch_segment() == [6, 7]
+    asyncio.run(s.turn("主干问"))                  # 轮=2（assistant 事件 seq=3）
+    with pytest.raises(TreeChatError, match="指针目标不存在"):
+        s.conversation.set_pointer(3)
 
 
 def test_make_card_defaults_pinned(tmp_path, fake_module, fake_card_client):
@@ -142,7 +137,7 @@ def test_list_sessions_counts_nodes_and_tolerates_torn_tail(
     with open(p, "a", encoding="utf-8") as f:
         f.write('{"seq":4,"type":"user_msg","parent":3,"text":"被截断的')
     listed = list_sessions(config)
-    assert len(listed) == 1 and listed[0].node_count == 2
+    assert len(listed) == 1 and listed[0].node_count == 1  # 轮数（assistant 回填不计）
 
 
 def test_make_card_rejects_unknown_seqs(tmp_path, fake_module, fake_card_client):
@@ -186,7 +181,7 @@ def test_complete_dispatch_grilling_creates_spec_cards(tmp_path, fake_module, fa
     assert set(cards) == {"spec:tree", "spec:glossary"}
     assert cards["spec:tree"].title == "设计树" and cards["spec:tree"].body == "# 树-v1"
     assert s.conversation.cards.is_pinned("spec:tree")
-    assert s.conversation.nodes[a].text == "❓ Q1"
+    assert s.conversation.nodes[a].output == "❓ Q1"
 
 
 def test_spec_card_refresh_edits_and_prompts_read_card_body(
@@ -220,7 +215,7 @@ def test_unknown_category_falls_back_to_direct(tmp_path, fake_module, fake_card_
     s = _session(tmp_path, fake_module, fake_card_client)
     s.conversation.set_category("工作")  # 旧装饰值
     a = asyncio.run(s.turn("问"))
-    assert s.conversation.nodes[a].text == "mock reply"
+    assert s.conversation.nodes[a].output == "mock reply"
     assert "spec:tree" not in [c.id for c in s.conversation.cards.all_cards()]
 
 
@@ -229,4 +224,4 @@ def test_session_mode_modules_override(tmp_path, fake_module, fake_card_client):
     s.mode_modules = {}  # 解绑 grilling → 全回落直答
     s.conversation.set_category("grilling")
     a = asyncio.run(s.turn("问"))
-    assert s.conversation.nodes[a].text == "mock reply"
+    assert s.conversation.nodes[a].output == "mock reply"

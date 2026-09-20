@@ -1,8 +1,8 @@
 """TreeChatSession —— 编程 API 门面：轮次 + 卡片（组合 Conversation 与 module_bridge）。
 
-轮次持久时序（spec §2.2）：send 先落 user_msg；complete 按 category 分派模块回合
-后落 assistant_msg。LLM 失败 → 悬而未答节点保留，turn_retry 在原节点下补 assistant
-（问题不丢、不重复）。
+轮次持久时序（spec §2.2）：send 先落 user_msg（建轮）；complete 按 category 分派
+模块回合后落 assistant_msg（回填该轮 output）。LLM 失败 → 悬而未答轮保留，
+turn_retry 对原轮补 assistant（问题不丢、不重复）。节点 = 轮次（一问一答）。
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from .core.context import TokenWindowStrategy, WindowStrategy
 from .core.conversation import Conversation
 from .core.errors import EventFormatError, TreeChatError
 from .core.events import (
-    AssistantMsg, SessionArchive, SessionCategory, SessionMeta, SessionRename,
+    SessionArchive, SessionCategory, SessionMeta, SessionRename,
     UserMsg, event_from_dict,
 )
 from .modules import resolve_module
@@ -76,8 +76,8 @@ class TreeChatSession:
         文档落为固定 ID 的 pinned 卡片（存在则整体替换——spec §5）。
         """
         conv = self.conversation
-        if user_seq not in conv.nodes or conv.nodes[user_seq].role != "user":
-            raise TreeChatError(f"complete 目标必须是 user 节点: {user_seq}")
+        if user_seq not in conv.nodes or conv.nodes[user_seq].output is not None:
+            raise TreeChatError(f"complete 目标必须是未答轮次: {user_seq}")
         module = resolve_module(conv.category, self.mode_modules)
         outcome = await module_bridge.run_turn(
             module, conv, user_seq, client=self.client, window=self.window,
@@ -105,8 +105,10 @@ class TreeChatSession:
     # ── 卡片 ──
 
     def branch_segment(self, seq: int | None = None) -> list[int]:
-        """默认提炼范围（spec §3.2）：fork_point 起到 seq（默认指针）；
-        fork_point 为 user 节点时含其自身（提问属于这段讨论），assistant 则不含。"""
+        """默认提炼范围（spec §3.2）：fork_point 起到 seq（默认指针）。
+
+        节点即轮次，fork_point 恒为轮并含其自身（提问属于这段讨论）。
+        """
         target = seq if seq is not None else self.conversation.pointer
         if target is None:
             raise TreeChatError("空会话没有可提炼范围")
@@ -115,9 +117,7 @@ class TreeChatSession:
         if fp is None:
             return [n.seq for n in path]
         idx = next(i for i, n in enumerate(path) if n.seq == fp)
-        start = idx if path[idx].role == "user" else idx + 1
-        segment = [n.seq for n in path[start:]]
-        return segment or [target]
+        return [n.seq for n in path[idx:]] or [target]
 
     async def make_card(self, instruction: str, *, seq: int | None = None,
                         from_seqs: list[int] | None = None) -> str:
@@ -131,7 +131,9 @@ class TreeChatSession:
         lines = []
         for s in seqs:
             n = self.conversation.nodes[s]
-            lines.append(f"[{n.role}] {n.text}")
+            lines.append(f"[user] {n.input}")
+            if n.output is not None:
+                lines.append(f"[assistant] {n.output}")
         transcript = "\n\n".join(lines)
         client = self.card_llm if self.card_llm is not None else self.client
         out = await llm_bridge.extract_card(transcript, instruction, llm_client=client)
@@ -209,8 +211,8 @@ def read_session_summary(path: Path) -> SessionSummary:
                 category = ev.category
             case SessionArchive():
                 archived = ev.archived
-            case UserMsg() | AssistantMsg():
-                node_count += 1
+            case UserMsg():
+                node_count += 1  # 轮数（assistant_msg 回填父轮，不计）
     return SessionSummary(
         sid=path.stem, path=path, name=name, created_at=created_at,
         system=system, category=category, archived=archived,
