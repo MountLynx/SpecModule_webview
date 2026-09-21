@@ -1,8 +1,9 @@
 """TreeChatSession —— 编程 API 门面：轮次 + 卡片（组合 Conversation 与 module_bridge）。
 
-轮次持久时序（spec §2.2）：send 先落 user_msg（建轮）；complete 按 category 分派
-模块回合后落 assistant_msg（回填该轮 output）。LLM 失败 → 悬而未答轮保留，
-turn_retry 对原轮补 assistant（问题不丢、不重复）。节点 = 轮次（一问一答）。
+轮次持久时序（spec §2.2）：send 先落 user_msg（建轮）；complete 按轮上记录
+（缺省会话 category）分派模块回合后落 assistant_msg（回填该轮 output）。
+LLM 失败 → 悬而未答轮保留，turn_retry 对原轮补 assistant（问题不丢、不重复）。
+节点 = 轮次（一问一答）。
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ from .core.events import (
     SessionArchive, SessionCategory, SessionMeta, SessionRename,
     UserMsg, event_from_dict,
 )
-from .modules import resolve_module
+from .modules import ConversationalModule, resolve_module
 
 
 @dataclass
@@ -59,7 +60,7 @@ class TreeChatSession:
 
     # ── 轮次 ──
 
-    def module_for(self, user_seq: int):
+    def module_for(self, user_seq: int) -> ConversationalModule:
         """轮次生效模块：轮上记录优先，回落会话 category（resolve_module 兜底直答）。"""
         conv = self.conversation
         return resolve_module(conv.nodes[user_seq].module or conv.category,

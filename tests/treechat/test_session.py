@@ -206,9 +206,29 @@ def test_doc_version_edit_feeds_next_turn(tmp_path, fake_module, fake_card_clien
     assert s.conversation.cards.get(f"doc:tree@{a1}").body == "# 用户手改的树"
     assert s.conversation.cards.get(f"doc:tree@{a2}").body == "# 树-v2"  # 逐轮各一版
     # 第二轮 TreeUpdate 的 prompt 读到的是手改正文（双通道闭合）
-    assert "用户手改的树" in fake_module.calls[3]["prompt"]
+    assert "用户手改的树" in fake_module.calls[-3]["prompt"]
     # 树正文不入 history 转录：手改正文在该 prompt 中恰好出现一次（tree_md 字段处）
-    assert fake_module.calls[3]["prompt"].count("用户手改的树") == 1
+    assert fake_module.calls[-3]["prompt"].count("用户手改的树") == 1
+
+
+def test_retry_after_crash_residue_reuses_doc_id(tmp_path, fake_module, fake_card_client):
+    """崩溃残留（文档已落、assistant 未落）→ retry 经 edit 分支复用 ID，不撞预检。"""
+    s = _session(tmp_path, fake_module, fake_card_client)
+    s.conversation.set_category("grilling")
+    seq = s.send("第一问")
+    # 模拟残留：文档卡已在盘上（模拟进程死于 doc 循环后、append_assistant 前）
+    s.conversation.add_card("设计树", "# 残留树", from_path=[], owner_seq=seq,
+                            doc_key="tree", card_id=f"doc:tree@{seq}")
+    fake_module.responses = [
+        "# 树-retry",
+        json.dumps({"questions_md": "❓ Q1", "done": False, "terms_md": ""}),
+        json.dumps({"glossary_md": "g1", "adr_candidates": ""}),
+    ]
+    a = asyncio.run(s.turn_retry(seq))  # 不得抛「卡片 id 重复」
+    cards = [c for c in s.conversation.cards.all_cards() if c.id == f"doc:tree@{a}"]
+    assert len(cards) == 1
+    assert cards[0].body == "# 树-retry"
+    assert s.conversation.nodes[a].output == "❓ Q1"
 
 
 def test_done_switches_category_to_direct(tmp_path, fake_module, fake_card_client):
