@@ -168,7 +168,7 @@ def test_list_library_cards_across_sessions(tmp_path, fake_module, fake_card_cli
     assert card_markdown(by_sid["会话二"].card) == "# 手写卡\n\n手写正文\n"
 
 
-def test_complete_dispatch_grilling_creates_spec_cards(tmp_path, fake_module, fake_card_client):
+def test_complete_dispatch_grilling_writes_node_doc_cards(tmp_path, fake_module, fake_card_client):
     s = _session(tmp_path, fake_module, fake_card_client)
     s.conversation.set_category("grilling")
     fake_module.responses = [
@@ -177,15 +177,14 @@ def test_complete_dispatch_grilling_creates_spec_cards(tmp_path, fake_module, fa
         json.dumps({"glossary_md": "**Order**: 订单", "adr_candidates": ""}),
     ]
     a = asyncio.run(s.turn("做一个订单系统"))
-    cards = {c.id: c for c in s.conversation.cards.all_cards()}
-    assert set(cards) == {"spec:tree", "spec:glossary"}
-    assert cards["spec:tree"].title == "设计树" and cards["spec:tree"].body == "# 树-v1"
-    assert s.conversation.cards.is_pinned("spec:tree")
+    tree = s.conversation.cards.get(f"doc:tree@{a}")
+    assert tree.owner_seq == a and tree.doc_key == "tree" and tree.body == "# 树-v1"
+    assert not s.conversation.cards.is_pinned(f"doc:tree@{a}")
+    assert s.conversation.cards.get(f"doc:glossary@{a}").body == "**Order**: 订单"
     assert s.conversation.nodes[a].output == "❓ Q1"
 
 
-def test_spec_card_refresh_edits_and_prompts_read_card_body(
-        tmp_path, fake_module, fake_card_client):
+def test_doc_version_edit_feeds_next_turn(tmp_path, fake_module, fake_card_client):
     s = _session(tmp_path, fake_module, fake_card_client)
     s.conversation.set_category("grilling")
     fake_module.responses = [
@@ -193,22 +192,66 @@ def test_spec_card_refresh_edits_and_prompts_read_card_body(
         json.dumps({"questions_md": "Q1", "done": False, "terms_md": ""}),
         json.dumps({"glossary_md": "g1", "adr_candidates": ""}),
     ]
-    asyncio.run(s.turn("第一问"))
-    # 双通道直填：用户编辑 spec 卡
-    s.conversation.edit_card("spec:tree", "设计树", "# 用户手改的树")
+    a1 = asyncio.run(s.turn("第一问"))
+    # 双通道直填：用户编辑该轮的树版本
+    s.conversation.edit_card(f"doc:tree@{a1}", "设计树", "# 用户手改的树")
     fake_module.responses = [
         "# 树-v2",
         json.dumps({"questions_md": "Q2", "done": False, "terms_md": ""}),
         json.dumps({"glossary_md": "g2", "adr_candidates": ""}),
     ]
-    asyncio.run(s.turn("第二问"))
-    cards = {c.id: c for c in s.conversation.cards.all_cards()}
-    assert len([c for c in cards.values() if c.id == "spec:tree"]) == 1  # edit 非重复创建
-    assert cards["spec:tree"].body == "# 树-v2"
+    a2 = asyncio.run(s.turn("第二问"))
+    cards = s.conversation.cards.all_cards()
+    assert len([c for c in cards if c.id == f"doc:tree@{a1}"]) == 1  # edit 非重复创建
+    assert s.conversation.cards.get(f"doc:tree@{a1}").body == "# 用户手改的树"
+    assert s.conversation.cards.get(f"doc:tree@{a2}").body == "# 树-v2"  # 逐轮各一版
     # 第二轮 TreeUpdate 的 prompt 读到的是手改正文（双通道闭合）
     assert "用户手改的树" in fake_module.calls[3]["prompt"]
-    # spec 卡不入 history 转录：手改正文在该 prompt 中恰好出现一次（tree_md 字段处）
+    # 树正文不入 history 转录：手改正文在该 prompt 中恰好出现一次（tree_md 字段处）
     assert fake_module.calls[3]["prompt"].count("用户手改的树") == 1
+
+
+def test_done_switches_category_to_direct(tmp_path, fake_module, fake_card_client):
+    s = _session(tmp_path, fake_module, fake_card_client)
+    s.conversation.set_category("grilling")
+    fake_module.responses = [
+        "# 树-终",
+        json.dumps({"questions_md": "决策汇总", "done": True, "terms_md": ""}),
+        json.dumps({"glossary_md": "", "adr_candidates": ""}),
+    ]
+    asyncio.run(s.turn("最后问"))
+    assert s.conversation.category == ""  # 拷问收敛 → 自动退出拷问态（空 = 直答）
+
+
+def test_send_records_module_and_retry_locks_it(tmp_path, fake_module, fake_card_client):
+    """轮上记录模式：grilling 会话里的直答插轮，retry 永远用原轮模式。"""
+    from llm import LLMError
+
+    s = _session(tmp_path, fake_module, fake_card_client)
+    s.conversation.set_category("grilling")
+    seq = s.send("直答插轮", module="direct")
+    fake_module.fail = True
+    with pytest.raises(LLMError):
+        asyncio.run(s.complete(seq))
+    fake_module.fail = False
+    asyncio.run(s.turn_retry(seq))
+    # direct 单节点 prompt 含"请直接回答"；若是 grilling 会是 TreeUpdate 的"设计树"
+    assert "请直接回答用户最新消息" in fake_module.calls[-1]["prompt"]
+    assert s.conversation.nodes[seq].module == "direct"
+
+
+def test_send_default_records_empty_module(tmp_path, fake_module, fake_card_client):
+    s = _session(tmp_path, fake_module, fake_card_client)
+    seq = s.send("普通问")
+    assert s.conversation.nodes[seq].module == ""  # 空 = complete 按会话 category 解析
+
+
+def test_make_card_with_owner(tmp_path, fake_module, fake_card_client):
+    s = _session(tmp_path, fake_module, fake_card_client)
+    a = asyncio.run(s.turn("主对话"))
+    cid = asyncio.run(s.make_card("总结", from_seqs=[a], owner_seq=a))
+    c = s.conversation.cards.get(cid)
+    assert c.owner_seq == a and not s.conversation.cards.is_pinned(cid)
 
 
 def test_unknown_category_falls_back_to_direct(tmp_path, fake_module, fake_card_client):

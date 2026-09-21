@@ -303,6 +303,15 @@ def test_add_card_node_doc_replay(tmp_path):
     assert not conv2.cards.is_pinned("doc:tree@2")  # 节点卡恒不 pin
 
 
+def test_add_card_duplicate_explicit_id_raises_without_event(tmp_path):
+    """显式 card_id 重复：预检拒绝、不落事件（毒事件防线，Task 3 质量审查 fast-follow）。"""
+    conv = Conversation.create(tmp_path / "s6.jsonl", name="t")
+    conv.add_card("第一张", "b", from_path=[], card_id="card_fixed")
+    with pytest.raises(TreeChatError, match="卡片 id 重复"):
+        conv.add_card("第二张", "b", from_path=[], card_id="card_fixed")
+    assert len(conv.store.load()) == 2  # meta + 第一张，重复未落盘
+
+
 def test_add_card_owner_missing_node_raises_without_event(tmp_path):
     conv = Conversation.create(tmp_path / "s3.jsonl", name="t")
     with pytest.raises(TreeChatError, match="归属节点不存在"):

@@ -44,7 +44,7 @@ def build_spec(module: ConversationalModule, conv, user_seq: int, window) -> dic
     不作为 pinned 块注入（防旧会话双份注入）。
     """
     pinned = [c for c in conv.cards.pinned_cards()
-              if c.owner_seq is None and not c.id.startswith("spec:")]
+              if c.owner_seq is None and not c.id.startswith("spec:")]  # 注册表恒不 pin 节点卡，owner 过滤为防御（spec:* legacy 排除防双份注入）
     ctx = assemble(conv.path_to(user_seq), conv.system, pinned, strategy=window)
     lines: list[str] = []
     if ctx.system:

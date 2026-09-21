@@ -185,9 +185,12 @@ class Conversation:
 
         owner_seq=None = 全局卡（默认 pinned）；owner_seq=seq = 节点卡（恒不 pin）。
         card_id 显式指定时原样落盘（节点文档卡固定 doc:<key>@<seq>）；None 走 _new_card_id。
+        `spec:` 与 `doc:` 是保留 id 前缀（引擎文档通道），调用方自定义 id 勿用。
         """
         if owner_seq is not None and owner_seq not in self.nodes:
             raise TreeChatError(f"卡片归属节点不存在: {owner_seq}")
+        if card_id is not None and card_id in self.cards.ids():
+            raise TreeChatError(f"卡片 id 重复: {card_id}")
         ev = CardCreate(
             card_id=card_id or _new_card_id(self.cards.ids()), title=title, body=body,
             from_path=list(from_path), instruction=instruction, created_at=_now(),

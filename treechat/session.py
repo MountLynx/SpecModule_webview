@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from . import llm_bridge, module_bridge
 from .config import TreeChatConfig
+from .core.cards import doc_card_id
 from .core.context import TokenWindowStrategy, WindowStrategy
 from .core.conversation import Conversation
 from .core.errors import EventFormatError, TreeChatError
@@ -58,9 +59,15 @@ class TreeChatSession:
 
     # ── 轮次 ──
 
-    def send(self, text: str, *, leaf: bool = False) -> int:
-        """落 user_msg（先持久化，防丢），返回其 seq。"""
-        return self.conversation.append_user(text, leaf=leaf)
+    def module_for(self, user_seq: int):
+        """轮次生效模块：轮上记录优先，回落会话 category（resolve_module 兜底直答）。"""
+        conv = self.conversation
+        return resolve_module(conv.nodes[user_seq].module or conv.category,
+                              self.mode_modules)
+
+    def send(self, text: str, *, leaf: bool = False, module: str = "") -> int:
+        """落 user_msg（先持久化，防丢）；module = 本轮模式 key（空 = 会话默认）。"""
+        return self.conversation.append_user(text, leaf=leaf, module=module)
 
     async def complete(self, user_seq: int) -> int:
         """组装 → 模块回合 → 落 assistant_msg → 指针推进。LLMError 上抛。"""
@@ -72,30 +79,36 @@ class TreeChatSession:
                                ) -> tuple[int, module_bridge.TurnOutcome]:
         """complete 全信息版：返回 (assistant seq, 回合结果)。webapp SSE 消费。
 
-        分派：conversation.category → resolve_module（spec §4）。回合产出的
-        文档落为固定 ID 的 pinned 卡片（存在则整体替换——spec §5）。
+        分派：轮上记录模式 > 会话 category → resolve_module（spec §4）。回合产出
+        的文档落为该轮的文档版本节点卡。
         """
         conv = self.conversation
         if user_seq not in conv.nodes or conv.nodes[user_seq].output is not None:
             raise TreeChatError(f"complete 目标必须是未答轮次: {user_seq}")
-        module = resolve_module(conv.category, self.mode_modules)
+        module = self.module_for(user_seq)
         outcome = await module_bridge.run_turn(
             module, conv, user_seq, client=self.client, window=self.window,
             on_event=on_event or (lambda evt: None))
         cfg = getattr(self.client, "config", None)
         model = getattr(cfg, "model", "") if cfg is not None else ""
-        for card_id, title, body in outcome.documents:
-            if card_id in conv.cards.ids():  # 防重复 card_id 落盘（毒事件）的唯一防线
-                conv.edit_card(card_id, title, body)
+        for doc_key, title, body in outcome.documents:
+            cid = doc_card_id(doc_key, user_seq)
+            if cid in conv.cards.ids():
+                # 崩溃残留（文档已落盘、assistant 未落）重试时复用确定性 ID，防毒事件
+                conv.edit_card(cid, title, body)
             else:
-                conv.add_card(title, body, from_path=[], card_id=card_id)
+                conv.add_card(title, body, from_path=[], owner_seq=user_seq,
+                              doc_key=doc_key, card_id=cid)
         seq = conv.append_assistant(user_seq, outcome.message_text,
                                     model=model, usage=outcome.usage)
+        if outcome.done and conv.category:  # 拷问收敛 → 自动退出拷问态（空 = 直答）
+            conv.set_category("")
         return seq, outcome
 
-    async def turn(self, text: str, *, leaf: bool = False) -> int:
+    async def turn(self, text: str, *, leaf: bool = False,
+                   module: str = "") -> int:
         """send + complete 一步走。失败时 user 节点已落盘（悬而未答），turn_retry 重试。"""
-        seq = self.send(text, leaf=leaf)
+        seq = self.send(text, leaf=leaf, module=module)
         return await self.complete(seq)
 
     async def turn_retry(self, user_seq: int) -> int:
@@ -120,8 +133,9 @@ class TreeChatSession:
         return [n.seq for n in path[idx:]] or [target]
 
     async def make_card(self, instruction: str, *, seq: int | None = None,
-                        from_seqs: list[int] | None = None) -> str:
-        """提炼卡片：默认当前分支段；from_seqs 显式区间（/card all / <a>-<b>）。"""
+                        from_seqs: list[int] | None = None,
+                        owner_seq: int | None = None) -> str:
+        """提炼卡片：默认当前分支段；from_seqs 显式区间；owner_seq 非空 = 挂该轮（节点卡）。"""
         seqs = from_seqs if from_seqs is not None else self.branch_segment(seq)
         if not seqs:
             raise TreeChatError("提炼范围为空")
@@ -137,7 +151,8 @@ class TreeChatSession:
         transcript = "\n\n".join(lines)
         client = self.card_llm if self.card_llm is not None else self.client
         out = await llm_bridge.extract_card(transcript, instruction, llm_client=client)
-        return self.conversation.add_card(out["title"], out["body"], seqs, instruction)
+        return self.conversation.add_card(out["title"], out["body"], seqs,
+                                          instruction, owner_seq=owner_seq)
 
     def export_card(self, card_id: str, file_path: Path) -> Path:
         card = self.conversation.cards.get(card_id)
