@@ -28,7 +28,7 @@ interface Props {
   onPin: (cid: string, pinned: boolean) => Promise<void>;
   onEditCard: (cid: string, body: { title: string; body: string }) => Promise<void>;
   onDeleteCard: (cid: string) => Promise<void>;
-  onImportCard: (body: { title: string; body: string; instruction?: string }) => Promise<void>;
+  onImportCard: (body: { title: string; body: string; instruction?: string; ownerSeq?: number }) => Promise<void>;
 }
 
 /** chat 页右侧边栏：上半「节点卡片」（指针轮产出 + 文档版本链），下半「全局卡片」 */

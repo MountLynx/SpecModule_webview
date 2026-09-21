@@ -55,11 +55,18 @@ export interface Health {
   dataDir: string;
 }
 
-/** 跨会话卡库条目（GET /api/cards；复制导入语义） */
-export type LibraryCard = Card & {
+/** 跨会话卡库条目（GET /api/cards；只含全局卡，复制导入语义） */
+export interface LibraryCard {
   sid: string;
   sessionName: string;
-};
+  id: string;
+  title: string;
+  body: string;
+  fromPath: number[];
+  instruction: string;
+  createdAt: string;
+  pinned: boolean;
+}
 
 /** 对话模式（GET /api/modes） */
 export interface Mode {

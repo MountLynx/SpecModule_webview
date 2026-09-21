@@ -22,7 +22,7 @@ interface Props {
   onPin: (cid: string, pinned: boolean) => Promise<void>;
   onEditCard: (cid: string, body: { title: string; body: string }) => Promise<void>;
   onDeleteCard: (cid: string) => Promise<void>;
-  onImportCard: (body: { title: string; body: string; instruction?: string }) => Promise<void>;
+  onImportCard: (body: { title: string; body: string; instruction?: string; ownerSeq?: number }) => Promise<void>;
 }
 
 /** 卡片面板：页签配套功能——绑定当前激活 chat 页签（conv 可空，内部空态） */
@@ -172,6 +172,7 @@ export function CardsPanel(p: Props) {
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent>
           <ImportForm
+            conv={conv}
             onDone={() => setImportOpen(false)}
             onImport={async (body) => {
               await p.onImportCard(body);
@@ -199,6 +200,8 @@ function GenerateForm(p: {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [busy, setBusy] = useState(false);
+  const [attach, setAttach] = useState(false);
+  const pointer = p.conv?.pointer ?? null;
   const rangeValid = mode !== "range" || (Number(start) > 0 && Number(end) >= Number(start));
   const seqsValid = mode !== "seqs" || p.cardSeqs.length > 0;
   return (
@@ -238,6 +241,12 @@ function GenerateForm(p: {
           </div>
         )}
       </div>
+      <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground"
+             title="勾选后创建节点卡：不进上下文、只作展示/追溯，右侧栏「节点卡片」区可见">
+        <input type="checkbox" checked={attach} disabled={pointer === null}
+               onChange={(e) => setAttach(e.target.checked)} />
+        挂到当前选中轮（节点卡）
+      </label>
       <DialogFooter>
         <Button variant="outline" onClick={p.onDone}>取消</Button>
         <Button disabled={busy || !p.conv || !rangeValid || !seqsValid}
@@ -250,6 +259,7 @@ function GenerateForm(p: {
                       start: mode === "range" ? Number(start) : undefined,
                       end: mode === "range" ? Number(end) : undefined,
                       seqs: mode === "seqs" ? p.cardSeqs : undefined,
+                      ownerSeq: attach && pointer !== null ? pointer : undefined,
                     });
                     p.onDone();
                     if (mode === "seqs") p.onClearCardSeqs();
@@ -295,10 +305,16 @@ export function CardEditForm(p: { card: Card; onSubmit: (title: string, body: st
 
 // ── 导入卡片（粘贴或选 .md/.txt 文件；首个 `# ` 行作为标题） ──
 
-function ImportForm(p: { onDone: () => void; onImport: (body: { title: string; body: string }) => Promise<void> }) {
+function ImportForm(p: {
+  conv: ConvState | null;
+  onDone: () => void;
+  onImport: (body: { title: string; body: string; ownerSeq?: number }) => Promise<void>;
+}) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const [attach, setAttach] = useState(false);
+  const pointer = p.conv?.pointer ?? null;
   const fileRef = useRef<HTMLInputElement>(null);
   const readFile = (file: File) => {
     const reader = new FileReader();
@@ -330,12 +346,23 @@ function ImportForm(p: { onDone: () => void; onImport: (body: { title: string; b
         <Textarea className="min-h-[140px]" value={body} placeholder="正文（markdown）"
                   onChange={(e) => setBody(e.target.value)} />
       </div>
+      <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground"
+             title="勾选后创建节点卡：不进上下文、只作展示/追溯，右侧栏「节点卡片」区可见">
+        <input type="checkbox" checked={attach} disabled={pointer === null}
+               onChange={(e) => setAttach(e.target.checked)} />
+        挂到当前选中轮（节点卡）
+      </label>
       <DialogFooter>
         <Button variant="outline" onClick={p.onDone}>取消</Button>
         <Button disabled={busy || !title.trim() || !body.trim()}
                 onClick={async () => {
                   setBusy(true);
-                  try { await p.onImport({ title: title.trim(), body }); } finally { setBusy(false); }
+                  try {
+                    await p.onImport({
+                      title: title.trim(), body,
+                      ownerSeq: attach && pointer !== null ? pointer : undefined,
+                    });
+                  } finally { setBusy(false); }
                 }}>
           导入
         </Button>
