@@ -76,6 +76,12 @@ def test_node_card_pin_rejected():
     assert reg.pinned_cards() == []
 
 
+def test_registry_add_node_card_ignores_pinned_true():
+    reg = CardRegistry()
+    reg.add(Card(id="doc:tree@2", title="t", body="b", owner_seq=2), pinned=True)
+    assert reg.pinned_cards() == []
+
+
 def test_doc_card_id_deterministic():
     assert doc_card_id("tree", 12) == "doc:tree@12"
     assert doc_card_id("glossary", 3) == "doc:glossary@3"
