@@ -213,6 +213,7 @@ def test_turn_records_explicit_module(api):
     events = sse_events(api, "/api/sessions/m1/turn",
                         json={"text": "插一轮直答", "module": "direct"})
     assert events[0][1]["module"] == "direct"
+    assert len(events[0][1]["nodes"]) == 1  # direct 单节点（防 start 帧与执行解析分歧）
     state = api.get("/api/sessions/m1").json()
     assert state["category"] == "grilling"  # 会话默认未被 turn 改动
     assert state["nodes"][0]["module"] == "direct"
@@ -238,13 +239,13 @@ def test_turn_sse_unexpected_error_terminates_stream(api, monkeypatch):
     sid = "t"
     api.post("/api/sessions", json={"name": sid})
 
-    def boom(self, text, *, leaf=False):
+    def boom(self, text, *, leaf=False, module=""):
         raise OSError("磁盘故障")
     monkeypatch.setattr("treechat.session.TreeChatSession.send", boom)
     events = sse_events(api, f"/api/sessions/{sid}/turn", json={"text": "问题"})
     assert events, "意外异常不应产生空流"
     assert events[-1][0] == "error"
-    assert "内部错误" in events[-1][1]["error"]
+    assert "磁盘故障" in events[-1][1]["error"]  # OSError 消息本身，非签名失配的内部错误
 
 
 def test_turn_sse_invalid_parent_error_frame(api):

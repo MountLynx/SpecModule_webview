@@ -296,6 +296,8 @@ def create_app(config: TreeChatConfig | None = None, *,
                         s = registry.get(sid)
                         if body is None:  # retry：悬而未答轮（端点已预检 409）
                             seq = s.conversation.unanswered()
+                            if seq is None:  # 预检后竞态：轮次已被回答
+                                raise TreeChatError("没有待重试的轮次")
                         else:
                             if body.leaf:
                                 seq = s.send(body.text, leaf=True,
