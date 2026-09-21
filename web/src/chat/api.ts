@@ -116,7 +116,7 @@ async function streamSse(url: string, body: unknown,
 
 export function turn(
   sid: string,
-  body: { text: string; parent?: number; leaf?: boolean },
+  body: { text: string; parent?: number; leaf?: boolean; module?: string },
   onEvent: (e: SseEvent) => void,
 ): Promise<void> {
   return streamSse(`/treechat/api/sessions/${encodeURIComponent(sid)}/turn`, body, onEvent);
@@ -133,6 +133,8 @@ export interface CardReq {
   start?: number;
   end?: number;
   seqs?: number[];
+  /** 提炼结果挂到该轮（节点卡）；缺省 = 全局卡 */
+  ownerSeq?: number;
 }
 export const createCard = (sid: string, body: CardReq) =>
   req<ConvState>(`/treechat/api/sessions/${encodeURIComponent(sid)}/cards`, json("POST", body));
@@ -142,7 +144,7 @@ export const editCard = (sid: string, cid: string, body: { title: string; body: 
   req<ConvState>(`/treechat/api/sessions/${encodeURIComponent(sid)}/cards/${encodeURIComponent(cid)}`, json("PATCH", body));
 export const deleteCard = (sid: string, cid: string) =>
   req<ConvState>(`/treechat/api/sessions/${encodeURIComponent(sid)}/cards/${encodeURIComponent(cid)}`, { method: "DELETE" });
-export const importCard = (sid: string, body: { title: string; body: string; instruction?: string }) =>
+export const importCard = (sid: string, body: { title: string; body: string; instruction?: string; ownerSeq?: number }) =>
   req<ConvState>(`/treechat/api/sessions/${encodeURIComponent(sid)}/cards/import`, json("POST", body));
 /** 跨会话卡库（复制导入语义：导入 = 在当前会话建独立副本） */
 export const listLibraryCards = () => req<LibraryCard[]>("/treechat/api/cards");

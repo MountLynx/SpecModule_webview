@@ -17,9 +17,11 @@ export interface Node {
   output: string | null;
   label: string;
   model: string;
+  /** 本轮实际使用的模式 key（空 = 会话默认；grilling 会话里的直答插轮可见） */
+  module: string;
 }
 
-/** 上下文产出卡片 */
+/** 上下文产出卡片（ownerSeq=null 全局卡 / 非空节点卡） */
 export interface Card {
   id: string;
   title: string;
@@ -28,6 +30,9 @@ export interface Card {
   instruction: string;
   createdAt: string;
   pinned: boolean;
+  ownerSeq: number | null;
+  /** 非空 = 模块文档版本节点卡（沿路径取最近祖先版本） */
+  docKey: string;
 }
 
 /** 完整会话状态（后端全量返回） */
@@ -69,10 +74,10 @@ export interface SseEvent {
   data: any;
 }
 
-/** node_end 的卡片引用（链接片） */
+/** node_end 的文档引用（链接片） */
 export interface CardRef {
-  type: "card";
-  cardId: string;
+  type: "doc";
+  docKey: string;
   title: string;
 }
 
@@ -95,9 +100,6 @@ export interface RunNodeState {
   outcome: "running" | "ok" | "failed";
   refs: CardRef[];
 }
-
-/** 侧边栏页签 */
-export type Tab = "chat" | "tree" | "cards" | "settings";
 
 /** path_to(pointer)：指针所在活跃路径（根 → 指针节点） */
 export function activePath(conv: ConvState): Node[] {
