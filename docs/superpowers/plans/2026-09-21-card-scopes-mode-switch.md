@@ -466,9 +466,44 @@ class MsgNode:
             return ""
 ```
 
+⑥ **`pin` 防毒事件守卫**（Task 2 质量审查发现的计划缺口，2026-09-21 修订）：现有预检
+只验证存在性——节点卡会通过预检但 `_apply` 时 `CardRegistry.pin` 必抛，而 `Pin` 事件已
+先落盘 → 重放必失败、会话文件锁死。`pin` 方法整体替换为：
+
+```python
+    def pin(self, card_id: str) -> None:
+        card = self.cards.get(card_id)  # 先验证再落盘：失败不落事件（否则重放必失败的毒事件会锁死文件）
+        if card.is_node:
+            raise TreeChatError(f"节点卡不支持 pin: {card_id}（作用域由树位置决定）")
+        self._append_apply(Pin(card_id=card_id))
+```
+
+对应测试（Step 1 一并追加）：
+
+```python
+def test_pin_node_card_raises_without_event(tmp_path):
+    """pin 节点卡：预检拒绝、不落事件（毒事件防线）。"""
+    conv = Conversation.create(tmp_path / "s5.jsonl", name="t")
+    u = conv.append_user("问")
+    cid = conv.add_card("设计树", "# 树", from_path=[], owner_seq=u, doc_key="tree",
+                        card_id=doc_card_id("tree", u))
+    with pytest.raises(TreeChatError, match="节点卡不支持 pin"):
+        conv.pin(cid)
+    assert len(conv.store.load()) == 3  # meta + user + card，Pin 未落盘
+```
+
+（连带补 Task 2 审查的 Minor：`tests/treechat/test_cards.py` 追加注册表双保险测试）
+
+```python
+def test_registry_add_node_card_ignores_pinned_true():
+    reg = CardRegistry()
+    reg.add(Card(id="doc:tree@2", title="t", body="b", owner_seq=2), pinned=True)
+    assert reg.pinned_cards() == []
+```
+
 - [ ] **Step 4: 跑测试确认通过**
 
-Run: `uv run pytest tests/treechat/test_conversation.py tests/treechat/test_events.py -q`
+Run: `uv run pytest tests/treechat/test_conversation.py tests/treechat/test_events.py tests/treechat/test_cards.py -q`
 Expected: 全 PASS（既有的 `spec:tree` 显式 card_id 测试不受影响——全局卡语义未变）
 
 - [ ] **Step 5: Commit**
