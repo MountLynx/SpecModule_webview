@@ -62,9 +62,10 @@ export function Composer(p: Props) {
   const send = () => {
     const t = text.trim();
     if (!t || p.busy || p.disabled) return;
-    if (t.startsWith("/")) {
-      const token = t.slice(1).split(/\s+/, 1)[0];
-      const rest = t.slice(1 + token.length).trim();
+    // 斜杠判定与提取用原始 text（与展示路径同基点；trim 后判定会让次行 / 开头的多行消息误判）
+    if (text.startsWith("/")) {
+      const token = text.slice(1).split(/\s+/, 1)[0];
+      const rest = text.slice(1 + token.length).trim();
       const hit = matchMode(token, p.modes);
       if (hit) {
         setText("");
