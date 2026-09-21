@@ -168,6 +168,23 @@ def test_list_library_cards_across_sessions(tmp_path, fake_module, fake_card_cli
     assert card_markdown(by_sid["会话二"].card) == "# 手写卡\n\n手写正文\n"
 
 
+def test_list_library_cards_excludes_node_cards(tmp_path, fake_module, fake_card_client, monkeypatch):
+    """卡库 = 跨会话复用的全局卡；节点卡（挂轮的文档/提炼版本）不进卡库。"""
+    from treechat import llm_bridge
+    monkeypatch.setattr(llm_bridge, "create_client", lambda model=None: fake_module)
+    config = TreeChatConfig(data_dir=tmp_path)
+    s1 = TreeChatSession.create(config.sessions_dir() / "会话一.jsonl", "会话一")
+    s1.card_llm = fake_card_client  # 提炼走假卡片客户端（与 _session 助手一致）
+    asyncio.run(s1.turn("问"))
+    c1 = asyncio.run(s1.make_card("总结"))                       # 全局卡（owner_seq=None）
+    a = s1.conversation.pointer
+    s1.conversation.add_card("节点卡", "节点正文", from_path=[],
+                             owner_seq=a, doc_key="")            # 节点卡（挂轮）
+    lib = list_library_cards(config)
+    assert [(e.sid, e.card.id) for e in lib] == [("会话一", c1)]  # 节点卡被过滤
+    assert all(e.card.owner_seq is None for e in lib)
+
+
 def test_complete_dispatch_grilling_writes_node_doc_cards(tmp_path, fake_module, fake_card_client):
     s = _session(tmp_path, fake_module, fake_card_client)
     s.conversation.set_category("grilling")

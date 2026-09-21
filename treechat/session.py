@@ -266,8 +266,11 @@ def card_markdown(card: Card) -> str:
 
 
 def list_library_cards(config: TreeChatConfig) -> list[LibraryCard]:
-    """全库枚举：所有会话的全部卡片（重放派生，坏文件跳过——与 list_sessions 同纪律）。
+    """全库枚举：所有会话的全局卡片（重放派生，坏文件跳过——与 list_sessions 同纪律）。
 
+    卡库语义 = 跨会话复用的提炼/导入卡：只收 owner_seq=None 的全局卡；
+    节点卡（挂轮的文档/提炼版本，每轮一张）不进卡库（card_markdown/导入
+    不受影响——导入即全局复制）。
     只读扫描：不建 LLM 客户端、不进会话注册表。
     """
     d = config.sessions_dir()
@@ -280,6 +283,8 @@ def list_library_cards(config: TreeChatConfig) -> list[LibraryCard]:
         except (TreeChatError, json.JSONDecodeError, OSError):
             continue
         for c in conv.cards.all_cards():
+            if c.owner_seq is not None:
+                continue  # 节点卡：作用域由树位置决定，不跨会话复用
             out.append(LibraryCard(sid=p.stem, session_name=conv.name, card=c,
                                    pinned=conv.cards.is_pinned(c.id)))
     return out
