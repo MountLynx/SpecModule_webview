@@ -39,10 +39,10 @@ export function Composer(p: Props) {
   const [text, setText] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  const trimmed = text.trim();
-  const slash = trimmed.startsWith("/");
+  // 斜杠判定用原始首字符（trim 后判定会在多行消息第二行以 / 开头时误判）
+  const slash = text.startsWith("/");
   // 候选（命令面板）：斜杠后、未出现空白前的 token 前缀过滤
-  const partial = slash ? trimmed.slice(1) : "";
+  const partial = slash ? text.slice(1) : "";
   const candidates = slash && !partial.includes(" ")
     ? p.modes.filter((m) => m.key.startsWith(partial.toLowerCase())
                           || m.displayName.includes(partial))
@@ -51,7 +51,7 @@ export function Composer(p: Props) {
   const parsed = slash && partial.includes(" ")
     ? (() => {
         const token = partial.split(/\s+/, 1)[0];
-        const rest = trimmed.slice(1 + token.length).trim();
+        const rest = text.slice(1 + token.length).trim();
         const hit = matchMode(token, p.modes);
         return { hit, rest, unknown: hit === null };
       })()

@@ -32,6 +32,8 @@ export function CardsPanel(p: Props) {
   const [deleteTarget, setDeleteTarget] = useState<Card | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const conv = p.conv;
+  // 全局卡区只列全局卡（ownerSeq=null）；节点卡归右栏「节点卡片」区，混列会随版本无限堆积
+  const globalCards = conv ? conv.cards.filter((c) => c.ownerSeq === null) : [];
 
   const download = (cid: string) => {
     if (!conv) return;
@@ -46,7 +48,7 @@ export function CardsPanel(p: Props) {
       <div className="flex items-center gap-1.5 px-3 pb-2 pt-3">
         <Layers className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-[11px] font-semibold text-muted-foreground">全局卡片</span>
-        {conv && <span className="text-[12px] text-muted-foreground">{conv.name} · {conv.cards.length} 张</span>}
+        {conv && <span className="text-[12px] text-muted-foreground">{conv.name} · {globalCards.length} 张</span>}
         <div className="ml-auto flex gap-1.5">
           <Button size="sm" variant="outline" className="h-7" disabled={!conv}
                   onClick={() => setImportOpen(true)}>
@@ -61,12 +63,12 @@ export function CardsPanel(p: Props) {
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {!conv ? (
           <div className="px-3 py-10 text-center text-[12px] text-muted-foreground">先打开一个对话</div>
-        ) : conv.cards.length === 0 ? (
+        ) : globalCards.length === 0 ? (
           <div className="px-3 py-10 text-center text-[12px] text-muted-foreground">
             还没有卡片。把当前分支段提炼为「脱离原对话也能读懂」的结构化产出。
           </div>
         ) : (
-          conv.cards.map((c) => (
+          globalCards.map((c) => (
             <div key={c.id}
                  onClick={() => setExpanded(expanded === c.id ? null : c.id)}
                  className={cn("mb-1.5 cursor-pointer rounded-panel border px-2.5 py-2 transition-colors hover:bg-foreground/[0.03]",
@@ -132,14 +134,17 @@ export function CardsPanel(p: Props) {
       <Dialog open={editTarget !== null} onOpenChange={(o) => !o && setEditTarget(null)}>
         <DialogContent>
           {editTarget && (
-            <CardEditForm
-              card={editTarget}
-              onSubmit={async (title, body) => {
-                await p.onEditCard(editTarget.id, { title, body });
-                setEditTarget(null);
-              }}
-              onCancel={() => setEditTarget(null)}
-            />
+            <>
+              <DialogTitle>编辑卡片 {editTarget.id}</DialogTitle>
+              <CardEditForm
+                card={editTarget}
+                onSubmit={async (title, body) => {
+                  await p.onEditCard(editTarget.id, { title, body });
+                  setEditTarget(null);
+                }}
+                onCancel={() => setEditTarget(null)}
+              />
+            </>
           )}
         </DialogContent>
       </Dialog>
@@ -267,7 +272,7 @@ export function CardEditForm(p: { card: Card; onSubmit: (title: string, body: st
   const [busy, setBusy] = useState(false);
   return (
     <>
-      <DialogTitle>编辑卡片 {p.card.id}</DialogTitle>
+      {/* 对话框标题由调用点的 DialogTitle 提供（本表单被两个编辑对话框共用） */}
       <div className="grid gap-2.5">
         <Input autoFocus value={title} placeholder="标题"
                onChange={(e) => setTitle(e.target.value)} onFocus={(e) => e.target.select()} />

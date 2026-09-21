@@ -1,4 +1,4 @@
-import { CornerUpRight, FileText, MapPin, PanelRightClose, Pencil, Trash2 } from "lucide-react";
+import { CornerUpRight, Download, FileText, MapPin, PanelRightClose, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import * as api from "./api";
 import type { Card, ConvState } from "./types";
@@ -6,6 +6,10 @@ import { activePath } from "./types";
 import { cn } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogTitle,
+} from "../components/ui/alert-dialog";
 import { Markdown } from "./Markdown";
 import { CardEditForm, CardsPanel } from "./CardsPanel";
 
@@ -62,9 +66,17 @@ function NodeCardsSection({ conv, onNavigate, onEdit, onDelete, onPromote }: {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [versionsOf, setVersionsOf] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<Card | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Card | null>(null);
   if (!conv) return null;
   const pointer = conv.pointer;
   const nodeCards = conv.cards.filter((c) => c.ownerSeq === pointer);
+  // 导出：直链下载 .md（与全局卡区 CardsPanel 的 download 同一机制）
+  const download = (cid: string) => {
+    const a = document.createElement("a");
+    a.href = api.cardExportUrl(conv.sid, cid);
+    a.download = `${cid}.md`;
+    a.click();
+  };
   // 版本链 = 活跃路径上该文档的各版本（点击跳转该轮——分支到旧节点后其版本即生效）
   const docVersions = (docKey: string) => {
     const seqs = new Set(activePath(conv).map((n) => n.seq));
@@ -118,8 +130,12 @@ function NodeCardsSection({ conv, onNavigate, onEdit, onDelete, onPromote }: {
                           onClick={() => setEditTarget(c)}>
                     <Pencil className="h-3 w-3" /> 编辑
                   </Button>
+                  <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[12px]"
+                          onClick={() => download(c.id)}>
+                    <Download className="h-3 w-3" /> 导出
+                  </Button>
                   <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[12px] text-destructive hover:text-destructive"
-                          onClick={() => onDelete(c.id)}>
+                          onClick={() => setDeleteTarget(c)}>
                     <Trash2 className="h-3 w-3" /> 删除
                   </Button>
                 </div>
@@ -143,17 +159,39 @@ function NodeCardsSection({ conv, onNavigate, onEdit, onDelete, onPromote }: {
       <Dialog open={editTarget !== null} onOpenChange={(o) => !o && setEditTarget(null)}>
         <DialogContent>
           {editTarget && (
-            <CardEditForm
-              card={editTarget}
-              onSubmit={async (title, body) => {
-                await onEdit(editTarget.id, { title, body });
-                setEditTarget(null);
-              }}
-              onCancel={() => setEditTarget(null)}
-            />
+            <>
+              <DialogTitle>编辑卡片 {editTarget.id}</DialogTitle>
+              <CardEditForm
+                card={editTarget}
+                onSubmit={async (title, body) => {
+                  await onEdit(editTarget.id, { title, body });
+                  setEditTarget(null);
+                }}
+                onCancel={() => setEditTarget(null)}
+              />
+            </>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* 删除确认（与全局卡区同一模式） */}
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogTitle>删除卡片 {deleteTarget?.id}？</AlertDialogTitle>
+          <AlertDialogDescription>
+            「{deleteTarget?.title}」将从本对话删除（含 pin 状态）。此操作不可撤销。
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              if (deleteTarget) onDelete(deleteTarget.id);
+              setDeleteTarget(null);
+            }}>
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
