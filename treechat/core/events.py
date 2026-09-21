@@ -1,11 +1,12 @@
 """事件模型 —— 13 种事件 + 严格序列化。
 
 type 字符串（snake_case）与 dataclass 一一对应；from_dict 严格校验
-字段集（缺字段/多余字段/未知类型一律 EventFormatError），不做隐式补全。
+字段集（必填字段缺失/多余字段/未知类型一律 EventFormatError）；
+有默认值的字段允许缺席（旧会话文件零迁移重放）。
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, fields as dc_fields
+from dataclasses import MISSING, asdict, dataclass, field, fields as dc_fields
 from typing import Any
 
 from .errors import EventFormatError
@@ -22,6 +23,8 @@ class SessionMeta:
 class UserMsg:
     parent: int | None
     text: str
+    module: str = ""
+    """本轮实际使用的模式 key（空 = complete 时按会话 category 解析；旧文件缺省）。"""
 
 
 @dataclass
@@ -46,6 +49,10 @@ class CardCreate:
     instruction: str = ""
     created_at: str = ""
     """事件携带时间戳：重放派生的 Card 与实时构建逐字段相等（重放同一性）。"""
+    owner_seq: int | None = None
+    """节点卡归属轮 seq；None = 全局卡（旧文件缺省即全局）。"""
+    doc_key: str = ""
+    """模块文档标识（非空 = 文档版本节点卡）；用户卡恒为空串。"""
 
 
 @dataclass
@@ -123,7 +130,8 @@ def event_to_dict(seq: int, event: object) -> dict[str, Any]:
 
 
 def event_from_dict(d: dict[str, Any]) -> tuple[int, object]:
-    """dict → (seq, event)。严格校验字段集。"""
+    """dict → (seq, event)。必填字段缺失/多余字段/未知类型 → EventFormatError；
+    有默认值的字段允许缺席（旧会话文件零迁移重放）。"""
     if not isinstance(d, dict) or "seq" not in d or "type" not in d:
         raise EventFormatError(f"事件缺 seq/type 字段: {d!r}")
     type_name = d["type"]
@@ -131,8 +139,10 @@ def event_from_dict(d: dict[str, Any]) -> tuple[int, object]:
     if cls is None:
         raise EventFormatError(f"未知事件类型: {type_name!r} (seq={d['seq']})")
     names = {f.name for f in dc_fields(cls)}
+    required = {f.name for f in dc_fields(cls)
+                if f.default is MISSING and f.default_factory is MISSING}
     kwargs = {k: v for k, v in d.items() if k not in ("seq", "type")}
-    missing = names - kwargs.keys()
+    missing = required - kwargs.keys()
     if missing:
         raise EventFormatError(f"事件 {type_name} 缺字段 {sorted(missing)} (seq={d['seq']})")
     extra = kwargs.keys() - names

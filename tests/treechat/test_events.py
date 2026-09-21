@@ -52,3 +52,33 @@ def test_extra_field_rejected():
 def test_missing_seq_or_type_rejected():
     with pytest.raises(EventFormatError):
         event_from_dict({"type": "pin", "card_id": "c"})
+
+
+def test_old_card_create_without_optional_fields_loads():
+    """旧格式 card_create（无 owner_seq/doc_key）→ 缺省全局卡，重放零迁移。"""
+    seq, ev = event_from_dict({
+        "seq": 5, "type": "card_create", "card_id": "card_a", "title": "t",
+        "body": "b", "from_path": [2],
+    })
+    assert seq == 5
+    assert ev.owner_seq is None and ev.doc_key == ""
+
+
+def test_old_user_msg_without_module_loads():
+    seq, ev = event_from_dict({"seq": 2, "type": "user_msg", "parent": None, "text": "问"})
+    assert ev.module == ""
+
+
+def test_card_create_owner_fields_roundtrip():
+    ev = CardCreate(card_id="doc:tree@2", title="设计树", body="# 树", from_path=[],
+                    owner_seq=2, doc_key="tree")
+    d = event_to_dict(seq=9, event=ev)
+    assert d["owner_seq"] == 2 and d["doc_key"] == "tree"
+    seq, back = event_from_dict(d)
+    assert back == ev
+
+
+def test_user_msg_module_roundtrip():
+    ev = UserMsg(parent=None, text="问", module="grilling")
+    _seq, back = event_from_dict(event_to_dict(seq=3, event=ev))
+    assert back == ev
