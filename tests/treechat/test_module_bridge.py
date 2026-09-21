@@ -44,7 +44,7 @@ def test_build_spec_document_fields_resolve(tmp_path):
 
 
 def test_build_spec_document_fields_legacy_global_fallback(tmp_path):
-    """旧会话兼容：路径无节点版本时回退读旧全局 spec: 卡。"""
+    """旧会话兼容：路径无节点版本时回退读旧全局 spec: 卡（单份注入）。"""
     conv, u2 = _conv(tmp_path)
     conv.add_card("设计树", "# 用户手改的树", from_path=[], card_id="spec:tree")
     conv.add_card("CONTEXT 词表草稿", "**Order**: 订单", from_path=[], card_id="spec:glossary")
@@ -52,6 +52,7 @@ def test_build_spec_document_fields_legacy_global_fallback(tmp_path):
                       TokenWindowStrategy(budget_tokens=10_000))
     assert spec["tree_md"] == "# 用户手改的树"
     assert spec["glossary_md"] == "**Order**: 订单"
+    assert spec["history"].count("# 用户手改的树") == 0  # 仅经 tree_md 字段，不经 pinned 卡块
 
 
 def test_build_spec_pinned_injection_excludes_node_cards(tmp_path):
