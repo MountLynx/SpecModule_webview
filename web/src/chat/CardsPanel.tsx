@@ -45,7 +45,7 @@ export function CardsPanel(p: Props) {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-1.5 px-3 pb-2 pt-3">
         <Layers className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-[11px] font-semibold text-muted-foreground">卡片</span>
+        <span className="text-[11px] font-semibold text-muted-foreground">全局卡片</span>
         {conv && <span className="text-[12px] text-muted-foreground">{conv.name} · {conv.cards.length} 张</span>}
         <div className="ml-auto flex gap-1.5">
           <Button size="sm" variant="outline" className="h-7" disabled={!conv}
@@ -77,6 +77,9 @@ export function CardsPanel(p: Props) {
                         className={cn("shrink-0", c.pinned ? "text-primary" : "text-muted-foreground/50 hover:text-foreground")}>
                   {c.pinned ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}
                 </button>
+                {c.id.startsWith("spec:") && (
+                  <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-px text-[10px] text-amber-600">旧版文档</span>
+                )}
                 <span className="font-mono text-[11px] text-muted-foreground">{c.id}</span>
                 <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{c.title}</span>
               </div>
@@ -258,7 +261,7 @@ function GenerateForm(p: {
 
 // ── 编辑卡片 ──
 
-function CardEditForm(p: { card: Card; onSubmit: (title: string, body: string) => Promise<void>; onCancel: () => void }) {
+export function CardEditForm(p: { card: Card; onSubmit: (title: string, body: string) => Promise<void>; onCancel: () => void }) {
   const [title, setTitle] = useState(p.card.title);
   const [body, setBody] = useState(p.card.body);
   const [busy, setBusy] = useState(false);
