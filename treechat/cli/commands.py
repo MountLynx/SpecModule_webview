@@ -143,7 +143,8 @@ async def handle_command(session: TreeChatSession, config: TreeChatConfig,
                 say("（无卡片）")
             for c in cards:
                 pin_mark = "📌" if c in conv.cards.pinned_cards() else ""
-                say(f"[{c.id}] {c.title} {pin_mark}  来源 {c.from_path}")
+                owner = f"（节点 #{c.owner_seq}）" if c.owner_seq is not None else ""
+                say(f"[{c.id}] {c.title} {pin_mark}{owner}  来源 {c.from_path}")
         elif cmd == "pin":
             conv.pin(rest)
             say(f"已 pin {rest}")
