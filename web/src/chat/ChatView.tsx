@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { GitFork, Layers, Pencil } from "lucide-react";
-import type { Card, ConvState, Node, RunTrace } from "./types";
+import type { Card, ConvState, Mode, Node, RunTrace } from "./types";
 import { activePath } from "./types";
 import { cn } from "../lib/utils";
 import { Markdown } from "./Markdown";
@@ -18,6 +18,8 @@ interface Props {
   /** 树图导航聚焦轮（滚动 + 闪烁高亮） */
   focusSeq: number | null;
   cardSeqs: number[];
+  /** 模式清单（逐轮模式徽章显示名解析） */
+  modes: Mode[];
   onToggleCardSeq: (seq: number) => void;
   onRenameTurn: (seq: number, label: string) => Promise<void>;
   onBranchFrom: (seq: number) => void;
@@ -31,7 +33,8 @@ export function ChatView(p: Props) {
   const path = activePath(conv);
   const cardsBySeq = new Map<number, Card[]>();
   for (const c of conv.cards)
-    for (const s of c.fromPath) cardsBySeq.set(s, [...(cardsBySeq.get(s) ?? []), c]);
+    if (c.ownerSeq === null)
+      for (const s of c.fromPath) cardsBySeq.set(s, [...(cardsBySeq.get(s) ?? []), c]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -67,7 +70,7 @@ export function ChatView(p: Props) {
         )}
         {path.map((n) => (
           <TurnItem key={n.seq} node={n} cards={cardsBySeq.get(n.seq) ?? []}
-                    flash={flash === n.seq} cardSeqs={p.cardSeqs}
+                    flash={flash === n.seq} cardSeqs={p.cardSeqs} modes={p.modes}
                     onToggleCardSeq={p.onToggleCardSeq}
                     onRenameTurn={p.onRenameTurn} onBranchFrom={p.onBranchFrom} />
         ))}
@@ -100,11 +103,12 @@ export function ChatView(p: Props) {
 }
 
 /** 一轮 = 用户气泡 + 助手回复 + 轮末操作条（悬停浮现） */
-function TurnItem({ node, cards, flash, cardSeqs, onToggleCardSeq, onRenameTurn, onBranchFrom }: {
+function TurnItem({ node, cards, flash, cardSeqs, modes, onToggleCardSeq, onRenameTurn, onBranchFrom }: {
   node: Node;
   cards: Card[];
   flash: boolean;
   cardSeqs: number[];
+  modes: Mode[];
   onToggleCardSeq: (seq: number) => void;
   onRenameTurn: (seq: number, label: string) => Promise<void>;
   onBranchFrom: (seq: number) => void;
@@ -116,14 +120,14 @@ function TurnItem({ node, cards, flash, cardSeqs, onToggleCardSeq, onRenameTurn,
          className={cn("group flex flex-col gap-3 rounded-panel transition-shadow",
                        flash && "ring-1 ring-primary/50")}>
       <div className="flex flex-col items-end">
-        <MessageMeta seq={node.seq} label={node.label} cards={cards} align="right" />
+        <MessageMeta seq={node.seq} label={node.label} modes={modes} cards={cards} align="right" />
         <div className="max-w-[min(85%,36rem)] whitespace-pre-wrap break-words rounded-panel rounded-br-lg bg-secondary/70 px-3.5 py-2 text-[15px] leading-6">
           {node.input}
         </div>
       </div>
       {node.output !== null && (
         <div className="flex w-full flex-col">
-          <MessageMeta model={node.model} cards={[]} align="left" />
+          <MessageMeta model={node.model} module={node.module} modes={modes} cards={[]} align="left" />
           <Markdown text={node.output} />
         </div>
       )}
@@ -162,18 +166,22 @@ function TurnItem({ node, cards, flash, cardSeqs, onToggleCardSeq, onRenameTurn,
   );
 }
 
-function MessageMeta({ seq, label, model, cards, align }: {
+function MessageMeta({ seq, label, model, module, modes, cards, align }: {
   seq?: number;
   label?: string;
   model?: string;
+  module?: string;
+  modes: Mode[];
   cards: Card[];
   align: "left" | "right";
 }) {
+  const modeName = module ? modes.find((m) => m.key === module)?.displayName ?? module : null;
   return (
     <div className={cn("flex items-center gap-1.5 pb-1 text-[11px] text-muted-foreground/70",
                       align === "right" && "flex-row-reverse")}>
       {seq !== undefined && <span className="font-mono">#{seq}</span>}
       {label && <span className="rounded-full bg-primary/10 px-1.5 py-px text-foreground/80">{label}</span>}
+      {modeName && <span className="rounded-full border border-border px-1.5 py-px">{modeName}</span>}
       {model && <span className="truncate">{model}</span>}
       {cards.map((c) => (
         <span key={c.id} title={`${c.id} · ${c.title}`}
@@ -243,11 +251,11 @@ function RunBlock({ run, onOpenCards }: { run: RunTrace; onOpenCards: () => void
             {n.outcome === "ok" && n.refs.length > 0 && (
               <div className="flex flex-wrap gap-1 pt-1">
                 {n.refs.map((r) => (
-                  <button key={r.cardId} onClick={onOpenCards}
+                  <button key={r.docKey} onClick={onOpenCards}
                           className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-px text-[12px]
                                      text-muted-foreground hover:bg-foreground/[0.05]">
                     <FileText className="h-3 w-3 shrink-0" />
-                    {r.title} → 已更新到卡片
+                    {r.title} → 已挂到 #{run.userSeq}
                   </button>
                 ))}
               </div>

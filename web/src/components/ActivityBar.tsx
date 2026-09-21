@@ -1,16 +1,15 @@
 // 最左活动栏（VSCode 式，结构移植自 TreeChat webui）：图标 = 侧边栏页签切换。
-// 二期页签制语义：chat/tree/cards 中 tree/cards 是「页签配套功能」（内容随激活
+// 二期页签制语义：chat/tree 中 tree 是「页签配套功能」（内容随激活
 // chat 页签切换）；chat/modules/runs/settings 是「全局功能」（不随页签变）。
 import type { ComponentType } from "react";
-import { Boxes, GitFork, Layers, List, MessageSquare, Settings } from "lucide-react";
+import { Boxes, GitFork, List, MessageSquare, Settings } from "lucide-react";
 import { cn } from "../lib/utils";
 
-export type Tab = "chat" | "tree" | "cards" | "modules" | "runs" | "settings";
+export type Tab = "chat" | "tree" | "modules" | "runs" | "settings";
 
 const TABS: { key: Tab; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { key: "chat", label: "对话", icon: MessageSquare },
   { key: "tree", label: "对话树（随激活对话页签）", icon: GitFork },
-  { key: "cards", label: "卡片（随激活对话页签）", icon: Layers },
   { key: "modules", label: "模块库", icon: Boxes },
   { key: "runs", label: "运行历史", icon: List },
 ];

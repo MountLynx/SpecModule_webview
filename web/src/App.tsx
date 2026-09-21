@@ -1,5 +1,5 @@
 // App 壳层（二期·页签制）：顶部页签栏——模块库固定页签 + chat 会话 / run 视图
-// 动态页签多实例共存。活动栏六页签：tree/cards 为「页签配套功能」（内容随激活
+// 动态页签多实例共存。活动栏五页签：tree 为「页签配套功能」（内容随激活
 // chat 页签切换）；chat/modules/runs/settings 为「全局功能」（不随页签变，只变
 // 列表选中高亮）。会话状态按 sid 多实例（一期 TreeChat webui 为单活动会话）。
 // 不引 router（useState 范式，两仓库一致）。
@@ -7,7 +7,7 @@
 // 写入运行迹（后台页签的会话持续流式更新是多实例共存的题中之义，无需 active-tab 守卫）；
 // 模式 = 对话型 module（创建选择/徽章显示名/设置只读，全走 GET /api/modes 动态清单）。
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Boxes, MessageSquare } from "lucide-react";
+import { Boxes, MessageSquare, PanelRight } from "lucide-react";
 import {
   fetchRuns,
   postControl,
@@ -17,7 +17,7 @@ import {
 } from "./api";
 import * as chatApi from "./chat/api";
 import type { ConvState, Health, Mode, RunTrace, SessionSummary, SseEvent } from "./chat/types";
-import { CardsPanel } from "./chat/CardsPanel";
+import { CardsSidebar } from "./chat/CardsSidebar";
 import { ChatListPanel } from "./chat/ChatListPanel";
 import { ChatView } from "./chat/ChatView";
 import { Composer } from "./chat/Composer";
@@ -49,6 +49,8 @@ interface ChatUi {
   focusSeq: number | null;
   cardSeqs: number[];
   cardGenOpen: boolean;
+  /** 右侧卡片栏开合（按会话记忆） */
+  cardsOpen: boolean;
   busy: boolean;
   error: string | null;
   /** 回合运行迹（SSE 流式瞬态；done/error 后保留收口，新回合即清） */
@@ -56,7 +58,7 @@ interface ChatUi {
 }
 const EMPTY_CHAT_UI: ChatUi = {
   leafMode: false, focusSeq: null,
-  cardSeqs: [], cardGenOpen: false, busy: false, error: null, run: null,
+  cardSeqs: [], cardGenOpen: false, cardsOpen: true, busy: false, error: null, run: null,
 };
 
 /** 动态页签：kind + 原始 key（sid / runId）；页签 id = `${kind}:${key}` */
@@ -283,13 +285,14 @@ export default function App() {
     }
   }, [updUi]);
 
-  const send = async (sid: string, text: string) => {
+  const send = async (sid: string, text: string, module?: string) => {
     const ui = getChatUi(sid);
     if (ui.busy) return;
     const leaf = ui.leafMode || undefined;
     updUi(sid, { busy: true, error: null, leafMode: false, focusSeq: null, run: null });
     try {
-      await chatApi.turn(sid, { text, leaf }, (ev) => handleEvent(sid, ev));
+      if (module) await chatApi.setCategory(sid, module).catch(() => {});
+      await chatApi.turn(sid, { text, leaf, module }, (ev) => handleEvent(sid, ev));
       refreshSessions();
     } catch (e) {
       updUi(sid, { error: e instanceof Error ? e.message : String(e) });
@@ -421,23 +424,8 @@ export default function App() {
             })}
             onGenerateCard={() => {
               if (!activeChatSid) return;
-              updUi(activeChatSid, { cardGenOpen: true });
-              setSidebarTab("cards"); // 卡片生成对话框挂在 CardsPanel，须切过去才可见
+              updUi(activeChatSid, { cardGenOpen: true, cardsOpen: true });
             }}
-          />
-        )}
-        {sidebarTab === "cards" && (
-          <CardsPanel
-            conv={activeConv}
-            genOpen={activeUi.cardGenOpen}
-            onGenOpenChange={(o) => activeChatSid && updUi(activeChatSid, { cardGenOpen: o })}
-            cardSeqs={activeUi.cardSeqs}
-            onClearCardSeqs={() => activeChatSid && updUi(activeChatSid, { cardSeqs: [] })}
-            onCreateCard={async (req) => { if (activeChatSid) await createCard(activeChatSid, req); }}
-            onPin={async (cid, pinned) => { if (activeChatSid) await mutateConv(activeChatSid, (s) => chatApi.pinCard(s, cid, pinned)); }}
-            onEditCard={async (cid, body) => { if (activeChatSid) await mutateConv(activeChatSid, (s) => chatApi.editCard(s, cid, body)); }}
-            onDeleteCard={async (cid) => { if (activeChatSid) await mutateConv(activeChatSid, (s) => chatApi.deleteCard(s, cid)); }}
-            onImportCard={async (body) => { if (activeChatSid) await mutateConv(activeChatSid, (s) => chatApi.importCard(s, body)); }}
           />
         )}
         {sidebarTab === "modules" && (
@@ -474,56 +462,90 @@ export default function App() {
             )
           ) : activeChatSid ? (
             activeConv ? (
-              <div className="flex h-full flex-col">
-                <header className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
-                  <span className="truncate text-[13px] font-semibold">{activeConv.name}</span>
-                  {activeConv.category && (
-                    <span className="rounded-full bg-foreground/[0.07] px-2 py-0.5 text-[11px] text-muted-foreground">
-                      {modes.find((m) => m.key === activeConv.category)?.displayName ?? activeConv.category}
+              <div className="flex h-full min-h-0">
+                <div className="flex h-full min-w-0 flex-1 flex-col">
+                  <header className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
+                    <span className="truncate text-[13px] font-semibold">{activeConv.name}</span>
+                    {activeConv.category && (
+                      <span className="rounded-full bg-foreground/[0.07] px-2 py-0.5 text-[11px] text-muted-foreground">
+                        {modes.find((m) => m.key === activeConv.category)?.displayName ?? activeConv.category}
+                      </span>
+                    )}
+                    {activeConv.archived && (
+                      <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                        已归档
+                      </span>
+                    )}
+                    {activeConv.system && (
+                      <span title={`system: ${activeConv.system}`}
+                            className="max-w-[30%] truncate text-[11px] text-muted-foreground/70">
+                        system: {activeConv.system}
+                      </span>
+                    )}
+                    <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
+                      指针 #{activeConv.pointer ?? "—"}
+                      {health && !health.llmConfigured && " · LLM 未配置"}
                     </span>
-                  )}
-                  {activeConv.archived && (
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                      已归档
-                    </span>
-                  )}
-                  {activeConv.system && (
-                    <span title={`system: ${activeConv.system}`}
-                          className="max-w-[30%] truncate text-[11px] text-muted-foreground/70">
-                      system: {activeConv.system}
-                    </span>
-                  )}
-                  <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
-                    指针 #{activeConv.pointer ?? "—"}
-                    {health && !health.llmConfigured && " · LLM 未配置"}
-                  </span>
-                </header>
-                <ChatView
-                  conv={activeConv}
-                  busy={activeUi.busy}
-                  error={activeUi.error}
-                  run={activeUi.run}
-                  focusSeq={activeUi.focusSeq}
-                  cardSeqs={activeUi.cardSeqs}
-                  onToggleCardSeq={(seq) => activeChatSid && updUi(activeChatSid, {
-                    cardSeqs: activeUi.cardSeqs.includes(seq)
-                      ? activeUi.cardSeqs.filter((s) => s !== seq)
-                      : [...activeUi.cardSeqs, seq],
-                  })}
-                  onRenameTurn={async (seq, label) => {
-                    if (activeChatSid) await mutateConv(activeChatSid, (s) => chatApi.renameNode(s, seq, label));
-                  }}
-                  onBranchFrom={(seq) => activeChatSid && navigateTurn(activeChatSid, seq)}
-                  onRetry={() => activeChatSid && retry(activeChatSid)}
-                  onOpenCards={() => setSidebarTab("cards")}
-                />
-                <Composer
-                  leafMode={activeUi.leafMode}
-                  busy={activeUi.busy}
-                  disabled={false}
-                  onToggleLeaf={() => activeChatSid && updUi(activeChatSid, { leafMode: !activeUi.leafMode })}
-                  onSend={(text) => activeChatSid && send(activeChatSid, text)}
-                />
+                    <button title="卡片栏" onClick={() => updUi(activeChatSid, { cardsOpen: !activeUi.cardsOpen })}
+                            className="ml-1 shrink-0 rounded-control p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                      <PanelRight className="h-4 w-4" />
+                    </button>
+                  </header>
+                  <ChatView
+                    conv={activeConv}
+                    busy={activeUi.busy}
+                    error={activeUi.error}
+                    run={activeUi.run}
+                    focusSeq={activeUi.focusSeq}
+                    cardSeqs={activeUi.cardSeqs}
+                    modes={modes}
+                    onToggleCardSeq={(seq) => activeChatSid && updUi(activeChatSid, {
+                      cardSeqs: activeUi.cardSeqs.includes(seq)
+                        ? activeUi.cardSeqs.filter((s) => s !== seq)
+                        : [...activeUi.cardSeqs, seq],
+                    })}
+                    onRenameTurn={async (seq, label) => {
+                      if (activeChatSid) await mutateConv(activeChatSid, (s) => chatApi.renameNode(s, seq, label));
+                    }}
+                    onBranchFrom={(seq) => activeChatSid && navigateTurn(activeChatSid, seq)}
+                    onRetry={() => activeChatSid && retry(activeChatSid)}
+                    onOpenCards={() => updUi(activeChatSid, { cardsOpen: true })}
+                  />
+                  <Composer
+                    leafMode={activeUi.leafMode}
+                    busy={activeUi.busy}
+                    disabled={false}
+                    modes={modes}
+                    category={activeConv.category}
+                    onToggleLeaf={() => activeChatSid && updUi(activeChatSid, { leafMode: !activeUi.leafMode })}
+                    onSwitchMode={(key) => activeChatSid && mutateConv(activeChatSid, (s) => chatApi.setCategory(s, key))}
+                    onSend={(text, module) => activeChatSid && send(activeChatSid, text, module)}
+                  />
+                </div>
+                {activeUi.cardsOpen && (
+                  <aside className="flex h-full w-80 shrink-0 flex-col border-l bg-sidebar">
+                    <CardsSidebar
+                      conv={activeConv}
+                      onNavigate={(seq) => navigateTurn(activeChatSid, seq)}
+                      onCollapse={() => updUi(activeChatSid, { cardsOpen: false })}
+                      onPromoteCard={async (c) => {
+                        await mutateConv(activeChatSid, (s) => chatApi.importCard(s, {
+                          title: c.title, body: c.body,
+                          instruction: `升自节点卡 ${c.id}`,
+                        }));
+                      }}
+                      genOpen={activeUi.cardGenOpen}
+                      onGenOpenChange={(o) => updUi(activeChatSid, { cardGenOpen: o })}
+                      cardSeqs={activeUi.cardSeqs}
+                      onClearCardSeqs={() => updUi(activeChatSid, { cardSeqs: [] })}
+                      onCreateCard={async (req) => { await createCard(activeChatSid, req); }}
+                      onPin={async (cid, pinned) => { await mutateConv(activeChatSid, (s) => chatApi.pinCard(s, cid, pinned)); }}
+                      onEditCard={async (cid, body) => { await mutateConv(activeChatSid, (s) => chatApi.editCard(s, cid, body)); }}
+                      onDeleteCard={async (cid) => { await mutateConv(activeChatSid, (s) => chatApi.deleteCard(s, cid)); }}
+                      onImportCard={async (body) => { await mutateConv(activeChatSid, (s) => chatApi.importCard(s, body)); }}
+                    />
+                  </aside>
+                )}
               </div>
             ) : (
               <EmptyState
