@@ -666,7 +666,10 @@ def build_spec(module: ConversationalModule, conv, user_seq: int, window) -> dic
     全局 pinned 卡注入 system；节点卡不进 system——文档经模块自己的 spec 字段进
     prompt（防双份注入）；旧会话的 spec:* 全局卡由 doc_body 回退读取。
     """
-    pinned = [c for c in conv.cards.pinned_cards() if c.owner_seq is None]
+    pinned = [c for c in conv.cards.pinned_cards()
+              if c.owner_seq is None and not c.id.startswith("spec:")]
+    # ^ 修订（Task 4+5 规格审查）：legacy spec:* 卡经文档字段通道（doc_body 回退）注入，
+    #   不作为 pinned 块注入——防旧会话双份注入（实现见 commit c23f85b）
     ctx = assemble(conv.path_to(user_seq), conv.system, pinned, strategy=window)
     lines: list[str] = []
     if ctx.system:
