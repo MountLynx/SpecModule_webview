@@ -884,16 +884,41 @@ Expected: FAIL（send 无 module 参数 / 文档卡还是 spec:tree / done 不�
 （函数体末行改为 `return self.conversation.add_card(out["title"], out["body"], seqs,
 instruction, owner_seq=owner_seq)`，其余不变。）
 
+⑤ **`Conversation.add_card` 显式 card_id 冲突预检**（Task 3 质量审查 fast-follow，2026-09-21 修订）：
+显式 `card_id` 重复目前在 `store.append` **之后**才被 `CardRegistry.add` 抛出——毒事件向量，
+且确定性 ID（`doc:<key>@<seq>`）使碰撞概率高于随机 ID。`treechat/core/conversation.py`
+的 `add_card` 在归属校验之后、`store.append` 之前增：
+
+```python
+        if card_id is not None and card_id in self.cards.ids():
+            raise TreeChatError(f"卡片 id 重复: {card_id}")
+```
+
+对应测试（Step 1 一并追加到 test_conversation.py）：
+
+```python
+def test_add_card_duplicate_explicit_id_raises_without_event(tmp_path):
+    """显式 card_id 重复：预检拒绝、不落事件（毒事件防线，Task 3 质量审查 fast-follow）。"""
+    conv = Conversation.create(tmp_path / "s6.jsonl", name="t")
+    conv.add_card("第一张", "b", from_path=[], card_id="card_fixed")
+    with pytest.raises(TreeChatError, match="卡片 id 重复"):
+        conv.add_card("第二张", "b", from_path=[], card_id="card_fixed")
+    assert len(conv.store.load()) == 2  # meta + 第一张，重复未落盘
+```
+
+（session `complete_outcome` 调用点的「if cid in conv.cards.ids(): edit_card」守卫保留
+——崩溃残留复用 ID 走 edit 语义，与预检不冲突：预检拦的是会写出重复事件的路径。）
+
 - [ ] **Step 4: 跑测试确认通过**
 
-Run: `uv run pytest tests/treechat/test_session.py -q`
+Run: `uv run pytest tests/treechat/test_session.py tests/treechat/test_conversation.py -q`
 Expected: 全 PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add treechat/session.py tests/treechat/test_session.py
-git commit -m "feat(treechat): 逐轮模式记录/retry 锁定原模式 + 文档节点卡落盘 + done 自动切直答"
+git add treechat/session.py treechat/core/conversation.py tests/treechat/test_session.py tests/treechat/test_conversation.py
+git commit -m "feat(treechat): 逐轮模式记录/retry 锁定原模式 + 文档节点卡落盘 + done 自动切直答 + add_card id 冲突预检"
 ```
 
 ---
