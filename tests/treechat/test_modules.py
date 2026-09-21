@@ -137,7 +137,7 @@ def test_grilling_def_metadata():
     assert g.node_order == ["TreeUpdate", "FrontierFormat", "Resolution"]
     assert g.message_field == "questions_md"
     assert g.display_fields == {"FrontierFormat": "questions_md", "Resolution": "glossary_md"}
-    assert {d.card_id for d in g.documents} == {"spec:tree", "spec:glossary"}
-    assert g.node_docs["TreeUpdate"] == ["spec:tree"]
+    assert {d.key for d in g.documents} == {"tree", "glossary"}
+    assert g.node_docs["TreeUpdate"] == ["tree"]
     assert g.spec_schema == {"brief": "str", "history": "str",
                              "tree_md": "str", "glossary_md": "str"}

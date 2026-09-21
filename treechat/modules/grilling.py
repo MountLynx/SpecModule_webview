@@ -158,8 +158,8 @@ GRILLING = ConversationalModule(
     node_labels={"TreeUpdate": "更新设计树", "FrontierFormat": "整理前沿问题",
                  "Resolution": "裁决与词表更新"},
     display_fields={"FrontierFormat": "questions_md", "Resolution": "glossary_md"},
-    node_docs={"TreeUpdate": ["spec:tree"], "Resolution": ["spec:glossary"]},
-    documents=[DocumentDef(field="tree_md", card_id="spec:tree", title="设计树"),
-               DocumentDef(field="glossary_md", card_id="spec:glossary",
+    node_docs={"TreeUpdate": ["tree"], "Resolution": ["glossary"]},
+    documents=[DocumentDef(key="tree", field="tree_md", title="设计树"),
+               DocumentDef(key="glossary", field="glossary_md",
                            title="CONTEXT 词表草稿")],
 )

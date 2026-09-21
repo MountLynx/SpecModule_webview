@@ -13,10 +13,10 @@ from typing import Any, Callable
 
 @dataclass(frozen=True)
 class DocumentDef:
-    """模块维护的一份共同文档 → 一张固定 ID 的 pinned 卡片（spec §3.3/§5）。"""
+    """模块维护的一份共同文档 → 每轮产出一张节点卡（doc_key 沿路径取版本）。"""
 
-    field: str      # 归一化输出中的文档字段名
-    card_id: str    # spec 卡片固定 ID（"spec:*" 前缀；pinned 注入时被 bridge 过滤）
+    key: str      # 文档标识（节点卡 doc_key；上下文沿路径解析的锚）
+    field: str    # 归一化输出中的文档字段名
     title: str
 
 
