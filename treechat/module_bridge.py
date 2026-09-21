@@ -18,7 +18,6 @@ from module_harness.infra.events import (
 from tickflow import Failure
 
 from .core.context import assemble
-from .core.errors import TreeChatError
 from .modules.base import ConversationalModule, FieldStreamShaper
 
 OnEvent = Callable[[dict], None]
@@ -33,16 +32,17 @@ class TurnOutcome:
     usage: dict[str, int] = dc_field(default_factory=dict)
     done: bool = False
     documents: list[tuple[str, str, str]] = dc_field(default_factory=list)
-    """[(card_id, title, body)] —— session 落盘为固定 ID 的 pinned 卡片。"""
+    """[(doc_key, title, body)] —— session 落盘为该轮的文档版本节点卡。"""
 
 
 def build_spec(module: ConversationalModule, conv, user_seq: int, window) -> dict[str, Any]:
-    """组装 spec：brief 原话 + history 裁剪转录 + 文档字段（spec 卡片正文）。
+    """组装 spec：brief 原话 + history 裁剪转录 + 文档字段（沿路径最近节点卡版本）。
 
-    TokenWindowStrategy 的裁剪职责在此接管（窗口选择沿用现策略，出口为转录）；
-    spec:* 卡片不进转录（文档经模块自己的 spec 字段进 prompt，防双份注入）。
+    TokenWindowStrategy 的裁剪职责在此接管（窗口选择沿用现策略，出口为转录）。
+    全局 pinned 卡注入 system；节点卡不进 system——文档经模块自己的 spec 字段进
+    prompt（防双份注入）；旧会话的 spec:* 全局卡由 doc_body 回退读取。
     """
-    pinned = [c for c in conv.cards.pinned_cards() if not c.id.startswith("spec:")]
+    pinned = [c for c in conv.cards.pinned_cards() if c.owner_seq is None]
     ctx = assemble(conv.path_to(user_seq), conv.system, pinned, strategy=window)
     lines: list[str] = []
     if ctx.system:
@@ -51,10 +51,7 @@ def build_spec(module: ConversationalModule, conv, user_seq: int, window) -> dic
         lines.append(f"[{m['role']}] {m['content']}")
     spec: dict[str, Any] = {"brief": ctx.current, "history": "\n\n".join(lines)}
     for doc in module.documents:
-        try:
-            spec[doc.field] = conv.cards.get(doc.card_id).body
-        except TreeChatError:
-            spec[doc.field] = ""
+        spec[doc.field] = conv.doc_body(doc.key, user_seq)
     return spec
 
 
@@ -85,7 +82,7 @@ async def run_turn(module: ConversationalModule, conv, user_seq: int, *,
     # None = 节点未声明 display_fields，token 原样透传（设计性 passthrough）
     failures: list[str] = []
     usage_total: dict[str, int] = {}
-    doc_titles = {d.card_id: d.title for d in module.documents}
+    doc_titles = {d.key: d.title for d in module.documents}
 
     def on_started(e) -> None:
         shapers[e.node] = module.shaper(e.node)
@@ -105,7 +102,7 @@ async def run_turn(module: ConversationalModule, conv, user_seq: int, *,
 
     def on_completed(e) -> None:
         _merge_usage(usage_total, e.usage)
-        refs = [{"type": "card", "cardId": cid, "title": doc_titles.get(cid, cid)}
+        refs = [{"type": "doc", "docKey": cid, "title": doc_titles.get(cid, cid)}
                 for cid in module.node_docs.get(e.node, [])]
         on_event({"event": "node_end", "key": e.node, "outcome": "ok", "refs": refs})
 
@@ -142,7 +139,7 @@ async def run_turn(module: ConversationalModule, conv, user_seq: int, *,
     value = firings[-1].output
     if not isinstance(value, dict):
         raise LLMError(f"模块输出不是 JSON 对象: {value!r}")
-    documents = [(d.card_id, d.title, str(value.get(d.field, "") or ""))
+    documents = [(d.key, d.title, str(value.get(d.field, "") or ""))
                  for d in module.documents if str(value.get(d.field, "") or "").strip()]
     message_text = (str(value.get(module.message_field, "") or "")
                     if module.message_field else "")

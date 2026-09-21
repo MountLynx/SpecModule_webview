@@ -6,6 +6,7 @@ from dataclasses import replace
 import pytest
 from llm import LLMError
 
+from treechat.core.cards import doc_card_id
 from treechat.core.conversation import Conversation
 from treechat.core.context import TokenWindowStrategy
 from treechat.module_bridge import build_spec, run_turn
@@ -31,24 +32,39 @@ def test_build_spec_common_fields(tmp_path):
     assert "第二问" not in spec["history"]
 
 
-def test_build_spec_injects_document_fields_from_spec_cards(tmp_path):
+def test_build_spec_document_fields_resolve(tmp_path):
+    """文档字段：路径上节点卡版本优先（grilling 主路径）。"""
     conv, u2 = _conv(tmp_path)
-    conv.set_category("grilling")
+    conv.add_card("设计树", "# 树-节点版", from_path=[], owner_seq=2, doc_key="tree",
+                  card_id=doc_card_id("tree", 2))
+    spec = build_spec(BUILT_IN["grilling"], conv, u2,
+                      TokenWindowStrategy(budget_tokens=10_000))
+    assert spec["tree_md"] == "# 树-节点版"
+    assert spec["glossary_md"] == ""  # 路径无版本且无 legacy → 空串
+
+
+def test_build_spec_document_fields_legacy_global_fallback(tmp_path):
+    """旧会话兼容：路径无节点版本时回退读旧全局 spec: 卡。"""
+    conv, u2 = _conv(tmp_path)
     conv.add_card("设计树", "# 用户手改的树", from_path=[], card_id="spec:tree")
     conv.add_card("CONTEXT 词表草稿", "**Order**: 订单", from_path=[], card_id="spec:glossary")
-    spec = build_spec(BUILT_IN["grilling"], conv, u2, TokenWindowStrategy())
+    spec = build_spec(BUILT_IN["grilling"], conv, u2,
+                      TokenWindowStrategy(budget_tokens=10_000))
     assert spec["tree_md"] == "# 用户手改的树"
     assert spec["glossary_md"] == "**Order**: 订单"
 
 
-def test_build_spec_missing_cards_empty_and_excluded_from_history(tmp_path):
+def test_build_spec_pinned_injection_excludes_node_cards(tmp_path):
+    """全局卡 pin 注入照旧；节点卡不进 system（文档走模块 spec 字段，防双份注入）。"""
     conv, u2 = _conv(tmp_path)
-    conv.add_card("普通卡", "普通正文", from_path=[], instruction="")  # 用户卡：进转录
-    conv.add_card("设计树", "# 树", from_path=[], card_id="spec:tree")  # spec 卡：不进
-    spec = build_spec(BUILT_IN["grilling"], conv, u2, TokenWindowStrategy())
-    assert spec["glossary_md"] == ""                      # 无卡片 → 空串
-    assert "普通正文" in spec["history"]                   # 用户 pinned 卡照旧进转录
-    assert "# 树" not in spec["history"]                  # spec 卡不入转录（防双份注入）
+    conv.add_card("全局参考", "全局正文", from_path=[])           # 全局卡，默认 pinned
+    conv.add_card("设计树", "# 树-节点版", from_path=[], owner_seq=2,
+                  doc_key="tree", card_id=doc_card_id("tree", 2))
+    spec = build_spec(BUILT_IN["grilling"], conv, u2,
+                      TokenWindowStrategy(budget_tokens=10_000))
+    assert "全局正文" in spec["history"]        # system 进 history 首段
+    assert spec["history"].count("# 树-节点版") == 0  # 节点卡不入转录
+    assert spec["tree_md"] == "# 树-节点版"
 
 
 def _run(module, conv, seq, client, on_event=lambda e: None):
@@ -125,8 +141,8 @@ def test_run_turn_grilling_documents_and_events(tmp_path, fake_module):
     assert out.message_text == "❓ Q1" and out.done is False
     assert out.usage == {"input_tokens": 3, "output_tokens": 6}  # 三次 LLM 调用聚合
     assert {c: (t, b) for c, t, b in out.documents} == {
-        "spec:tree": ("设计树", "# 树-v1"),
-        "spec:glossary": ("CONTEXT 词表草稿", "**Order**: 订单"),
+        "tree": ("设计树", "# 树-v1"),
+        "glossary": ("CONTEXT 词表草稿", "**Order**: 订单"),
     }
     # 三节点事件序列；FrontierFormat 事件经整形器解码（token 拼接 = questions_md 内容）
     starts = [e["key"] for e in events if e["event"] == "node_start"]
@@ -135,8 +151,8 @@ def test_run_turn_grilling_documents_and_events(tmp_path, fake_module):
                               if e["event"] == "token" and e["key"] == "FrontierFormat")
     assert frontier_tokens == "❓ Q1"  # 原始 JSON 不上线（流整形）
     ends = {e["key"]: e["refs"] for e in events if e["event"] == "node_end"}
-    assert ends["TreeUpdate"] == [{"type": "card", "cardId": "spec:tree", "title": "设计树"}]
-    assert ends["Resolution"] == [{"type": "card", "cardId": "spec:glossary",
+    assert ends["TreeUpdate"] == [{"type": "doc", "docKey": "tree", "title": "设计树"}]
+    assert ends["Resolution"] == [{"type": "doc", "docKey": "glossary",
                                    "title": "CONTEXT 词表草稿"}]
 
 
@@ -152,7 +168,7 @@ def test_run_turn_document_message_field_is_declared_by_module(tmp_path, fake_mo
     module = replace(BUILT_IN["grilling"], message_field="")
     out = _run(module, conv, u2, fake_module)
     assert out.message_text == ""  # 空声明 = 无消息；旧 bridge 会硬取到 "❓ Q1"
-    assert [card_id for card_id, _, _ in out.documents] == ["spec:tree", "spec:glossary"]
+    assert [key for key, _, _ in out.documents] == ["tree", "glossary"]
 
 
 def test_run_turn_llm_failure_raises(tmp_path, fake_module):
