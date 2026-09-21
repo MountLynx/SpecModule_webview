@@ -532,3 +532,11 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   误读成分支）+ LANE_W 22→26。旧会话实测（test直答 12 消息 → 6 轮）全链路走查通过。
   设计：docs/superpowers/specs/2026-09-20-chat-turn-node-ux-design.md；实施计划：
   docs/superpowers/plans/2026-09-20-chat-turn-node-ux.md
+- 2026-09-21 卡片双层作用域 + 会话内模式切换（specs/2026-09-21-card-scopes-mode-switch-design）：
+  card_create 增 owner_seq/doc_key（节点卡/全局卡双层，旧文件零迁移）；grilling 文档逐轮
+  版本化挂轮（doc:<key>@<seq>），上下文沿路径取最近祖先版本——分支取分支点时点版本、
+  叶子空文档（legacy spec:* 卡回退）、模式往返不丢卡；会话内模式切换（Composer chip +
+  斜杠快速切换 + UserMsg 逐轮记录 + retry 锁定原模式 + done 自动切直答）；前端卡片迁入
+  右侧边栏（节点卡区版本链/升为全局/导出/删除确认 + 全局卡区按 ownerSeq 过滤），cards
+  活动栏页签退役。审查后排：RunBlock 文档 ref 片仅开栏不定位到目标轮；斜杠切换+发送时
+  模式 chip 回显滞后一个回合；引擎 unpin 对节点卡静默成功（与 pin 的显式拒绝不对称）。
