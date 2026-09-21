@@ -319,6 +319,7 @@ def test_doc_body_branch_takes_fork_point_version(tmp_path):
     ub = conv.append_user("分支提问")
     assert conv.nodes[ub].parent == u1
     assert conv.doc_body("tree", ub) == "# 树-v1"
+    assert conv.doc_body("tree", u2) == "# 树-v1"   # 目标节点自身持卡时也必须解析到祖先版本
 
 
 def test_doc_body_leaf_empty(tmp_path):

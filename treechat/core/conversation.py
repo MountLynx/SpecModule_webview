@@ -303,9 +303,10 @@ class Conversation:
     def doc_body(self, doc_key: str, seq: int) -> str:
         """文档正文解析：路径上最近祖先的同 doc_key 节点卡 → 旧全局 spec: 卡回退 → 空串。
 
+        doc_key 须为模块文档键（非空；空串会命中用户挂节点的卡）。
         路径不含 seq 自身——文档由本轮的回答产出，提问时只有祖先版本可用。
-        三条推论（测试钉死）：分支 = 从 #K 开新轮拿 #K 时点版本；叶子 = 路径空 → 无文档；
-        中间直答轮不产生版本也不打断回溯（模式往返不丢卡）。
+        三条推论（测试钉死）：分支 = 从 #K 开新轮拿 #K 时点版本；叶子 = 路径空 → 仅剩
+        legacy 回退；中间直答轮不产生版本也不打断回溯（模式往返不丢卡）。
         """
         versions = {c.owner_seq: c.body for c in self.cards.all_cards()
                     if c.doc_key == doc_key and c.owner_seq is not None}
