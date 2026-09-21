@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from ..config import TreeChatConfig
 from ..core.errors import TreeChatError
 from ..llm_bridge import LLMError
-from ..modules import BUILT_IN, resolve_module
+from ..modules import BUILT_IN
 from ..session import card_markdown, list_library_cards, list_sessions
 from .registry import LLMErrorUnconfigured, SessionRegistry, session_path
 
@@ -62,6 +62,8 @@ class TurnBody(BaseModel):
     """显式分支目标（历史节点 seq）；缺省 = 当前指针。"""
     leaf: bool = False
     """无上下文叶子提问（优先于 parent）。"""
+    module: str = ""
+    """本轮使用的模式 key；空 = 会话 category。"""
 
 
 class CardBody(BaseModel):
@@ -71,6 +73,8 @@ class CardBody(BaseModel):
     end: int | None = None
     seqs: list[int] = []
     """seqs 模式的显式节点列表（树图选点提炼；空列表 → 400）。"""
+    ownerSeq: int | None = None
+    """提炼结果挂到该轮 = 节点卡；None = 全局卡。"""
 
 
 class PinBody(BaseModel):
@@ -86,6 +90,8 @@ class CardImportBody(BaseModel):
     title: str
     body: str
     instruction: str = ""
+    ownerSeq: int | None = None
+    """同 CardBody.ownerSeq：挂到该轮 = 节点卡；None = 全局卡。"""
 
 
 # ── 序列化 ──
@@ -104,13 +110,15 @@ def _state(sid: str, s: Any) -> dict[str, Any]:
         "unanswered": conv.unanswered(),
         "nodes": [
             {"seq": n.seq, "parent": n.parent, "input": n.input,
-             "output": n.output, "label": n.label, "model": n.model}
+             "output": n.output, "label": n.label, "model": n.model,
+             "module": n.module}
             for n in conv.nodes.values()
         ],
         "cards": [
             {"id": c.id, "title": c.title, "body": c.body,
              "fromPath": [conv.legacy.get(seq, seq) for seq in c.from_path],
              "instruction": c.instruction, "createdAt": c.created_at,
+             "ownerSeq": c.owner_seq, "docKey": c.doc_key,
              "pinned": conv.cards.is_pinned(c.id)}
             for c in conv.cards.all_cards()
         ],
@@ -290,13 +298,13 @@ def create_app(config: TreeChatConfig | None = None, *,
                             seq = s.conversation.unanswered()
                         else:
                             if body.leaf:
-                                seq = s.send(body.text, leaf=True)
+                                seq = s.send(body.text, leaf=True,
+                                             module=body.module)
                             else:
                                 if body.parent is not None:
                                     s.conversation.set_pointer(body.parent)
-                                seq = s.send(body.text)
-                        module = resolve_module(s.conversation.category,
-                                                config.mode_modules)
+                                seq = s.send(body.text, module=body.module)
+                        module = s.module_for(seq)
                         queue.put_nowait(_sse("start", {
                             "userSeq": seq, "module": module.key,
                             "nodes": [{"key": k, "label": module.node_label(k)}
@@ -370,7 +378,8 @@ def create_app(config: TreeChatConfig | None = None, *,
                 seqs = body.seqs
             else:
                 seqs = None  # 默认当前分支段
-            await s.make_card(body.instruction, from_seqs=seqs)
+            await s.make_card(body.instruction, from_seqs=seqs,
+                              owner_seq=body.ownerSeq)
         return await _run(sid, work)
 
     @app.post("/api/sessions/{sid}/cards/import")
@@ -380,7 +389,8 @@ def create_app(config: TreeChatConfig | None = None, *,
             s = _open(sid)
             try:
                 s.conversation.add_card(body.title, body.body,
-                                        from_path=[], instruction=body.instruction)
+                                        from_path=[], instruction=body.instruction,
+                                        owner_seq=body.ownerSeq)
             except TreeChatError as exc:
                 raise HTTPException(400, str(exc)) from exc
             return _state(sid, s)

@@ -173,7 +173,7 @@ def test_turn_sse_sequence_and_state(api):
     assert next(n for n in state["nodes"] if n["seq"] == 2)["output"] == "直答正文"
 
 
-def test_turn_sse_grilling_refreshes_spec_cards(api):
+def test_turn_sse_grilling_writes_node_doc_cards(api):
     sid = "g"
     api.post("/api/sessions", json={"name": sid, "category": "grilling"})
     api.fake.responses = [
@@ -190,17 +190,32 @@ def test_turn_sse_grilling_refreshes_spec_cards(api):
     tokens = "".join(d["text"] for e, d in events
                      if e == "token" and d["key"] == "FrontierFormat")
     assert tokens == "❓ Q1"
-    # node_end 透传不失真：TreeUpdate ok 帧带卡片链接 refs
+    # node_end 透传不失真：TreeUpdate ok 帧带文档链接 refs
     assert any(e == "node_end" and d["key"] == "TreeUpdate"
                and d["outcome"] == "ok" and d["refs"] for e, d in events)
     state = events[-1][1]["state"]
-    cards = {c["id"]: c for c in state["cards"]}
-    assert cards["spec:tree"]["title"] == "设计树"
-    assert cards["spec:glossary"]["pinned"] is True
+    cards = {c["id"]: c for c in state["cards"] if c["docKey"]}
+    assert set(cards) == {"doc:tree@3", "doc:glossary@3"}
+    assert cards["doc:tree@3"]["title"] == "设计树"
+    assert cards["doc:tree@3"]["ownerSeq"] == 3 and cards["doc:tree@3"]["docKey"] == "tree"
+    assert cards["doc:glossary@3"]["ownerSeq"] == 3
+    assert all(c["pinned"] is False for c in cards.values())  # 节点卡不 pin
     assert next(n for n in state["nodes"] if n["seq"] == 3)["input"] == "做个订单系统"
-    # meta=1 → category=2, user=3, spec 卡片 4/5（卡片也是事件）→ assistant=6 回填轮 3
+    # 未显式传 module → 轮上记录留空（complete 时按会话 category 解析，start 帧已验 grilling）
+    assert next(n for n in state["nodes"] if n["seq"] == 3)["module"] == ""
     assert next(n for n in state["nodes"] if n["seq"] == 3)["output"] == "❓ Q1"
     assert events[-1][1]["done"] is False
+
+
+def test_turn_records_explicit_module(api):
+    """turn 带 module：轮上记录 + start 帧用该模式（无需改会话 category）。"""
+    api.post("/api/sessions", json={"name": "m1", "category": "grilling"})
+    events = sse_events(api, "/api/sessions/m1/turn",
+                        json={"text": "插一轮直答", "module": "direct"})
+    assert events[0][1]["module"] == "direct"
+    state = api.get("/api/sessions/m1").json()
+    assert state["category"] == "grilling"  # 会话默认未被 turn 改动
+    assert state["nodes"][0]["module"] == "direct"
 
 
 def test_turn_sse_llm_failure_error_frame_then_retry(api):
@@ -343,6 +358,27 @@ def test_card_edit_delete_export_import(api):
     assert api.delete(f"/api/sessions/{sid}/cards/{cid}").status_code == 400
     assert api.patch(f"/api/sessions/{sid}/cards/{cid}",
                      json={"title": "t", "body": "b"}).status_code == 400
+
+
+def test_card_create_with_owner_seq(api):
+    api.post("/api/sessions", json={"name": "c1"})
+    events = sse_events(api, "/api/sessions/c1/turn", json={"text": "问"})
+    seq = events[-1][1]["state"]["pointer"]
+    st = api.post("/api/sessions/c1/cards",
+                  json={"instruction": "总结", "mode": "seqs", "seqs": [seq],
+                        "ownerSeq": seq}).json()
+    card = next(c for c in st["cards"] if c["ownerSeq"] == seq)
+    assert card["docKey"] == "" and card["pinned"] is False
+
+
+def test_card_import_with_owner_seq(api):
+    api.post("/api/sessions", json={"name": "i1"})
+    events = sse_events(api, "/api/sessions/i1/turn", json={"text": "问"})
+    seq = events[-1][1]["state"]["pointer"]
+    st = api.post("/api/sessions/i1/cards/import",
+                  json={"title": "挂节点的卡", "body": "正文", "ownerSeq": seq}).json()
+    card = next(c for c in st["cards"] if c["title"] == "挂节点的卡")
+    assert card["ownerSeq"] == seq
 
 
 def test_cards_library_across_sessions(api):
