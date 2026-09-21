@@ -1,4 +1,4 @@
-"""事件模型：roundtrip + 严格校验（无隐式行为）。"""
+"""事件模型：roundtrip + 校验（必填字段严格校验；有默认值字段允许缺席，旧文件兼容）。"""
 import pytest
 
 from treechat.core.errors import EventFormatError
@@ -82,3 +82,8 @@ def test_user_msg_module_roundtrip():
     ev = UserMsg(parent=None, text="问", module="grilling")
     _seq, back = event_from_dict(event_to_dict(seq=3, event=ev))
     assert back == ev
+
+
+def test_old_assistant_msg_without_usage_loads():
+    seq, ev = event_from_dict({"seq": 4, "type": "assistant_msg", "parent": 2, "text": "ok"})
+    assert ev.usage == {}

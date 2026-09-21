@@ -1,7 +1,7 @@
 """CardRegistry：默认 pinned、pin/unpin、未知 id 显式报错。"""
 import pytest
 
-from treechat.core.cards import Card, CardRegistry
+from treechat.core.cards import Card, CardRegistry, doc_card_id
 from treechat.core.errors import TreeChatError
 
 
@@ -65,3 +65,22 @@ def test_update_and_remove_unknown_raise():
         reg.update("card_nope", "t", "b")
     with pytest.raises(TreeChatError, match="未知卡片"):
         reg.remove("card_nope")
+
+
+def test_node_card_pin_rejected():
+    reg = CardRegistry()
+    reg.add(Card(id="doc:tree@2", title="设计树", body="# 树",
+                 owner_seq=2, doc_key="tree"), pinned=False)
+    with pytest.raises(TreeChatError, match="节点卡不支持 pin"):
+        reg.pin("doc:tree@2")
+    assert reg.pinned_cards() == []
+
+
+def test_doc_card_id_deterministic():
+    assert doc_card_id("tree", 12) == "doc:tree@12"
+    assert doc_card_id("glossary", 3) == "doc:glossary@3"
+
+
+def test_card_is_node_property():
+    assert Card(id="doc:tree@2", title="t", body="b", owner_seq=2).is_node
+    assert not Card(id="card_x", title="t", body="b").is_node
