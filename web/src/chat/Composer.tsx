@@ -72,6 +72,7 @@ export function Composer(p: Props) {
     : null;
 
   const current = p.modes.find((m) => m.key === p.category);
+  const effectiveCategory = p.category || "direct";   // "" = 直答缺省（后端/创建对话框/grilling 收敛均以空串表示）
 
   // 面板条目：图标 + 文本间接层 + 当前会话默认模式徽章
   const entries: PaletteEntry[] = p.modes.map((m) => ({
@@ -80,7 +81,7 @@ export function Composer(p: Props) {
     title: MODE_TEXT_OVERRIDES[m.key]?.title ?? m.displayName,
     description: MODE_TEXT_OVERRIDES[m.key]?.description ?? m.description,
     icon: MODE_ICONS[m.key] ?? CircleHelp,
-    badge: m.key === p.category ? "当前" : undefined,
+    badge: m.key === effectiveCategory ? "当前" : undefined,
   }));
 
   // 面板状态机（触发/过滤/选中/关闭重开/最近使用）；第二触发符（如 # 节点引用）在 triggers 按形状追加
@@ -176,7 +177,7 @@ export function Composer(p: Props) {
             <DropdownMenuContent align="start">
               {p.modes.map((m) => (
                 <DropdownMenuItem key={m.key}
-                                  className={cn(m.key === p.category && "bg-accent")}
+                                  className={cn(m.key === effectiveCategory && "bg-accent")}
                                   onSelect={() => p.onSwitchMode(m.key)}>
                   <span>{m.displayName}</span>
                   <span className="pl-1.5 font-mono text-[11px] text-muted-foreground">/{m.key}</span>
@@ -204,7 +205,8 @@ export function Composer(p: Props) {
                   if (e.key === "ArrowUp") { e.preventDefault(); palette.move(-1); return; }
                   if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
                     e.preventDefault();
-                    complete(palette.items[palette.selectedIndex]);
+                    const item = palette.items[palette.selectedIndex];
+                    if (item) complete(item);
                     return;
                   }
                   if (e.key === "Escape") { e.preventDefault(); palette.dismiss(); return; }
