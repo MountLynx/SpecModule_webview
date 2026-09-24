@@ -110,12 +110,10 @@ export function useSlashPalette(p: {
   const dismiss = useCallback(() => setDismissed(true), []);
   const notifyTextEdited = useCallback(() => setDismissed(false), []);
   const recordRecent = useCallback((id: string) => {
-    setRecents((prev) => {
-      const next = [id, ...prev.filter((x) => x !== id)].slice(0, RECENTS_LIMIT);
-      storeRecents(next);
-      return next;
-    });
-  }, []);
+    const next = [id, ...recents.filter((x) => x !== id)].slice(0, RECENTS_LIMIT);
+    setRecents(next);
+    storeRecents(next);
+  }, [recents]);
 
   return {
     /** 面板是否展示（有查询且有候选） */
