@@ -662,3 +662,16 @@ git commit -m "docs: roadmap 变更日志——斜杠指令面板完整升级（
 1. **规格覆盖**：键盘导航（Task 3 Step 1 onKeyDown）、Escape 关闭/输入重开（hook dismissed + notifyTextEdited）、悬停同步（onMouseEnter）、form 外点击关闭（Task 3 useEffect）、listbox 无障碍（Task 2 role/aria）、图标/标题/描述/等宽命令（Task 2 渲染 + Task 3 entries）、「当前」徽章（Task 3 badge）、「最近」徽章+排序+持久化（hook recents）、视口测量 above/below/maxHeight（Task 2 useLayoutEffect）、滚动跟随（Task 2 第二个 useLayoutEffect）、8 条截断（PALETTE_LIMIT）、IME 保护（isComposing）、触发符扩展点（SlashTrigger 形状 + 注释）、i18n 间接层（MODE_TEXT_OVERRIDES）、发送路径/未知命令提示保留（Task 3 保留核对表）、验收命令（各 Step 2 + Task 4）——逐条对应，无缺口。
 2. **占位符扫描**：无 TBD/TODO/"适当处理"；所有代码步骤含完整代码。
 3. **类型一致性**：`PaletteEntry`/`PaletteItem`/`SlashTrigger` 在 Task 1 定义、Task 2/3 引用一致；`palette.move/dismiss/notifyTextEdited/recordRecent/setSelectedIndex/items/selectedIndex/open` hook 返回与 Composer 用法一致；`anchorRef: RefObject<HTMLElement>` 与 `useRef<HTMLDivElement>(null)` 兼容（readonly current 协变）；lucide 图标赋 `ComponentType<{className?: string}>` 已探针验证（tsc exit 0）。
+
+## 实施偏差记录（2026-09-24 执行期，审查驱动）
+
+计划内代码块与落地代码在以下三处有意偏差（均为审查修复、更安全方向），其余逐字一致：
+
+- `useSlashPalette.ts` `recordRecent`：副作用 `storeRecents` 从 setState updater 内移到 updater
+  外（React 纯净契约——StrictMode 双调用/concurrent 重放下 updater 必须纯）；`recents` 入
+  useCallback 依赖。commit d84cc79
+- `SlashPalette.tsx` 测量 useLayoutEffect 依赖补 `items.length`（规格「条数变化时重算」，对齐
+  nanobot 参照的 filteredSlashCommands.length）——commit 8b579ae
+- `Composer.tsx`：「当前」徽章与下拉高亮以 `effectiveCategory = p.category || "direct"` 归一化
+  （空串 = 直答缺省，跨栈约定；否则徽章在默认会话永不显示）——commit 298f613；同 commit 在
+  onKeyDown Tab/Enter 补全分支加空项守卫 `if (item)`

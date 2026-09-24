@@ -565,3 +565,12 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   chip 与按钮 title（图标 Leaf→Sprout）+ treechat CLI `/leaf` 帮助与提示文案（test_cli
   断言同步）；标识符与 API 参数（`leaf`/`leafMode`/`onToggleLeaf`/`/leaf` 命令名）不动。
   278 passed + `npm run build` 通过。
+- 2026-09-24 斜杠指令面板完整升级（参考 nanobot ThreadComposer）：`web/src/chat/` 新增
+  `useSlashPalette` 状态机 hook（触发符注册扩展点/过滤排序/选中态/最近使用 localStorage）+
+  `SlashPalette` 展示面板（listbox 无障碍/图标+描述+徽章/视口自适应 above/below/滚动跟随），
+  Composer 键盘全路径导航（↑↓ 循环/Tab/Enter 补全/Escape 关闭后续输入重开）、「当前」徽章、
+  静态覆盖文本间接层；面板打开时 Enter=补全（行为变化，已认可）；指令集不扩展、后端零改动。
+  子代理双审查（规格合规+代码质量）修复三处：recordRecent 副作用移出 setState updater、
+  面板测量补 items.length 依赖、「当前」徽章归一化直答缺省+补全空项守卫。设计
+  docs/superpowers/specs/2026-09-24-slash-command-palette-design.md，计划
+  docs/superpowers/plans/2026-09-24-slash-command-palette.md
