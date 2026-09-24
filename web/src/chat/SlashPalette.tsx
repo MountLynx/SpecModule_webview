@@ -77,7 +77,7 @@ export function SlashPalette({ items, selectedIndex, anchorRef, onHover, onChoos
       window.removeEventListener("resize", update);
       document.removeEventListener("scroll", update, true);
     };
-  }, [anchorRef]);
+  }, [anchorRef, items.length]);
 
   // 选中项滚动跟随（键盘移动时保持可见）
   useLayoutEffect(() => {
