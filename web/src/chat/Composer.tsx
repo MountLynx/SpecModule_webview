@@ -1,10 +1,14 @@
-import { ChevronDown, SendHorizontal, Slash, Sprout, X } from "lucide-react";
-import { useRef, useState } from "react";
+import {
+  ChevronDown, CircleHelp, Flame, MessageSquare, SendHorizontal, Slash, Sprout, X,
+} from "lucide-react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import type { Mode } from "./types";
 import { cn } from "../lib/utils";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
+import { SlashPalette } from "./SlashPalette";
+import { useSlashPalette, type PaletteEntry, type PaletteItem } from "./useSlashPalette";
 
 interface Props {
   leafMode: boolean;
@@ -34,15 +38,25 @@ function matchMode(token: string, modes: Mode[]): Mode | null {
   );
 }
 
+/** 模式图标静态映射（未知 key 回落通用图标；lucide-react 已核对可用） */
+const MODE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
+  direct: MessageSquare,
+  grilling: Flame,
+};
+
+/** 文本间接层（i18n key 层适配）：静态覆盖映射（现为空表）→ 后端 displayName/description 回落；接 i18n 时只换这里 */
+const MODE_TEXT_OVERRIDES: Record<string, { title?: string; description?: string }> = {};
+
 /** 输入区：模式 chip（切换会话默认）+ 新起点模式 chip + 斜杠快速切换 + 发送 */
 export function Composer(p: Props) {
   const [text, setText] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // 斜杠判定用原始首字符（trim 后判定会在多行消息第二行以 / 开头时误判）
   const slash = text.startsWith("/");
-  // 候选（命令面板）：斜杠后、未出现空白前的 token 前缀过滤
   const partial = slash ? text.slice(1) : "";
+  // 前缀候选：仅供未知命令提示条沿用旧判定（有前缀候选时不提示）
   const candidates = slash && !partial.includes(" ")
     ? p.modes.filter((m) => m.key.startsWith(partial.toLowerCase())
                           || m.displayName.includes(partial))
@@ -58,6 +72,42 @@ export function Composer(p: Props) {
     : null;
 
   const current = p.modes.find((m) => m.key === p.category);
+
+  // 面板条目：图标 + 文本间接层 + 当前会话默认模式徽章
+  const entries: PaletteEntry[] = p.modes.map((m) => ({
+    id: m.key,
+    command: `/${m.key}`,
+    title: MODE_TEXT_OVERRIDES[m.key]?.title ?? m.displayName,
+    description: MODE_TEXT_OVERRIDES[m.key]?.description ?? m.description,
+    icon: MODE_ICONS[m.key] ?? CircleHelp,
+    badge: m.key === p.category ? "当前" : undefined,
+  }));
+
+  // 面板状态机（触发/过滤/选中/关闭重开/最近使用）；第二触发符（如 # 节点引用）在 triggers 按形状追加
+  const palette = useSlashPalette({
+    triggers: [{ char: "/", at: "line-start" }],
+    text,
+    entries,
+    disabled: p.busy || p.disabled,
+  });
+
+  // 补全：填入 "/key "（含尾随空格 → 查询失效面板关闭）+ 记录最近使用
+  const complete = (item: PaletteItem) => {
+    palette.recordRecent(item.id);
+    setText(`${item.command} `);
+    taRef.current?.focus();
+  };
+
+  // form 外按下即关面板（document 捕获；面板与输入区都在面板容器内，不受影响）
+  useEffect(() => {
+    if (!palette.open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.target instanceof Node && panelRef.current?.contains(e.target)) return;
+      palette.dismiss();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [palette.open, palette.dismiss]);
 
   const send = () => {
     const t = text.trim();
@@ -101,10 +151,17 @@ export function Composer(p: Props) {
             )}
           </div>
         )}
-        <div className={cn(
-          "flex items-end gap-2 rounded-panel border bg-card p-2 shadow-sm transition-colors focus-within:ring-1 focus-within:ring-ring",
-          p.disabled && "opacity-60",
-        )}>
+        <div ref={panelRef}
+             className={cn(
+               "relative flex items-end gap-2 rounded-panel border bg-card p-2 shadow-sm transition-colors focus-within:ring-1 focus-within:ring-ring",
+               p.disabled && "opacity-60",
+             )}>
+          {/* 斜杠命令面板（键盘导航 + 视口自适应，量度锚 = 本容器） */}
+          {palette.open && (
+            <SlashPalette items={palette.items} selectedIndex={palette.selectedIndex}
+                          anchorRef={panelRef} onHover={palette.setSelectedIndex}
+                          onChoose={complete} />
+          )}
           {/* 模式 chip：点击下拉切换会话默认模式 */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -128,19 +185,6 @@ export function Composer(p: Props) {
             </DropdownMenuContent>
           </DropdownMenu>
           <div className="relative min-w-0 flex-1">
-            {/* 斜杠命令面板（建议列表，点击补全） */}
-            {slash && candidates.length > 0 && (
-              <div className="absolute bottom-full left-0 z-10 mb-1 w-56 rounded-panel border bg-card p-1 shadow-md">
-                {candidates.map((m) => (
-                  <button key={m.key}
-                          onClick={() => { setText(`/${m.key} `); taRef.current?.focus(); }}
-                          className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-[13px] hover:bg-accent">
-                    <span className="font-mono text-[11px] text-muted-foreground">/{m.key}</span>
-                    <span>{m.displayName}</span>
-                  </button>
-                ))}
-              </div>
-            )}
             <textarea
               ref={taRef}
               rows={1}
@@ -149,11 +193,23 @@ export function Composer(p: Props) {
               placeholder={p.disabled ? "先选择或创建一个对话" : "输入消息…（/ 切换模式，Enter 发送，Shift+Enter 换行）"}
               onChange={(e) => {
                 setText(e.target.value);
+                palette.notifyTextEdited();   // 继续输入即重开面板（Escape 关闭后）
                 e.target.style.height = "auto";
                 e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
+                // 面板打开：导航/补全优先（IME 组合中不劫持按键）
+                if (palette.open && !e.nativeEvent.isComposing) {
+                  if (e.key === "ArrowDown") { e.preventDefault(); palette.move(1); return; }
+                  if (e.key === "ArrowUp") { e.preventDefault(); palette.move(-1); return; }
+                  if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                    e.preventDefault();
+                    complete(palette.items[palette.selectedIndex]);
+                    return;
+                  }
+                  if (e.key === "Escape") { e.preventDefault(); palette.dismiss(); return; }
+                }
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   send();
                 }
