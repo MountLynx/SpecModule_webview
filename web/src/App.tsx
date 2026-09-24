@@ -291,7 +291,11 @@ export default function App() {
     const leaf = ui.leafMode || undefined;
     updUi(sid, { busy: true, error: null, leafMode: false, focusSeq: null, run: null });
     try {
-      if (module) await chatApi.setCategory(sid, module).catch(() => {});
+      // 斜杠切换：setCategory 返回的新 ConvState 即时写回——模式 chip 本轮就回显新模式
+      //（不等回合结束 refreshSessions），失败不阻断回合（turn 自带 module，本轮模式不变）
+      if (module) await chatApi.setCategory(sid, module)
+        .then((st) => setConvs((prev) => ({ ...prev, [sid]: st })))
+        .catch(() => {});
       await chatApi.turn(sid, { text, leaf, module }, (ev) => handleEvent(sid, ev));
       refreshSessions();
     } catch (e) {
@@ -509,7 +513,7 @@ export default function App() {
                     }}
                     onBranchFrom={(seq) => activeChatSid && navigateTurn(activeChatSid, seq)}
                     onRetry={() => activeChatSid && retry(activeChatSid)}
-                    onOpenCards={() => updUi(activeChatSid, { cardsOpen: true })}
+                    onLocateDoc={(seq) => updUi(activeChatSid, { cardsOpen: true, focusSeq: seq })}
                   />
                   <Composer
                     leafMode={activeUi.leafMode}

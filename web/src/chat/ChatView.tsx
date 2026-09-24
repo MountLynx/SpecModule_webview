@@ -24,7 +24,8 @@ interface Props {
   onRenameTurn: (seq: number, label: string) => Promise<void>;
   onBranchFrom: (seq: number) => void;
   onRetry: () => void;
-  onOpenCards: () => void;
+  /** 文档 ref 片点击：开卡片栏 + 聚焦挂载轮（滚动闪烁） */
+  onLocateDoc: (seq: number) => void;
 }
 
 /** 主区聊天视图：活跃路径（path_to 指针）轮次流；节点 = 轮次（一问一答） */
@@ -74,7 +75,7 @@ export function ChatView(p: Props) {
                     onToggleCardSeq={p.onToggleCardSeq}
                     onRenameTurn={p.onRenameTurn} onBranchFrom={p.onBranchFrom} />
         ))}
-        {p.run && <RunBlock run={p.run} onOpenCards={p.onOpenCards} />}
+        {p.run && <RunBlock run={p.run} onLocateDoc={p.onLocateDoc} />}
         {p.busy && (
           <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
             <span className="flex gap-1">
@@ -222,7 +223,7 @@ function Dot({ delay }: { delay: string }) {
 }
 
 /** 回合运行块：节点预告 → 逐 token 全文 → 收口（文档节点折叠为卡片链接片）。 */
-function RunBlock({ run, onOpenCards }: { run: RunTrace; onOpenCards: () => void }) {
+function RunBlock({ run, onLocateDoc }: { run: RunTrace; onLocateDoc: (seq: number) => void }) {
   return (
     <div className="rounded-panel border border-border/60 bg-sidebar px-3 py-2">
       <div className="pb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -251,7 +252,7 @@ function RunBlock({ run, onOpenCards }: { run: RunTrace; onOpenCards: () => void
             {n.outcome === "ok" && n.refs.length > 0 && (
               <div className="flex flex-wrap gap-1 pt-1">
                 {n.refs.map((r) => (
-                  <button key={r.docKey} onClick={onOpenCards}
+                  <button key={r.docKey} onClick={() => onLocateDoc(run.userSeq)}
                           className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-px text-[12px]
                                      text-muted-foreground hover:bg-foreground/[0.05]">
                     <FileText className="h-3 w-3 shrink-0" />

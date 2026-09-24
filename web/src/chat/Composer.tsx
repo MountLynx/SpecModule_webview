@@ -1,4 +1,4 @@
-import { ChevronDown, Leaf, SendHorizontal, Slash, X } from "lucide-react";
+import { ChevronDown, SendHorizontal, Slash, Sprout, X } from "lucide-react";
 import { useRef, useState } from "react";
 import type { Mode } from "./types";
 import { cn } from "../lib/utils";
@@ -34,7 +34,7 @@ function matchMode(token: string, modes: Mode[]): Mode | null {
   );
 }
 
-/** 输入区：模式 chip（切换会话默认）+ 叶子模式 chip + 斜杠快速切换 + 发送 */
+/** 输入区：模式 chip（切换会话默认）+ 新起点模式 chip + 斜杠快速切换 + 发送 */
 export function Composer(p: Props) {
   const [text, setText] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -88,8 +88,8 @@ export function Composer(p: Props) {
           <div className="flex flex-wrap items-center gap-1.5 pb-1.5 text-[12px] text-muted-foreground">
             {p.leafMode && (
               <span className="flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5">
-                <Leaf className="h-3 w-3" /> 叶子模式（无上下文）
-                <button title="取消叶子模式" onClick={p.onToggleLeaf}>
+                <Sprout className="h-3 w-3" /> 新起点（无上下文）
+                <button title="取消新起点模式" onClick={p.onToggleLeaf}>
                   <X className="h-3 w-3 hover:text-foreground" />
                 </button>
               </span>
@@ -162,14 +162,14 @@ export function Composer(p: Props) {
             />
           </div>
           <button
-            title="叶子模式：下一条为无上下文提问"
+            title="新起点模式：下一条为无上下文提问"
             onClick={p.onToggleLeaf}
             className={cn(
               "flex h-8 w-8 shrink-0 items-center justify-center rounded-control transition-colors",
               p.leafMode ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground",
             )}
           >
-            <Leaf className="h-4 w-4" />
+            <Sprout className="h-4 w-4" />
           </button>
           <button
             title="发送"

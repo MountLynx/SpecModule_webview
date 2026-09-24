@@ -23,7 +23,7 @@ _HELP = """\
   /tree                 树视图（* 指针 ◆ 主干末端 [卡片]）
   /branch <seq>         指针挪到历史节点 → 下一条输入长新枝
   /trunk                指针跳回主干末端
-  /leaf                 下一条输入 = 无上下文叶子提问
+  /leaf                 下一条输入 = 无上下文新起点提问
   /retry                对最后一个悬而未答轮次重新调 LLM
   /card [all|<a>-<b>|指令]   提炼卡片（默认当前分支段）
   /cards；/card show <id>；/card edit <id> [新标题]；/card delete <id>
@@ -126,7 +126,7 @@ async def handle_command(session: TreeChatSession, config: TreeChatConfig,
                 say(f"指针 → 主干末端 #{end}")
         elif cmd == "leaf":
             state["leaf_next"] = True
-            say("下一条输入 = 无上下文叶子提问")
+            say("下一条输入 = 无上下文新起点提问")
         elif cmd == "retry":
             seq = conv.unanswered()
             if seq is None:

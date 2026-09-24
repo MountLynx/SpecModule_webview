@@ -540,3 +540,28 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   右侧边栏（节点卡区版本链/升为全局/导出/删除确认 + 全局卡区按 ownerSeq 过滤），cards
   活动栏页签退役。审查后排：RunBlock 文档 ref 片仅开栏不定位到目标轮；斜杠切换+发送时
   模式 chip 回显滞后一个回合；引擎 unpin 对节点卡静默成功（与 pin 的显式拒绝不对称）。
+- 2026-09-23 审查后排三项清账：① 引擎 unpin 对节点卡改显式拒绝（`cards.py` 与 pin 对称
+  抛 `TreeChatError`，测试钉住；webapp/CLI 既有 TreeChatError 映射直接透出，重放防线——
+  节点卡恒不 pin，正常事件流不产生节点卡 unpin）；② 斜杠切换+发送时 `send()` 把
+  setCategory 返回的 ConvState 即时写回本地（此前丢弃，chip 要等回合结束 refreshSessions
+  才追上）——模式 chip 本轮即回显新模式，写 category 失败仍不阻断回合（turn 自带 module）；
+  ③ RunBlock 文档 ref 片点击从「只开栏」升级为携带 `run.userSeq` 的定位回调（prop 更名
+  onOpenCards→onLocateDoc）：开卡片栏 + 复用 focusSeq 滚动闪烁机制聚焦挂载轮。基线
+  278 passed + `npm run build` 通过。
+- 2026-09-23 对话树布局重排（treelayout v2，修连线重叠）：行序从「seq 时间序」改为
+  「距起点远近」——每棵树 BFS 深度分块（同块内按父序+seq 稳定），多棵树按根 seq 拼接、
+  树间半行间隔；晚发生但从早期节点分出的分支落在与原同级分支相邻的行（此前沉底导致
+  母边横穿全图，与其它分支曲线在共用控制带精确重合——重叠的直接根源）。lane 占用从
+  seq 空间改行空间（首子继承/新枝只向右/lane 被家族从起点行占到首子链末端行，防 BFS
+  行序下竖线穿别家节点）；曲线控制带由布局清障选定并随 `Edge.ctrl` 下发渲染端（默认
+  跨行中点，穿点或与既有线中部并行贴近时上下搜清障带，贴共享端点竖直列的短共线豁免
+  ——git 分叉常态）；行标签统一缩进到最右 lane 右侧（gutter），深 lane 竖线不再压浅
+  lane 行文字（BFS 行序下链条不再行连续的必然要求）。每行仍只放一个节点。验证：布局
+  不变量红→绿（用户样例 + 300 随机树全过：行号双射/父先于子/树内深度单调/线不穿点/
+  线线不重合）+ `npm run build` + 浏览器实测（test 会话 6 节点：#23 与 #7 同级相邻，
+  两条曲线控制带 y=66/132 彻底分离）。
+- 2026-09-23 「叶子」措辞退役 → 「新起点」：parent=null 节点实为独立分支起点（可自带
+  子树，布局按独立树处理），「叶子」是图论误称。改动仅用户可见文案——Web 图例/Composer
+  chip 与按钮 title（图标 Leaf→Sprout）+ treechat CLI `/leaf` 帮助与提示文案（test_cli
+  断言同步）；标识符与 API 参数（`leaf`/`leafMode`/`onToggleLeaf`/`/leaf` 命令名）不动。
+  278 passed + `npm run build` 通过。

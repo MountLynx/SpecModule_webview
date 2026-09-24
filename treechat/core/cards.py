@@ -54,7 +54,9 @@ class CardRegistry:
         self._pinned.add(card_id)
 
     def unpin(self, card_id: str) -> None:
-        self._require(card_id)
+        card = self._require(card_id)
+        if card.is_node:
+            raise TreeChatError(f"节点卡不支持 unpin: {card_id}（与 pin 对称——节点卡恒不 pin）")
         self._pinned.discard(card_id)
 
     def update(self, card_id: str, title: str, body: str) -> None:

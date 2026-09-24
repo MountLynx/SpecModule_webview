@@ -76,6 +76,15 @@ def test_node_card_pin_rejected():
     assert reg.pinned_cards() == []
 
 
+def test_node_card_unpin_rejected():
+    """unpin 对节点卡与 pin 对称：显式拒绝而非静默 no-op。"""
+    reg = CardRegistry()
+    reg.add(Card(id="doc:tree@2", title="设计树", body="# 树",
+                 owner_seq=2, doc_key="tree"), pinned=False)
+    with pytest.raises(TreeChatError, match="节点卡不支持 unpin"):
+        reg.unpin("doc:tree@2")
+
+
 def test_registry_add_node_card_ignores_pinned_true():
     reg = CardRegistry()
     reg.add(Card(id="doc:tree@2", title="t", body="b", owner_seq=2), pinned=True)

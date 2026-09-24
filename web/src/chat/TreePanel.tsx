@@ -55,7 +55,7 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
           <span className="inline-block h-2 w-2 rotate-45 bg-primary/40" /> 主干末端
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full border border-dashed border-muted-foreground" /> 叶子
+          <span className="inline-block h-2 w-2 rounded-full border border-dashed border-muted-foreground" /> 新起点
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
@@ -69,7 +69,7 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
                 e.curve ? (
                   <path
                     key={i}
-                    d={`M ${e.from.x} ${e.from.y} C ${e.from.x} ${(e.from.y + e.to.y) / 2}, ${e.to.x} ${(e.from.y + e.to.y) / 2}, ${e.to.x} ${e.to.y}`}
+                    d={`M ${e.from.x} ${e.from.y} C ${e.from.x} ${e.ctrl}, ${e.to.x} ${e.ctrl}, ${e.to.x} ${e.to.y}`}
                     fill="none"
                     stroke="hsl(var(--muted-foreground))"
                     strokeOpacity={0.45}
@@ -134,7 +134,7 @@ function TreePanelInner(p: Props & { conv: ConvState }) {
                     "absolute left-0 right-0 flex cursor-pointer items-center gap-1.5 py-1 pr-2 text-[12px] hover:bg-foreground/[0.04]",
                     isPointer && "bg-foreground/[0.06]",
                   )}
-                  style={{ top: pos.row * ROW_H, height: ROW_H, paddingLeft: pos.x + DOT_R + 8 }}
+                  style={{ top: pos.y - ROW_H / 2, height: ROW_H, paddingLeft: layout.gutter }}
                 >
                   <span className="font-mono text-[11px] text-muted-foreground">#{pos.seq}</span>
                   {node.label && (

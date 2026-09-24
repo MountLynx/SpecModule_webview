@@ -127,7 +127,7 @@ def test_repl_branch_trunk_leaf_flow(tmp_path, fake_module, fake_card_client):
     assert conv.nodes[6].parent is None       # 叶子根
     assert conv.pointer == 6                  # /trunk 后又轮转到叶子轮末端
     assert any("新枝" in line for line in out)
-    assert any("叶子" in line for line in out)
+    assert any("新起点" in line for line in out)
 
 
 def test_repl_tree_command(tmp_path, fake_module, fake_card_client):
