@@ -1,45 +1,9 @@
-# SpecModule Web 可视化（可视化形态）
+# 已完成归档
 
-> 生态项目之一。本目录是 SpecModule 的**可视化消费通道**，独立于库仓库。
-> 富交互图编辑器在此，库内的 stdlib 可视化开关只做极简运行 feed。
-> **只 import 不实现**——消费 `module_harness` 共享层，绝不重实现查询逻辑；
-> 消费新的库 API 时**同步补录** `../SpecModule/docs/references/api.md`（做到哪里写哪里）。
+> 方向规划与排期见 [roadmap.md](roadmap.md)；问题与遗留见 GitHub issues。
+> 2026-09-24 起 roadmap 主文档只记方向与排期，本文承接已完成的阶段清单、定稿设计与历史变更日志。
 
-## 定位
-
-独立前端 SPA + FastAPI 薄层，消费 `module_harness/query.py`、`status.py`、`graph_builder.py`、
-`store.py` 等共享层函数；后端 = 查询层的 HTTP 适配器（薄层），前端独立 SPA 消费 HTTP/WS API。
-
-## 架构（已定）
-
-```
-浏览器面板（SPA）
-    │  HTTP / WS
-    ▼
-server/：FastAPI 薄层 ── 消费 module_harness 共享层，只 import 不实现
-    │
-    ▼
-specmodule 库（module_harness → tickflow 引擎）
-```
-
-```
-SpecModule_webview/
-├── server/                  # FastAPI 薄层
-│   ├── app.py               # 入口：CORS + 路由挂载
-│   ├── deps.py              # base_dir 解析（env SPECMODULE_BASE，缺省 cwd）+ run_id 校验
-│   ├── api/
-│   │   ├── runs.py          # 运行时读端点（状态/时间线/检查点/快照/feed）
-│   │   ├── graph.py         # tasklist → 图结构渲染（图构建器 + 节点状态图共用）
-│   │   └── manage.py        # 模块/运行枚举 + 检查点写操作
-│   └── ws.py                # tick 流实时推送
-├── web/                     # 前端 SPA（Vite + React + TS + React Flow + dagre）
-├── tests/                   # pytest + httpx TestClient
-└── pyproject.toml           # fastapi + uvicorn（仅本项目依赖）
-```
-
-## 功能路线图
-
-### 阶段 0 —— HTTP 后端层（本轮）
+## 阶段 0 —— HTTP 后端层（2026-08-29 落地）
 
 - [x] 脚手架：`server/` 目录 + `pyproject.toml`（fastapi + uvicorn）+ `app.py` 入口（CORS 开 localhost dev 端口）
 - [x] 运行时读端点（全部 import query.py / status.py）
@@ -53,26 +17,20 @@ SpecModule_webview/
   - [x] `POST /api/runs/{id}/checkpoints {label}` — `query.create_checkpoint`（纯数据操作，运行中也能用）
   - [x] `GET /api/modules` — `store.list_modules` 摘要
 - [x] 图端点（运行时图视图消费）
-  - [x] `GET /api/runs/{id}/graph?module=` — 库侧 `build_run_graph`（module_inputs 归档重建，见下节设计）+ `graph_to_dict` 序列化 + 叠加每节点运行摘要（fired_count/last_status/last_tick/running）
+  - [x] `GET /api/runs/{id}/graph?module=` — 库侧 `build_run_graph`（module_inputs 归档重建）+ `graph_to_dict` 序列化 + 叠加每节点运行摘要（fired_count/last_status/last_tick/running）
 - [x] 实时推送
   - [x] `WS /api/runs/{id}/stream` — 后端 ~1s 轮询 status.json mtime + run.sqlite latest_tick（与 feed 同一数据源，不改库），变化才推 `{phase, tick, fireable, fired, outputs, error, updated_at}`
 - [x] 测试：pytest + TestClient，造最小 fixture run（直接构造 run.sqlite）覆盖每个端点
 
-### 阶段 1 —— 运行时可视化（数据面阶段 0 已备齐）
-
-本轮切片（2026-08-29 定稿，设计见「运行时图视图设计」节）：
+## 阶段 1 —— 运行时可视化：运行时图视图切片（2026-08-29 落地）
 
 - [x] 运行时图视图：图结构 + 节点状态徽章（已完成/运行中/失败/未运行/次数）+ 跟随镜头 + 点击节点面板（firing 历史 / 实时输出）
 
-后续切片：
+剩余切片（状态面板/历史审阅时间线/产出对比）见 [roadmap.md](roadmap.md)。
 
-- [ ] 状态面板：tick 流实时推送 → 全量状态侧栏
-- [ ] 历史审阅时间线：复用 `build_timeline`，逐 tick 看产出/错误
-- [ ] 产出对比：前后（原始 vs 整理 vs 润色）对比面板
+## 阶段 2 —— 可视化管理（2026-09-03 落地）
 
-### 阶段 2 —— 可视化管理
-
-- [x] 模块列表 + 模块详情（2026-09-03 落地，见「变更日志」）：`GET /api/modules`
+- [x] 模块列表 + 模块详情（2026-09-03 落地）：`GET /api/modules`
   （搜索路径显式锚定 base_dir + 载荷附 `search_paths` 扫描来源）+ `GET /api/modules/{name}`
   （`resolve_module_full`/`detail_to_dict` 详情面）——前端 ModulesView + RunDialog/SpecForm
 - [x] 运行历史管理（2026-09-03 落地）：`GET /api/runs` 改 `query.list_runs`
@@ -95,31 +53,11 @@ SpecModule_webview/
 - [x] 回退目标展示 fired 上下文（checkpoints 载荷已含，纯前端）（⑥）
 - [x] 小项：RunList 行内控制按钮；spec/tasklist 编辑器增强（⑦）
 
-### 阶段 3 —— tasklist 图构建器（可选 / 远期）
+后排清单（2026-09-03 盘点，等真实使用中疼了再动）已整体转
+[GitHub issue #5](https://github.com/MountLynx/SpecModule_webview/issues/5)
+（store 生命周期管理界面 / init 脚手架入口 / run 重命名 / 复跑 / 中间快照复跑入口 / 批量删除运行历史）。
 
-- [ ] 图编辑（拖拽节点，graph/render 往返验证）
-- [ ] 无 run 直渲染端点（POST /api/graph/render，库函数已留 tasklist 通道）
-
-### 后排清单（2026-09-03 盘点，等真实使用中疼了再动）
-
-- store 生命周期管理界面（install/uninstall/update/publish）
-- init 脚手架入口（`modules/<name>.py` 实例骨架生成）
-- run 重命名
-- 复跑（同 spec 重启新 run）
-- 中间快照复跑入口（RunsView 直达 resume 对话框并预选快照目标）
-- 批量删除运行历史
-
-## 数据契约与错误处理
-
-- 数据结构**全部复用** query.py 的 to_dict 出口（`timeline_to_dict` / `checkpoints_to_dict` /
-  snapshot dict），status 字段形状与 feed.py 一致；**唯一新数据形状是 graph 结构**
-  （nodes: id/label/type/inputs；edges: from/to）——序列化 `graph_to_dict` 收编库共享层
-  （2026-08-29 定稿，CLI visualize 共用），`server/api/graph.py` 只留薄映射与状态叠加。
-- 错误处理继承查询层容错哲学：查询层返回 None（无运行 / DB 读失败）→ 后端映射 404 +
-  `{error: "无运行记录"}`；`create_checkpoint` 的 KeyError（消息带可用清单）→ 4xx 原样透出；
-  未知 run_id → 404。
-
-## 运行时图视图设计（2026-08-29 定稿）
+## 运行时图视图设计（2026-08-29 定稿并落地）
 
 本轮交付：阶段 0 全部后端 + 阶段 1 的运行时图视图切片。界面美化单独轮次，本轮样式只求功能可辨。
 
@@ -229,7 +167,8 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
   **已修复**（2026-08-31 库仓库 f76e8c5）：流程来源兜底——显式参数 >
   `default_template` > module_inputs 归档 tasklist。
 - 库查询 latest_tick 取历史最大 tick——深回退后 `status.tick` 偏高直至运行追上
-  （上游可改为按写入序取最新，本轮不动）。
+  （上游可改为按写入序取最新，本轮不动）。（已转
+  [issue #8](https://github.com/MountLynx/SpecModule_webview/issues/8)）
 
 ### 控制功能缺口盘点（2026-08-31 走查后）
 
@@ -260,27 +199,9 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 7. **小项**：RunList 行内无控制按钮（须进入 run 才能操作）；spec/tasklist 编辑器为
    纯 textarea（提交时才校验 JSON）。
 
-## 与原仓库的同步（统一 API 原则）
+## 历史变更日志（2026-08-27 ~ 2026-09-24）
 
-- **不重复构建**：HTTP 端点 = 库调用 + 传输级薄映射。出现第二个 Web 消费形态或 TUI 也需要
-  相同逻辑（如 graph 序列化）时，共享逻辑**收编进库**（共享层函数），消费端只留薄映射；
-  消费端代码里出现与 CLI/其他消费端重复的接线/校验逻辑即为违规——要么本轮收编上游，
-  要么记录偏差并排期收编。值得统一的改动直接改 sibling 库仓库（遵守其 AGENTS.md），
-  api.md 补录、库仓库独立提交，发新版后同步依赖。
-- **库 API 文档同步完善**：消费新的 specmodule API 时，同步补录
-  `../SpecModule/docs/references/api.md`（做到哪里写哪里，按消费增量生长）；文档变更在库仓库
-  独立提交（`docs:` 前缀，遵循其 AGENTS.md），并在此 roadmap 末尾变更日志记录。
-
-## 验收
-
-M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
-
-## 依赖
-
-`specmodule` 库（`pip install specmodule`）+ Web 框架（FastAPI + uvicorn，仅本项目依赖）+
-`httpx`（测试）；`web/` 前端：npm（Vite + React + React Flow + dagre，仅 web/ 内管理）。
-
-## 变更日志
+> 存档。后续完成记录按需追加于此，roadmap 主文档不再记日志。
 
 - 2026-08-27：初始 roadmap 完善——定稿阶段 0 HTTP 后端层设计（技术选型 FastAPI 薄层、
   端点清单、graph 结构为唯一新数据形状、错误处理契约），新增统一 API 原则与 api.md 同步条款。
@@ -309,7 +230,9 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   fired 上下文、JSON 即时校验、文件载入改编辑区）+ 检查点创建对话框 + 停滞黄条 +
   terminate 按钮 + RunList 行内控制。已知偏差：paused 判定表达式在
   runs.py/control.py/_control_view/ws.py 三处消费端各自内联（一行式，收编库
-  `control.paused()` 待真实第三形态出现再动）；行内控制按钮无 busy 态（双击幂等）。
+  `control.paused()` 待真实第三形态出现再动；→
+  [issue #9](https://github.com/MountLynx/SpecModule_webview/issues/9)）；行内控制按钮无 busy 态（双击幂等；→
+  [issue #10](https://github.com/MountLynx/SpecModule_webview/issues/10)）。
 - **2026-08-31 截断终态 + LLM 流式落盘（库 A/B 两案，spec：2026-08-31-truncated-stream-design.md）**：
   库侧 `_finalize_phase` 将 max_ticks 耗尽映射为新终态 **`truncated`**（error 记上限）——
   控制缺口 ④ 的"截断 running 态"从根消除，黄条启发式只对真失联触发；库侧新增
@@ -330,8 +253,8 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   2026-09-03-module-run-history-design.md，统一 API 原则全量兑现）。库侧收编 3 笔
   （c16c54e `query.list_runs`/`delete_run` + CLI `runs`/`delete-run`；0bdf171
   `store.ResolvedModule`/`resolve_module_full`/`detail_to_dict` + `search_paths(base_dir)`
-  发现锚定 + status.json `module` 溯源字段；c5e64c3 api.md 补录）——roadmap「已知偏差」
-  的模块溯源项正式销项。本仓库 server：`GET /api/runs` 改 `list_runs` 薄映射（删除自扫
+  发现锚定 + status.json `module` 溯源字段；c5e64c3 api.md 补录）——已知偏差的模块溯源项
+  正式销项。本仓库 server：`GET /api/runs` 改 `list_runs` 薄映射（删除自扫
   目录代码，载荷增 module/has_sqlite；unknown 态收入不跳过）；新端点
   `GET /api/modules/{name}`（未找到 404 / 加载失败 400）、`DELETE /api/runs/{id}`
   （不存在 404 / running 无 force 409 / 注册表活子进程 409——force 也不豁免）、
@@ -345,7 +268,8 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   （`src=` 直通锚定解析，UI 发起的 `{module}_{hex}` run_id 免手动选模块）；preflight
   module 缺省对齐同序。已知的残留库面缺口：`check_resume_compat_from_run` 内部建图与
   `build_run_graph` 缺省路径仍按 cwd 锚定解析（graph 端点已经 `src=` 绕开）——库侧补
-  `search=` 透传记后排。
+  `search=` 透传记后排（→
+  [issue #7](https://github.com/MountLynx/SpecModule_webview/issues/7)）。
   前端（无新依赖）：App 壳层顶部视图切换（模块库/运行历史/运行视图，无 router）；
   ModulesView 左列表右详情（模板 default 标注/spec_schema 字段表/default_spec 预览/
   扫描来源行）；RunDialog + SpecForm（spec_schema/default_spec 驱动类型化表单 ⇄ JSON
@@ -353,7 +277,8 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   RunsView 升格全宽历史（module 名溯源回落启发式、phase 徽章、错误摘要、行内查看/
   删除——running 先取消可 force 强删二次确认）；运行视图图加载失败区挂 process.log 尾
   （3s 轮询，CLI 启动期失败界面可见）。AGENTS.md 端点表同步三行 + base_dir 纪律补
-  搜索锚定。测试：本仓库 84 项全绿；后排新增清单（store 生命周期界面/init 脚手架/
+  搜索锚定。测试：本仓库 84 项全绿；后排清单转
+  [issue #5](https://github.com/MountLynx/SpecModule_webview/issues/5)（store 生命周期界面/init 脚手架/
   run 重命名/复跑/中间快照复跑入口/批量删除）。
 - 2026-09-10 **TreeChat 整合第一期：壳层重组**——web/ 引入 Tailwind + shadcn neutral
   主题（TreeChat webui 基建移植：cn/ui 基件/ActivityBar 结构），App 重写为 VSCode 式
@@ -438,7 +363,8 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   手动刷新 + 事件钩子（发起/删除/行内控制/页签终态），尾部按 total 提示更早历史
   走 CLI。已知后续：同页签 resume 不重挂载 RunView、WS 不 re-arm，恢复跑完的
   终态钩子不触发（预存 WS 生命周期限制，去轮询后显性化；列表靠手动刷新/其他
-  钩子兜底），留后续处理。设计/计划：
+  钩子兜底），留后续处理（→
+  [issue #6](https://github.com/MountLynx/SpecModule_webview/issues/6)）。设计/计划：
   `docs/superpowers/specs/2026-09-15-run-list-decoupling-design.md`、
   `docs/superpowers/plans/2026-09-15-run-list-decoupling.md`。
 - 2026-09-16 **数据根锚定 home + example 模块安装进 store + 测试垃圾清理**——
@@ -509,7 +435,6 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   200–520）与右侧节点面板（380px，260–720）各接一份，宽度 localStorage 持久化
   （`specmodule-webview.sidebar.*`；右栏随节点切换重挂载靠持久化恢复）。`npm run build`
   通过 + mock run 全链路浏览器走查（拖宽/钳制/持久化/复位/节点切换保持）。
-
 - 2026-09-19 **界面美化（B·状态染色方向）全量落地**：状态色三阶令牌（`--ph-*-bg/border/text`
   亮暗）+ Pill 胶囊两态（选中=primary 反色）/Spinner 基件；图视图染色节点（浸染底+
   lucide 状态图标+运行光环）与活跃边蓝色流动、Minimap 着色、跟随状态按钮（跟随中/
@@ -574,3 +499,8 @@ M1 + M2 双 module 全量接入：运行可视化 + 产出对比。
   面板测量补 items.length 依赖、「当前」徽章归一化直答缺省+补全空项守卫。设计
   docs/superpowers/specs/2026-09-24-slash-command-palette-design.md，计划
   docs/superpowers/plans/2026-09-24-slash-command-palette.md
+- 2026-09-24 **文档结构重组**——roadmap 持续膨胀（变更日志逐次追加、已完成阶段滞留主文档、
+  遗留项散落各节）。新规：roadmap 目录化，`roadmap/roadmap.md` 只记方向规划与排期（实时
+  更新），已完成归档进本文件；问题与遗留转 GitHub issues（#5 后排清单、#6 resume 后
+  RunView/WS 不重挂、#7 上游 search= 透传、#8 latest_tick 语义、#9 paused 三处内联、
+  #10 行内控制 busy 态）。
