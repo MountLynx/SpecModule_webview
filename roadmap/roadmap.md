@@ -61,6 +61,15 @@ TreeChat 整合一/二/三期已落地（对话引擎已收编为本仓库 `tree
 - [ ] 图编辑（拖拽节点，graph/render 往返验证）
 - [ ] 无 run 直渲染端点（POST /api/graph/render，库函数已留 tasklist 通道）
 
+### 模块构建器 —— 组件库 + 可视化创建 packed 模块
+
+设计定稿：[specs/2026-09-25-module-builder-design.md](../docs/superpowers/specs/2026-09-25-module-builder-design.md)
+
+- [x] 组件库 CRUD（harness/command 表单化、scripts/guards 上传、submodule 索引）
+- [x] 模块草稿 + 画布创建器（React Flow 编辑态：节点/边/guard/join/inputs 映射）
+- [x] 组装安装闭环（拷贝进包 → validate_pack_dir → install_pack → 试运行）
+- [ ] 后排：编辑/反解已安装模块、output 侧 spec_schema、库版本管理
+
 ### TreeChat 后续
 
 - [ ] 业务 run 联动收口：chat spec 卡片 → 发起业务 run（spec-builder 一键转化 v1.1、

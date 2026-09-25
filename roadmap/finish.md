@@ -504,3 +504,17 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
   更新），已完成归档进本文件；问题与遗留转 GitHub issues（#5 后排清单、#6 resume 后
   RunView/WS 不重挂、#7 上游 search= 透传、#8 latest_tick 语义、#9 paused 三处内联、
   #10 行内控制 busy 态）。
+- 2026-09-25 **模块构建器落地：组件库 + 可视化创建 packed 模块**（设计定稿
+  docs/superpowers/specs/2026-09-25-module-builder-design.md）。要点：组件库锚
+  `store_home/library/`（harness/command JSON + scripts/guards 代码 + submodule 索引 +
+  drafts，被引用组件**拷贝进包**——包自包含直接吃库 `validate_pack_dir`/`install_pack`
+  语义，零上游改动）；`server/api/build.py` 统一面（`/api/library/{kind}/{name}` CRUD +
+  `/api/modules/packs[/validate]` 组装安装，`draft_to_tasklist` 为本层唯一 tasklist 生成
+  实现——组装与 dry-run 预览共用）；前端构建板块（ActivityBar build 页签 + LibraryPanel
+  侧栏 + builder/ 画布创建器，多草稿多实例页签/防抖自动保存/校验·安装/tasklist 预览）。
+  测试：pytest 40 例新增（全套 318 绿）+ tsc 门禁 + API 级端到端验收。执行修正：受控
+  v12 画布 onNodeDrag live 通路、组装临时目录自清理、孤立起点 [名] 标记行、编辑对话框
+  回填、自动保存竞态。上游联动：SpecModule 01d830b（ModuleLoader lazy_client 沿
+  submodule 递归传播——validate_pack_dir 零 LLM 客户端语义在 submodule 场景被破坏）+
+  23f6754 / 3a36b5d（api.md validate_pack_dir / install_pack 补录）。计划：
+  docs/superpowers/plans/2026-09-25-module-builder.md。
