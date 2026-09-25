@@ -85,12 +85,21 @@ def library_item(kind: str, name: str) -> dict:
         p = library_root() / kind / f"{name}.json"
         if not p.is_file():
             raise HTTPException(status_code=404, detail={"error": f"{kind}/{name} 不存在"})
-        return json.loads(p.read_text(encoding="utf-8"))
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeDecodeError) as e:
+            raise HTTPException(
+                status_code=400, detail={"error": f"{kind}/{name} 读取失败: {e}"})
     if kind in ("scripts", "guards"):
         p = library_root() / kind / f"{name}.py"
         if not p.is_file():
             raise HTTPException(status_code=404, detail={"error": f"{kind}/{name} 不存在"})
-        return {"name": name, "code": p.read_text(encoding="utf-8")}
+        try:
+            code = p.read_text(encoding="utf-8")
+        except (ValueError, UnicodeDecodeError) as e:
+            raise HTTPException(
+                status_code=400, detail={"error": f"{kind}/{name} 读取失败: {e}"})
+        return {"name": name, "code": code}
     raise HTTPException(status_code=404, detail={"error": f"未知组件类别: {kind}"})
 
 
@@ -114,12 +123,26 @@ def _save_config(kind: str, name: str, raw: bytes) -> dict:
     return {"saved": True, "kind": kind, "name": name}
 
 
+def _save_code(kind: str, name: str, raw: bytes) -> dict:
+    """scripts/guards 上传：UTF-8 .py 文本，stem = 注册函数名（loader 语义）。"""
+    try:
+        code = raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise HTTPException(status_code=400, detail={"error": f"脚本须为 UTF-8 文本: {e}"})
+    p = library_root() / kind / f"{name}.py"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(code, encoding="utf-8")
+    return {"saved": True, "kind": kind, "name": name}
+
+
 @router.put("/library/{kind}/{name}")
 async def save_library_item(kind: str, name: str, request: Request) -> dict:
     """保存（PUT = create-or-update）：JSON 配置 / 代码文本 / 草稿 / submodule 登记。"""
     _check_name(name)
     if kind in _CFG_CLS:
         return _save_config(kind, name, await request.body())
+    if kind in ("scripts", "guards"):
+        return _save_code(kind, name, await request.body())
     raise HTTPException(status_code=404, detail={"error": f"未知组件类别: {kind}"})
 
 

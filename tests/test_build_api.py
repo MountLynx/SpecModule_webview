@@ -76,3 +76,59 @@ class TestConfigComponents:
         client.put("/api/library/harnesses/summarize", json=HARNESS)
         assert client.delete("/api/library/harnesses/summarize").json()["deleted"] is True
         assert client.delete("/api/library/harnesses/summarize").status_code == 404
+
+
+class TestLibraryReads:
+    """损坏/不可解码存储文件读防护（查询不抛异常：400 而非 500）+ 错误契约。"""
+
+    def test_corrupt_harness_json_400(self, client, base):
+        p = base / "home" / "library" / "harnesses" / "broken.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text('"{not json', encoding="utf-8")
+        r = client.get("/api/library/harnesses/broken")
+        assert r.status_code == 400 and "读取失败" in r.json()["error"]
+
+    def test_non_utf8_script_400(self, client, base):
+        p = base / "home" / "library" / "scripts" / "bad.py"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"\xff\xfe\x00")
+        r = client.get("/api/library/scripts/bad")
+        assert r.status_code == 400 and "读取失败" in r.json()["error"]
+
+    def test_put_non_dict_json_400(self, client, base):
+        r = client.put("/api/library/harnesses/arr", content=b"[1,2]")
+        assert r.status_code == 400
+
+    def test_missing_config_404(self, client, base):
+        assert client.get("/api/library/harnesses/ghost").status_code == 404
+
+    def test_delete_unknown_kind_404(self, client, base):
+        assert client.delete("/api/library/nope/x").status_code == 404
+
+
+SCRIPT = "def echo(view):\n    return {'message': view.field('data')}\n"
+GUARD = "def has_issues(view):\n    return True\n"
+
+
+class TestCodeComponents:
+    def test_save_and_detail(self, client, base):
+        r = client.put("/api/library/scripts/echo", content=SCRIPT.encode("utf-8"))
+        assert r.status_code == 200 and r.json()["saved"] is True
+        r = client.put("/api/library/guards/has_issues", content=GUARD.encode("utf-8"))
+        assert r.status_code == 200
+        d = client.get("/api/library/scripts/echo").json()
+        assert d == {"name": "echo", "code": SCRIPT}
+        assert client.get("/api/library").json()["guards"] == ["has_issues"]
+
+    def test_save_bad_name_400(self, client, base):
+        r = client.put("/api/library/scripts/bad-name", content=b"x")
+        assert r.status_code == 400
+
+    def test_save_non_utf8_400(self, client, base):
+        r = client.put("/api/library/scripts/echo", content=b"\xff\xfe\x00")
+        assert r.status_code == 400
+
+    def test_delete_and_404(self, client, base):
+        client.put("/api/library/scripts/echo", content=SCRIPT.encode("utf-8"))
+        assert client.delete("/api/library/scripts/echo").json()["deleted"] is True
+        assert client.delete("/api/library/scripts/echo").status_code == 404
