@@ -65,6 +65,18 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
     setCheckErrors(null);
   }, []);
 
+  // 保存成功落位（自动保存/saveNow 共用）：仅当仍是本轮在飞保存（saving）才落
+  // clean 并清错误；在飞期间的新编辑会把 state 置回 dirty——保持 dirty，由已武装
+  // 的下一轮防抖补存。直接覆写 clean 会把 dirty 打掉，effect 清理随即取消补存
+  // 定时器 → 新改动永不保存而工具条显示已保存（静默丢改动）。
+  const markSaved = useCallback(() => {
+    setSaveState((s) => {
+      if (s !== "saving") return s;
+      setSaveError(null); // →clean 分支内才清错误（dirty 存续时旧错误仍相关；幂等，StrictMode 重复执行无害）
+      return "clean";
+    });
+  }, []);
+
   // 自动保存（防抖）：dirty → 800ms 后 PUT；失败记 saveError 供工具条透出原因
   useEffect(() => {
     if (saveState !== "dirty" || !draft) return;
@@ -72,15 +84,14 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
       setSaveState("saving");
       try {
         await putDraft(draft);
-        setSaveState("clean");
-        setSaveError(null);
+        markSaved();
       } catch (e) {
         setSaveError(e instanceof Error ? e.message : String(e));
         setSaveState("error");
       }
     }, 800);
     return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); };
-  }, [draft, saveState]);
+  }, [draft, saveState, markSaved]);
 
   // 显式保存（校验/安装前置步骤）：失败抛带原因的 Error，由 runCheck 透出
   const saveNow = useCallback(async () => {
@@ -89,15 +100,14 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
     setSaveState("saving");
     try {
       await putDraft(d);
-      setSaveState("clean");
-      setSaveError(null);
+      markSaved();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setSaveError(msg);
       setSaveState("error");
       throw new Error(`草稿保存失败：${msg}`);
     }
-  }, []);
+  }, [markSaved]);
 
   const runCheck = useCallback(async (install: boolean) => {
     if (busy) return;
