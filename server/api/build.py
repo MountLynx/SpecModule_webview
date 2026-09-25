@@ -10,6 +10,8 @@ install_pack——本层零校验逻辑；tasklist 生成本层唯一实现（dr
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -108,10 +110,20 @@ def _validate_draft(draft, name: str) -> dict:
             raise _draft_err(f"节点类型非法: {n.get('type')!r}")
         if not n.get(_REF_FIELD[n["type"]]):
             raise _draft_err(f"节点 {n['label']} 缺引用（{n['type']}）")
+        # Fix B：inputs/overrides/outputs 须为对象——形状逃逸会让组装路径的
+        # dict()/update() 抛 TypeError，PUT 侧即拒
+        for opt in ("inputs", "overrides", "outputs"):
+            if opt in n and not isinstance(n[opt], dict):
+                raise _draft_err(f"节点 {n['label']} 的 {opt} 须为对象")
         labels.append(n["label"])
     dupes = sorted({x for x in labels if labels.count(x) > 1})
     if dupes:
         raise _draft_err(f"节点名重复: {dupes}")
+    # Fix A：id 重复会静默塌图（两节点同 id → Flow 错乱），与名重复同级拒绝
+    ids = [n["id"] for n in nodes]
+    id_dupes = sorted({x for x in ids if ids.count(x) > 1})
+    if id_dupes:
+        raise _draft_err(f"节点 id 重复: {id_dupes}")
     edges = draft.get("edges")
     if not isinstance(edges, list):
         raise _draft_err("edges 须为数组")
@@ -173,8 +185,9 @@ def draft_to_tasklist(draft: dict) -> dict:
     """草稿 → tasklist dict（{Tasks, Flow}）——组装与 validate 共用的唯一实现。
 
     edges 的 from/to 是节点 id；起点标记 `[名]` 只在该起点节点首条出边出现一次
-    （tickflow 允许多起点，各起点各自的边各自带标记）；join 覆盖（非 AND）追加
-    `<名>.join: OR` 行。生成正确性最终由 validate_pack_dir 把关。
+    （tickflow 允许多起点，各起点各自的边各自带标记）；孤立起点（零出边）补
+    裸名行（prepare_flow 自动包成 [名]，单节点模块 Flow 不为空）；join 覆盖
+    （非 AND）追加 `<名>.join: OR` 行。生成正确性最终由 validate_pack_dir 把关。
     """
     nodes = draft["nodes"]
     label_of = {n["id"]: n["label"] for n in nodes}
@@ -200,6 +213,11 @@ def draft_to_tasklist(draft: dict) -> dict:
             marked.add(e["from"])
         arrow = f"--|{e['guard']}|-->" if e.get("guard") else "-->"
         lines.append(f"{src} {arrow} {label_of[e['to']]}")
+    # Fix C：孤立起点（零出边）没有行可打标记——补裸名行，否则单节点模块
+    # Flow 为空过不了库 parse（prepare_flow 把裸名包成 [名]）
+    for n in nodes:
+        if n["id"] in starts and n["id"] not in marked:
+            lines.append(n["label"])
     for n in nodes:
         if n.get("join", "AND") == "OR":
             lines.append(f"{n['label']}.join: OR")
@@ -340,3 +358,82 @@ def delete_library_item(kind: str, name: str) -> dict:
         _write_submodule_index([e for e in _read_submodule_index() if e.get("name") != name])
         return {"deleted": True, "kind": "submodules", "name": name}
     raise HTTPException(status_code=404, detail={"error": f"未知组件类别: {kind}"})
+
+
+# ── pack 组装 + dry-run 校验 ──────────────────────────────────────────
+
+
+def _load_draft_for_assembly(body: dict) -> dict:
+    name = (body or {}).get("draft")
+    if not name:
+        raise HTTPException(status_code=400, detail={"error": "缺 draft 名"})
+    return get_draft(name)
+
+
+def _find_packed_source(name: str, search: list[Path]) -> Path:
+    """已安装 packed 模块的包目录（submodule 整包拷贝源）。缺失抛 ValueError。"""
+    src = store.resolve_module(name, search=search)
+    if src is None:
+        raise ValueError(f"submodule 源包未找到（可能已卸载）: {name}")
+    if src.kind not in ("packed", "pip"):
+        raise ValueError(f"submodule 源 '{name}' 非 packed 形态: {src.kind}")
+    return Path(src.path)
+
+
+def _assemble_pack(draft: dict, search: list[Path]) -> Path:
+    """草稿 → 临时 pack 目录（不落 store；调用方负责 rmtree）。失败抛 ValueError。
+
+    只拷被引用组件（包自包含——拷贝进包语义）；submodule 整包 copytree 进
+    submodules/<键>/，manifest modules 列表与目录双向一致。
+    """
+    meta = draft["meta"]
+    pack = Path(tempfile.mkdtemp(prefix="specmodule_build_"))
+    root = library_root()
+    schema = {f["field"]: f["type"] for f in draft.get("spec_schema", [])}
+    sub_names = sorted({n["submodule"] for n in draft["nodes"] if n["type"] == "submodule"})
+    manifest = {
+        "name": meta["name"],
+        "version": meta.get("version", "0.1.0"),
+        "description": meta.get("description", ""),
+        "submodule": False,
+        "spec_schema": {"input": schema},
+        "requires": [],
+        "modules": sub_names,
+        "tasklist": draft_to_tasklist(draft),
+    }
+    (pack / "module.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def copy_kind(kind: str, names, ext: str) -> None:
+        for nm in sorted(names):
+            src = root / kind / f"{nm}{ext}"
+            if not src.is_file():
+                raise ValueError(f"库组件缺失: {kind}/{nm}")
+            dst = pack / kind
+            dst.mkdir(exist_ok=True)
+            shutil.copy2(src, dst / src.name)
+
+    copy_kind("harnesses", {n["harness"] for n in draft["nodes"] if n["type"] == "harness"}, ".json")
+    copy_kind("commands", {n["command"] for n in draft["nodes"] if n["type"] == "command"}, ".json")
+    copy_kind("scripts", {n["script"] for n in draft["nodes"] if n["type"] == "script"}, ".py")
+    copy_kind("guards", {e["guard"] for e in draft["edges"] if e.get("guard")}, ".py")
+    for nm in sub_names:
+        shutil.copytree(_find_packed_source(nm, search), pack / "submodules" / nm)
+    return pack
+
+
+@router.post("/modules/packs/validate")
+def validate_pack(body: dict, search: list[Path] = Depends(get_search_paths)) -> dict:
+    """dry-run：组装临时目录 → validate_pack_dir（零落盘），附生成的 tasklist 供 UI 预览。"""
+    draft = _load_draft_for_assembly(body)
+    pack = None
+    try:
+        pack = _assemble_pack(draft, search)
+        manifest = store.validate_pack_dir(pack)
+    except (ValueError, TypeError, KeyError) as e:
+        # KeyError/TypeError：手改草稿绕过 PUT 校验的形状逃逸——兜 400 不 500
+        raise HTTPException(status_code=400, detail={"error": str(e)})
+    finally:
+        if pack is not None:
+            shutil.rmtree(pack, ignore_errors=True)
+    return {"ok": True, "manifest": manifest, "tasklist": draft_to_tasklist(draft)}

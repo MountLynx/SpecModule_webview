@@ -249,6 +249,27 @@ class TestDrafts:
         badschema["spec_schema"] = [{"field": "x", "type": "long"}]
         assert client.put("/api/library/drafts/my_mod", json=badschema).status_code == 400
 
+    def test_dup_node_ids_400(self, client, base):
+        # Fix A：id 重复会静默塌图（两节点同 id → Flow 错乱），PUT 侧即拒
+        dup = draft_json()
+        dup["nodes"].append(dict(dup["nodes"][0], label="Echo2"))
+        r = client.put("/api/library/drafts/my_mod", json=dup)
+        assert r.status_code == 400 and "id 重复" in r.json()["error"]
+
+    def test_field_shapes_400(self, client, base):
+        # Fix B：inputs/overrides/outputs 须为对象——形状逃逸（hand-edit）会让
+        # 组装路径 dict()/update() 抛 TypeError，PUT 侧即拒
+        over = draft_json()
+        over["nodes"][0]["overrides"] = [1]
+        r = client.put("/api/library/drafts/my_mod", json=over)
+        assert r.status_code == 400 and "overrides" in r.json()["error"]
+        sub = draft_json()
+        sub["nodes"][0] = {"id": "s", "label": "Sub", "type": "submodule",
+                           "submodule": "sub_greet", "is_start": True, "join": "AND",
+                           "position": {"x": 0, "y": 0}, "inputs": {}, "outputs": [1]}
+        r = client.put("/api/library/drafts/my_mod", json=sub)
+        assert r.status_code == 400 and "outputs" in r.json()["error"]
+
 
 class TestDraftToTasklist:
     def test_flow_dsl_generation(self):
@@ -287,4 +308,112 @@ class TestDraftToTasklist:
         tl = draft_to_tasklist(draft)
         assert tl["Tasks"]["Sub"] == {"type": "submodule", "submodule": "sub_greet",
                                       "outputs": {"msg": "hi"}}
-        assert tl["Flow"] == ""
+        # Fix C：孤立起点（零出边）补裸名行——单节点模块 Flow 不再为空
+        assert tl["Flow"] == "Sub"
+
+    def test_isolated_start_bare_line(self):
+        """Fix C：带出边的起点照常打 [标记]，孤立起点补裸名行（prepare_flow
+        自动包成 [名]，单节点模块得以通过库 parse）。"""
+        draft = {
+            "meta": {"name": "m", "version": "0.1.0", "description": ""},
+            "spec_schema": [], "default_spec": {},
+            "nodes": [
+                {"id": "x1", "label": "Echo", "type": "script", "script": "echo",
+                 "is_start": True, "join": "AND", "position": {"x": 0, "y": 0},
+                 "inputs": {}},
+                {"id": "x2", "label": "Echo2", "type": "script", "script": "echo",
+                 "is_start": False, "join": "AND", "position": {"x": 0, "y": 0},
+                 "inputs": {"data": "Echo"}},
+                {"id": "s", "label": "Sub", "type": "submodule", "submodule": "sub_greet",
+                 "is_start": True, "join": "AND", "position": {"x": 0, "y": 0},
+                 "inputs": {}},
+            ],
+            "edges": [{"id": "e1", "from": "x1", "to": "x2", "guard": None}],
+        }
+        tl = draft_to_tasklist(draft)
+        assert tl["Flow"] == "[Echo] --> Echo2\nSub"
+
+
+def seed_builder(client) -> dict:
+    """经 API 保存 harness/script/guard + 循环草稿（harness→script，guard 回边）。"""
+    assert client.put("/api/library/harnesses/summarize", json=HARNESS).status_code == 200
+    assert client.put(
+        "/api/library/scripts/echo", content=SCRIPT.encode("utf-8")).status_code == 200
+    assert client.put(
+        "/api/library/guards/has_issues", content=GUARD.encode("utf-8")).status_code == 200
+    draft = {
+        "meta": {"name": "loop_mod", "version": "0.2.0", "description": "循环测试"},
+        "spec_schema": [{"field": "raw_text", "type": "str"}],
+        "default_spec": {"raw_text": "demo"},
+        "nodes": [
+            {"id": "a", "label": "Summarize", "type": "harness", "harness": "summarize",
+             "is_start": True, "join": "AND", "position": {"x": 0, "y": 0},
+             "inputs": {"text": "{spec.raw_text}"}},
+            {"id": "b", "label": "Echo", "type": "script", "script": "echo",
+             "is_start": False, "join": "OR", "position": {"x": 0, "y": 0},
+             "inputs": {"data": "Summarize"}},
+        ],
+        "edges": [
+            {"id": "e1", "from": "a", "to": "b", "guard": None},
+            {"id": "e2", "from": "b", "to": "a", "guard": "has_issues"},
+        ],
+    }
+    assert client.put("/api/library/drafts/loop_mod", json=draft).status_code == 200
+    return draft
+
+
+class TestValidatePack:
+    def test_validate_ok_returns_tasklist(self, client, base):
+        seed_builder(client)
+        r = client.post("/api/modules/packs/validate", json={"draft": "loop_mod"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["ok"] is True
+        assert d["manifest"]["name"] == "loop_mod"
+        # 回边 e2 是 b→a（Echo→Summarize）；Echo.join: OR 追加在尾
+        assert d["tasklist"]["Flow"] == (
+            "[Summarize] --> Echo\nEcho --|has_issues|--> Summarize\nEcho.join: OR")
+        # dry-run 不落 store
+        assert "loop_mod" not in [m["name"] for m in client.get("/api/modules").json()["modules"]]
+
+    def test_validate_missing_component_400(self, client, base):
+        draft = {
+            "meta": {"name": "broken", "version": "0.1.0", "description": ""},
+            "spec_schema": [], "default_spec": {},
+            "nodes": [{"id": "n1", "label": "E", "type": "script", "script": "ghost",
+                       "is_start": True, "join": "AND", "position": {"x": 0, "y": 0},
+                       "inputs": {}}],
+            "edges": [],
+        }
+        client.put("/api/library/drafts/broken", json=draft)
+        r = client.post("/api/modules/packs/validate", json={"draft": "broken"})
+        assert r.status_code == 400 and "ghost" in r.json()["error"]
+
+    def test_validate_400_loader_semantics(self, client, base):
+        """库校验兜底：script 文件内函数名与 stem 不符 → ModuleLoader 拒绝。"""
+        client.put("/api/library/scripts/wrongname", content=b"def other(view):\n    return {}\n")
+        draft = {
+            "meta": {"name": "wrongfn", "version": "0.1.0", "description": ""},
+            "spec_schema": [], "default_spec": {},
+            "nodes": [{"id": "n1", "label": "E", "type": "script", "script": "wrongname",
+                       "is_start": True, "join": "AND", "position": {"x": 0, "y": 0},
+                       "inputs": {}}],
+            "edges": [],
+        }
+        client.put("/api/library/drafts/wrongfn", json=draft)
+        r = client.post("/api/modules/packs/validate", json={"draft": "wrongfn"})
+        assert r.status_code == 400
+
+    def test_validate_unknown_draft_404(self, client, base):
+        r = client.post("/api/modules/packs/validate", json={"draft": "ghost_draft"})
+        assert r.status_code == 404
+
+    def test_validate_hand_corrupted_draft_400(self, client, base):
+        """绕过 PUT 校验的手改草稿文件（nodes: "oops"）也不致 500——形状逃逸
+        在组装路径抛 TypeError → 端点兜 400。"""
+        p = base / "home" / "library" / "drafts" / "sneaky.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"meta": {"name": "sneaky"}, "nodes": "oops"}),
+                     encoding="utf-8")
+        r = client.post("/api/modules/packs/validate", json={"draft": "sneaky"})
+        assert r.status_code == 400
