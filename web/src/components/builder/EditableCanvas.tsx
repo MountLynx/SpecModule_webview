@@ -15,20 +15,17 @@ import {
   type OnNodesDelete,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { BuilderDraft, BuilderEdge, BuilderNode } from "../../api";
-import { genId } from "../../api";
+import {
+  genId,
+  NODE_REF_FIELD,
+  type BuilderDraft,
+  type BuilderEdge,
+  type BuilderNode,
+} from "../../api";
 import { autoLayout, BUILDER_NODE_SIZE } from "./layout";
 import { BuilderNodeView, type BuilderFlowNode } from "./BuilderNodeView";
 
 const nodeTypes: NodeTypes = { builder: BuilderNodeView };
-
-/** 节点类型 → 草稿引用字段（画布内只读展示；编辑走 api.NODE_REF_FIELD，不入画布） */
-const REF_KEY = {
-  harness: "harness",
-  script: "script",
-  command: "command",
-  submodule: "submodule",
-} as const;
 
 export type Selection = { kind: "node" | "edge"; id: string } | null;
 
@@ -58,7 +55,7 @@ export function EditableCanvas({ draft, selected, onSelect, onChange }: Props) {
         data: {
           label: n.label,
           nodeType: n.type,
-          ref: String(n[REF_KEY[n.type]] ?? ""),
+          ref: String(n[NODE_REF_FIELD[n.type]] ?? ""),
           isStart: n.is_start,
         },
         selected: selected?.kind === "node" && selected.id === n.id,
@@ -90,7 +87,14 @@ export function EditableCanvas({ draft, selected, onSelect, onChange }: Props) {
     [onChange],
   );
 
-  // 拖拽落位：拖动过程由 RF 内部落位，松手才把最终位置提交回 draft。
+  // 受控模式下 v12 拖拽期变更只走 onNodesChange/onNodeDrag——不接 live 通路
+  // 节点会冻结到松手才落位。这里拖拽全程把位置回写 draft（live 跟手）。
+  const onNodeDrag = useCallback<OnNodeDrag<BuilderFlowNode>>(
+    (_, node) => patchNode(node.id, { position: node.position }),
+    [patchNode],
+  );
+
+  // 拖拽落位：松手时的最终提交（与 onNodeDrag 同形，兜底收口）。
   const onNodeDragStop = useCallback<OnNodeDrag<BuilderFlowNode>>(
     (_, node) => patchNode(node.id, { position: node.position }),
     [patchNode],
@@ -140,6 +144,7 @@ export function EditableCanvas({ draft, selected, onSelect, onChange }: Props) {
         nodes={rfNodes}
         edges={rfEdges}
         nodeTypes={nodeTypes}
+        onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
         onNodesDelete={onNodesDelete}

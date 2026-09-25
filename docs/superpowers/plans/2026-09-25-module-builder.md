@@ -2203,6 +2203,8 @@ git add web/src/components/builder/
 git commit -m "feat(web): 构建器画布——受控 React Flow 编辑接线/自定义节点/dagre 自动布局"
 ```
 
+> 执行修正（2026-09-25）：受控 v12 画布须接 onNodeDrag live 通路，否则拖拽冻结-瞬移——已按此实现（另：v12 `onInit` 为单参签名，初适配合并入 `fitViewOptions`；MiniMap 宽高备注已核实并直接按 GraphView 显式携带 `width/height` 实现）。
+
 ---
 
 ### Task 13: NodePanel——节点/边配置面板
