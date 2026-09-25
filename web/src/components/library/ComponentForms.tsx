@@ -1,13 +1,17 @@
 // harness/command 组件表单对话框（自绘 overlay，dialogTheme 共享类）。
 // 字段对照库 HarnessConfig / CommandConfig；保存走 PUT /api/library/{kind}/{name}，
 // 服务端 from_dict 实例化验形——前端不做深校验，错误透出。
-import { useState, type ReactNode } from "react";
+// 编辑模式（initial 非空）挂载时回填已存配置——同一端点 PUT，读-改-写而非盲覆盖。
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "../ui/button";
 import { Input, Textarea } from "../ui/input";
 import { errTextCls, fieldCls, labelCls, overlayCls, panelCls } from "../dialogTheme";
-import { putLibraryJson } from "../../api";
+import { fetchLibraryItem, putLibraryJson } from "../../api";
 
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** 回填取值：null/undefined → 缺省，其余转字符串 */
+const asText = (v: unknown, dflt = ""): string => (v == null ? dflt : String(v));
 
 interface DialogProps {
   initial: string | null;
@@ -84,6 +88,55 @@ export function HarnessDialog({ initial, onClose, onSaved }: DialogProps) {
   const [notdo, setNotdo] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(!!initial);
+  // 编辑模式：挂载时回填已存配置；失败示错并保持对话框打开（必填校验挡住半空保存）
+  useEffect(() => {
+    if (!initial) return;
+    let cancelled = false;
+    fetchLibraryItem("harnesses", initial)
+      .then((raw) => {
+        if (cancelled) return;
+        const s = raw as Record<string, unknown>;
+        const pm = (s.prompt_modes ?? {}) as Record<string, unknown>;
+        const of = (s.output_format ?? {}) as Record<string, unknown>;
+        const think = s.think;
+        const ap = s.api_params;
+        const apEmpty =
+          ap == null || (typeof ap === "object" && Object.keys(ap as object).length === 0);
+        setF({
+          prompt_core: asText(s.prompt_core),
+          model: asText(s.model),
+          temperature: s.temperature == null ? "" : String(s.temperature),
+          think:
+            typeof think === "boolean" ? (think ? "true" : "false")
+            : think != null && typeof think === "object" ? JSON.stringify(think)
+            : "",
+          api_params: apEmpty ? "" : JSON.stringify(ap),
+          mode: asText(s.mode, "text"),
+          image_size: asText(s.image_size),
+          image_dir: asText(s.image_dir, "images"),
+          out_type: asText(of.type),
+          out_schema: of.schema == null ? "" : JSON.stringify(of.schema),
+          out_instruction: asText(of.instruction),
+        });
+        setPromptModes(Object.fromEntries(Object.entries(pm).map(([k, v]) => [k, String(v)])));
+        setNotdo(Array.isArray(s.notdo) ? s.notdo.map(String).join(", ") : asText(s.notdo));
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoading(false);
+        setErr(e instanceof Error ? e.message : String(e));
+      });
+    return () => { cancelled = true; };
+  }, [initial]);
+  if (loading) {
+    return (
+      <Overlay title={initial ? `编辑 harness：${initial}` : "新建 harness"} onClose={onClose}>
+        <div className="text-[12px] text-muted-foreground">加载中…</div>
+      </Overlay>
+    );
+  }
   const upd = (patch: Partial<typeof f>) => setF((p) => ({ ...p, ...patch }));
 
   const save = async () => {
@@ -199,6 +252,38 @@ export function CommandDialog({ initial, onClose, onSaved }: DialogProps) {
   const [shell, setShell] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(!!initial);
+  // 编辑模式：挂载时回填已存配置；失败示错并保持对话框打开
+  useEffect(() => {
+    if (!initial) return;
+    let cancelled = false;
+    fetchLibraryItem("commands", initial)
+      .then((raw) => {
+        if (cancelled) return;
+        const s = raw as Record<string, unknown>;
+        const storedEnv = (s.env ?? {}) as Record<string, unknown>;
+        setCommand(asText(s.command));
+        setTimeout_(s.timeout == null ? "60" : String(s.timeout));
+        setCwd(asText(s.cwd));
+        setEnv(Object.fromEntries(Object.entries(storedEnv).map(([k, v]) => [k, String(v)])));
+        setCapture(s.capture_output == null ? true : Boolean(s.capture_output));
+        setShell(s.shell == null ? true : Boolean(s.shell));
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoading(false);
+        setErr(e instanceof Error ? e.message : String(e));
+      });
+    return () => { cancelled = true; };
+  }, [initial]);
+  if (loading) {
+    return (
+      <Overlay title={initial ? `编辑 command：${initial}` : "新建 command"} onClose={onClose}>
+        <div className="text-[12px] text-muted-foreground">加载中…</div>
+      </Overlay>
+    );
+  }
 
   const save = async () => {
     if (!NAME_RE.test(name)) { setErr("名称须为 Python 标识符"); return; }
