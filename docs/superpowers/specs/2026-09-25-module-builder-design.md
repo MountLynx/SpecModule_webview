@@ -138,13 +138,17 @@ library/
 
 ## Flow DSL / tasklist 生成
 
-前端纯函数从节点/边生成；**正确性最终由服务端 `validate_pack_dir` 把关**——前端生成
-有误会被校验抓住，不为 DSL 引入前端测试设施（生态无 vitest，不破例）。
+**服务端纯函数**（`server/api/build.py` 内 draft → `{Tasks, Flow}` 唯一实现；组装与
+dry-run 共用）。**正确性最终由 `validate_pack_dir` 把关**——生成有误会被校验抓住。
+UI 的 Flow DSL 预览面板展示 `validate` 端点返回的生成结果（前端零重复实现，不引入
+前端测试设施——生态无 vitest，不破例）。
 
 - Flow：起点节点加 `[...]`；guard 边 `A --|名|--> B`；非 AND join 节点追加
   `<名>.join: OR` 行；多起点支持（`[A] --> B` 多行）。
 - Tasks：每节点 `{type, <type字段>: 引用名, inputs, ...overrides}`（submodule 节点为
   `outputs` 映射）。
+- `POST /api/modules/packs/validate` 响应附生成的 `tasklist`（`{Tasks, Flow}`），
+  前端预览面板直接展示（单一实现，见下节）。
 
 ## 组装安装（服务端流程）
 
