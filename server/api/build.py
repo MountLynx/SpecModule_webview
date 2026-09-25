@@ -54,7 +54,7 @@ def _read_submodule_index() -> list[dict]:
         data = json.loads(p.read_text(encoding="utf-8"))
     except ValueError:
         return []
-    return data if isinstance(data, list) else []
+    return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
 
 
 def _now() -> str:
