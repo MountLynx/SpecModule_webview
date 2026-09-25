@@ -195,3 +195,54 @@ class TestSubmoduleIndex:
                 {"name": "sub_greet", "added_at": d["submodules"][0]["added_at"]}]
             assert client.delete("/api/library/submodules/sub_greet").json()["deleted"] is True
             assert client.get("/api/library").json()["submodules"] == []
+
+
+def draft_json(name: str = "my_mod", **over) -> dict:
+    return {
+        "meta": {"name": name, "version": "0.1.0", "description": "测试草稿"},
+        "spec_schema": [{"field": "raw_text", "type": "str"}],
+        "default_spec": {},
+        "nodes": [
+            {"id": "n1", "label": "Echo", "type": "script", "script": "echo",
+             "is_start": True, "join": "AND", "position": {"x": 0, "y": 0}, "inputs": {}},
+        ],
+        "edges": [],
+        **over,
+    }
+
+
+class TestDrafts:
+    def test_save_load_index_delete(self, client, base):
+        r = client.put("/api/library/drafts/my_mod", json=draft_json())
+        assert r.status_code == 200
+        assert client.get("/api/library").json()["drafts"] == ["my_mod"]
+        d = client.get("/api/library/drafts/my_mod").json()
+        assert d["meta"]["name"] == "my_mod" and "updated_at" in d
+        assert client.delete("/api/library/drafts/my_mod").json()["deleted"] is True
+        assert client.get("/api/library/drafts/my_mod").status_code == 404
+
+    def test_name_mismatch_400(self, client, base):
+        r = client.put("/api/library/drafts/other", json=draft_json("my_mod"))
+        assert r.status_code == 400 and "不一致" in r.json()["error"]
+
+    def test_structural_validation(self, client, base):
+        # 节点名非标识符
+        bad = draft_json()
+        bad["nodes"][0]["label"] = "bad label"
+        assert client.put("/api/library/drafts/my_mod", json=bad).status_code == 400
+        # 节点名重复
+        dup = draft_json()
+        dup["nodes"].append(dict(dup["nodes"][0], id="n2"))
+        assert client.put("/api/library/drafts/my_mod", json=dup).status_code == 400
+        # 节点缺类型引用
+        noref = draft_json()
+        del noref["nodes"][0]["script"]
+        assert client.put("/api/library/drafts/my_mod", json=noref).status_code == 400
+        # 边引用不存在节点 id
+        badedge = draft_json()
+        badedge["edges"] = [{"id": "e1", "from": "ghost", "to": "n1", "guard": None}]
+        assert client.put("/api/library/drafts/my_mod", json=badedge).status_code == 400
+        # spec_schema 类型非法
+        badschema = draft_json()
+        badschema["spec_schema"] = [{"field": "x", "type": "long"}]
+        assert client.put("/api/library/drafts/my_mod", json=badschema).status_code == 400

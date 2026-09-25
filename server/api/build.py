@@ -75,6 +75,100 @@ def _list_drafts() -> list[str]:
     return sorted(p.stem for p in d.glob("*.json")) if d.is_dir() else []
 
 
+_NODE_TYPES = ("harness", "script", "command", "submodule")
+_REF_FIELD = {"harness": "harness", "script": "script",
+              "command": "command", "submodule": "submodule"}
+_SCHEMA_TYPES = ("str", "int", "float", "bool", "list", "dict", "any")
+
+
+def _draft_err(msg: str):
+    return HTTPException(status_code=400, detail={"error": msg})
+
+
+def _validate_draft(draft, name: str) -> dict:
+    """草稿结构校验（轻量：形状与命名纪律；引用完整性留给组装期 validate_pack_dir）。"""
+    if not isinstance(draft, dict):
+        raise _draft_err("草稿须为 JSON 对象")
+    meta = draft.get("meta")
+    if not isinstance(meta, dict) or not meta.get("name"):
+        raise _draft_err("草稿缺 meta.name")
+    if meta["name"] != name:
+        raise _draft_err(f"meta.name({meta['name']})与路径({name})不一致")
+    nodes = draft.get("nodes")
+    if not isinstance(nodes, list):
+        raise _draft_err("nodes 须为数组")
+    labels: list[str] = []
+    for n in nodes:
+        if (not isinstance(n, dict) or not isinstance(n.get("id"), str) or not n["id"]
+                or not isinstance(n.get("label"), str) or not n["label"]):
+            raise _draft_err("节点缺 id/label")
+        if not validate_module_name(n["label"]):
+            raise _draft_err(f"节点名须为标识符: {n['label']!r}")
+        if n.get("type") not in _NODE_TYPES:
+            raise _draft_err(f"节点类型非法: {n.get('type')!r}")
+        if not n.get(_REF_FIELD[n["type"]]):
+            raise _draft_err(f"节点 {n['label']} 缺引用（{n['type']}）")
+        labels.append(n["label"])
+    dupes = sorted({x for x in labels if labels.count(x) > 1})
+    if dupes:
+        raise _draft_err(f"节点名重复: {dupes}")
+    edges = draft.get("edges")
+    if not isinstance(edges, list):
+        raise _draft_err("edges 须为数组")
+    node_ids = {n["id"] for n in nodes}
+    for e in edges:
+        if (not isinstance(e, dict) or not isinstance(e.get("from"), str)
+                or e["from"] not in node_ids or not isinstance(e.get("to"), str)
+                or e["to"] not in node_ids):
+            raise _draft_err("边引用了不存在的节点 id")
+    schema = draft.get("spec_schema", [])
+    if not isinstance(schema, list) or any(
+        not isinstance(f, dict) or not isinstance(f.get("field"), str) or not f["field"]
+        or not validate_module_name(f["field"])
+        or f.get("type") not in _SCHEMA_TYPES
+        for f in schema
+    ):
+        raise _draft_err(f"spec_schema 须为 [{{field,type}}]，type ∈ {'/'.join(_SCHEMA_TYPES)}")
+    return draft
+
+
+def _save_draft(name: str, raw: bytes) -> dict:
+    """草稿保存：JSON 解析 + 轻量结构校验后落 drafts/<name>.json（盖 updated_at）。"""
+    try:
+        draft = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise _draft_err(f"草稿 JSON 无效: {e}")
+    draft = _validate_draft(draft, name)
+    draft["updated_at"] = _now()
+    p = library_root() / "drafts" / f"{name}.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"saved": True, "kind": "drafts", "name": name}
+
+
+def get_draft(name: str) -> dict:
+    """草稿详情：API 自写文件的读防护（磁盘上手改损坏 → 400 而非 500）。"""
+    _check_name(name)
+    p = library_root() / "drafts" / f"{name}.json"
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail={"error": f"草稿 '{name}' 不存在"})
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise HTTPException(
+            status_code=400, detail={"error": f"草稿 '{name}' 读取失败: {e}"})
+
+
+def _delete_draft(name: str) -> dict:
+    """删除草稿文件，不存在 → 404。"""
+    _check_name(name)
+    p = library_root() / "drafts" / f"{name}.json"
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail={"error": f"草稿 '{name}' 不存在"})
+    p.unlink()
+    return {"deleted": True, "kind": "drafts", "name": name}
+
+
 @router.get("/library")
 def library_index() -> dict:
     """组件库分组清单（名字列表 + submodule 索引 + 草稿名）。"""
@@ -116,6 +210,8 @@ def library_item(kind: str, name: str) -> dict:
             raise HTTPException(
                 status_code=400, detail={"error": f"{kind}/{name} 读取失败: {e}"})
         return {"name": name, "code": code}
+    if kind == "drafts":
+        return get_draft(name)
     if kind == "submodules":
         for e in _read_submodule_index():
             if e.get("name") == name:
@@ -183,6 +279,8 @@ async def save_library_item(
         return _save_config(kind, name, await request.body())
     if kind in _PY_KINDS:
         return _save_code(kind, name, await request.body())
+    if kind == "drafts":
+        return _save_draft(name, await request.body())
     if kind == "submodules":
         return _add_submodule(name, search)
     raise HTTPException(status_code=404, detail={"error": f"未知组件类别: {kind}"})
@@ -199,6 +297,8 @@ def delete_library_item(kind: str, name: str) -> dict:
             raise HTTPException(status_code=404, detail={"error": f"{kind}/{name} 不存在"})
         p.unlink()
         return {"deleted": True, "kind": kind, "name": name}
+    if kind == "drafts":
+        return _delete_draft(name)
     if kind == "submodules":
         _write_submodule_index([e for e in _read_submodule_index() if e.get("name") != name])
         return {"deleted": True, "kind": "submodules", "name": name}
