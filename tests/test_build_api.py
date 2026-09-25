@@ -35,3 +35,44 @@ class TestLibraryIndex:
         assert d["harnesses"] == ["summarize"]
         assert d["scripts"] == ["echo"]
         assert d["commands"] == [] and d["guards"] == []
+
+
+COMMAND = {"name": "run_ls", "command": "ls", "timeout": 30.0}
+
+
+class TestConfigComponents:
+    def test_save_and_index_and_detail(self, client, base):
+        r = client.put("/api/library/harnesses/summarize", json=HARNESS)
+        assert r.status_code == 200 and r.json()["saved"] is True
+        r = client.put("/api/library/commands/run_ls", json=COMMAND)
+        assert r.status_code == 200
+        d = client.get("/api/library").json()
+        assert d["harnesses"] == ["summarize"] and d["commands"] == ["run_ls"]
+        # 详情 = 存储 JSON 原样（前端表单回填数据源）
+        assert client.get("/api/library/harnesses/summarize").json()["prompt_core"] == "总结：{text}"
+
+    def test_save_invalid_config_400(self, client, base):
+        # harness 缺必填 prompt_core；command 缺必填 command
+        r = client.put("/api/library/harnesses/bad", json={"name": "bad"})
+        assert r.status_code == 400 and "无效" in r.json()["error"]
+        r = client.put("/api/library/commands/bad", json={"name": "bad"})
+        assert r.status_code == 400
+
+    def test_save_name_mismatch_400(self, client, base):
+        r = client.put("/api/library/harnesses/other", json=HARNESS)
+        assert r.status_code == 400 and "不一致" in r.json()["error"]
+
+    def test_save_bad_name_400(self, client, base):
+        r = client.put("/api/library/harnesses/9bad", json={**HARNESS, "name": "9bad"})
+        assert r.status_code == 400
+
+    def test_update_overwrites(self, client, base):
+        client.put("/api/library/harnesses/summarize", json=HARNESS)
+        client.put("/api/library/harnesses/summarize",
+                   json={**HARNESS, "temperature": 0.9})
+        assert client.get("/api/library/harnesses/summarize").json()["temperature"] == 0.9
+
+    def test_delete_and_404(self, client, base):
+        client.put("/api/library/harnesses/summarize", json=HARNESS)
+        assert client.delete("/api/library/harnesses/summarize").json()["deleted"] is True
+        assert client.delete("/api/library/harnesses/summarize").status_code == 404
