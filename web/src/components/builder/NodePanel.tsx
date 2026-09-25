@@ -75,6 +75,19 @@ function NewInputRow({ onAdd }: { onAdd: (k: string) => void }) {
   );
 }
 
+/** submodule outputs 映射加行：先填本节点字段名再添加（重名 = 覆盖旧值） */
+function NewOutputRow({ onAdd }: { onAdd: (k: string) => void }) {
+  const [k, setK] = useState("");
+  return (
+    <div className="flex items-center gap-1">
+      <Input value={k} placeholder="输出字段名" onChange={(e) => setK(e.target.value)}
+             className="w-24 font-mono text-[12px]" />
+      <Button variant="outline" size="sm" disabled={!k}
+              onClick={() => { onAdd(k); setK(""); }}>添加映射</Button>
+    </div>
+  );
+}
+
 /** harness 覆盖参数（常用两项类型化 + 其余 JSON） */
 function OverridesEditor({ node, onChange }: {
   node: BuilderNode; onChange: (patch: Record<string, unknown> | undefined) => void;
@@ -95,7 +108,10 @@ function OverridesEditor({ node, onChange }: {
         <div className="mb-0.5 text-[11px] text-muted-foreground">temperature（空=不覆盖）</div>
         <Input value={ov.temperature === undefined ? "" : String(ov.temperature)}
                className="font-mono text-[12px]" placeholder="0.3"
-               onChange={(e) => set("temperature", e.target.value === "" ? undefined : Number(e.target.value))} />
+               onChange={(e) => {
+                 const n = Number(e.target.value);
+                 set("temperature", e.target.value !== "" && Number.isFinite(n) ? n : undefined);
+               }} />
       </div>
       <div>
         <div className="mb-0.5 text-[11px] text-muted-foreground">其余覆盖（JSON：promptmode/prompt/outputformat/notdo/…，空=无）</div>
@@ -123,6 +139,14 @@ function NodePanelInner({ node, draft, library, onChange, onSelect }: {
 }) {
   const patch = (p: Partial<BuilderNode>) =>
     onChange((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === node.id ? { ...n, ...p } : n)) }));
+  // command 覆盖按键设值：单键清空不清掉另一键；全空则整体撤销 overrides
+  const setOv = (kv: Record<string, unknown>) => {
+    const next = { ...node.overrides, ...kv };
+    for (const k of Object.keys(next)) {
+      if (next[k] === undefined) delete next[k];
+    }
+    patch({ overrides: Object.keys(next).length ? next : undefined });
+  };
   const refField = NODE_REF_FIELD[node.type];
   const options: string[] =
     node.type === "harness" ? library?.harnesses ?? [] :
@@ -179,12 +203,15 @@ function NodePanelInner({ node, draft, library, onChange, onSelect }: {
               <div className="mb-0.5 text-[11px] text-muted-foreground">timeout（秒）</div>
               <Input value={node.overrides?.timeout === undefined ? "" : String(node.overrides.timeout)}
                      className="font-mono text-[12px]"
-                     onChange={(e) => patch({ overrides: e.target.value === "" ? undefined : { ...node.overrides, timeout: Number(e.target.value) } })} />
+                     onChange={(e) => {
+                       const n = Number(e.target.value);
+                       setOv({ timeout: e.target.value !== "" && Number.isFinite(n) ? n : undefined });
+                     }} />
             </div>
             <div>
               <div className="mb-0.5 text-[11px] text-muted-foreground">cwd</div>
               <Input value={String(node.overrides?.cwd ?? "")} className="font-mono text-[12px]"
-                     onChange={(e) => patch({ overrides: e.target.value === "" ? undefined : { ...node.overrides, cwd: e.target.value } })} />
+                     onChange={(e) => setOv({ cwd: e.target.value === "" ? undefined : e.target.value })} />
             </div>
           </div>
         </Section>
@@ -203,10 +230,7 @@ function NodePanelInner({ node, draft, library, onChange, onSelect }: {
                 }}>×</Button>
               </div>
             ))}
-            <Button variant="outline" size="sm" className="self-start"
-                    onClick={() => patch({ outputs: { ...node.outputs, [""]: "" } })}>
-              添加映射
-            </Button>
+            <NewOutputRow onAdd={(k) => patch({ outputs: { ...node.outputs, [k]: "" } })} />
           </div>
         </Section>
       )}
