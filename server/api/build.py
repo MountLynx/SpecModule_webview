@@ -446,3 +446,35 @@ def validate_pack(body: dict, search: list[Path] = Depends(get_search_paths)) ->
     # manifest 即我们写入的 module.json 解析回读，tasklist 与 draft_to_tasklist
     # 同一 dict——直接复用，不重算（validate_pack_dir 缺 tasklist 即抛，必存在）
     return {"ok": True, "manifest": manifest, "tasklist": manifest["tasklist"]}
+
+
+@router.post("/modules/packs")
+def install_pack_route(
+    body: dict,
+    search: list[Path] = Depends(get_search_paths),
+) -> dict:
+    """组装 + validate + install_pack（source="webview-builder"）→ 返回模块详情。
+
+    同名已存在（store 或任何搜索来源，防遮蔽）→ 409；校验/组装失败 → 400。
+    """
+    draft = _load_draft_for_assembly(body)
+    name = draft["meta"]["name"]
+    if store.resolve_module(name, search=search) is not None:
+        raise HTTPException(status_code=409, detail={
+            "error": f"模块 '{name}' 已存在——改名或先卸载", "module": name})
+    pack = None
+    try:
+        pack = _assemble_pack(draft, search)
+        store.install_pack(pack, source="webview-builder")
+    except (ValueError, TypeError, KeyError) as e:
+        status = 409 if "已存在" in str(e) else 400
+        raise HTTPException(status_code=status, detail={"error": str(e), "module": name})
+    finally:
+        if pack is not None:
+            shutil.rmtree(pack, ignore_errors=True)
+    # install_pack 首次落盘时才创建 store/modules——请求起始算好的 search 不含它
+    # （search_paths 只收已存在目录），装后详情须现算搜索路径
+    resolved = store.resolve_module_full(name, search=get_search_paths())
+    if resolved is None:
+        raise HTTPException(status_code=500, detail={"error": "安装后详情读取失败", "module": name})
+    return store.detail_to_dict(resolved)

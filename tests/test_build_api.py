@@ -445,3 +445,64 @@ class TestValidatePack:
         assert d["tasklist"]["Flow"] == "[Sub]"
         # dry-run 不落 store
         assert "with_sub" not in [m["name"] for m in client.get("/api/modules").json()["modules"]]
+
+
+class TestInstallPack:
+    def test_install_ok_and_visible(self, client, base):
+        seed_builder(client)
+        r = client.post("/api/modules/packs", json={"draft": "loop_mod"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["name"] == "loop_mod" and d["kind"] == "packed"
+        # 安装后模块库可见（store/modules 在搜索路径内）
+        names = [m["name"] for m in client.get("/api/modules").json()["modules"]]
+        assert "loop_mod" in names
+
+    def test_install_duplicate_409(self, client, base):
+        seed_builder(client)
+        assert client.post("/api/modules/packs", json={"draft": "loop_mod"}).status_code == 200
+        r = client.post("/api/modules/packs", json={"draft": "loop_mod"})
+        assert r.status_code == 409 and "已存在" in r.json()["error"]
+
+    def test_install_with_submodule(self, client, base):
+        """submodule 索引 + 引用节点 → 组装时整包拷进 submodules/<键>/。"""
+        seed_pack_module(base)
+        client.put("/api/library/submodules/sub_greet")
+        client.put("/api/library/scripts/greeter",
+                   content=b"def greeter(view):\n    return {'ok': True}\n")
+        draft = {
+            "meta": {"name": "with_sub", "version": "0.1.0", "description": ""},
+            "spec_schema": [], "default_spec": {},
+            "nodes": [
+                {"id": "g", "label": "Greeter", "type": "script", "script": "greeter",
+                 "is_start": True, "join": "AND", "position": {"x": 0, "y": 0}, "inputs": {}},
+                {"id": "s", "label": "Sub", "type": "submodule", "submodule": "sub_greet",
+                 "is_start": False, "join": "AND", "position": {"x": 0, "y": 0},
+                 "inputs": {"x": "Greeter"}},
+            ],
+            "edges": [{"id": "e1", "from": "g", "to": "s", "guard": None}],
+        }
+        client.put("/api/library/drafts/with_sub", json=draft)
+        r = client.post("/api/modules/packs", json={"draft": "with_sub"})
+        assert r.status_code == 200
+        d = client.get("/api/modules/with_sub").json()
+        assert "sub_greet" in d["submodules"]
+
+    def test_install_missing_submodule_source_400(self, client, base):
+        """登记后源包被删 → 组装期报缺失（索引轻、拷贝在组装时刻）。"""
+        pack = seed_pack_module(base, "doomed")
+        import shutil as _sh
+        _sh.rmtree(pack)
+        client.put("/api/library/submodules/doomed")
+        client.put("/api/library/scripts/greeter",
+                   content=b"def greeter(view):\n    return {'ok': True}\n")
+        draft = {
+            "meta": {"name": "orphan", "version": "0.1.0", "description": ""},
+            "spec_schema": [], "default_spec": {},
+            "nodes": [{"id": "s", "label": "Sub", "type": "submodule", "submodule": "doomed",
+                       "is_start": True, "join": "AND", "position": {"x": 0, "y": 0}, "inputs": {}}],
+            "edges": [],
+        }
+        client.put("/api/library/drafts/orphan", json=draft)
+        r = client.post("/api/modules/packs", json={"draft": "orphan"})
+        assert r.status_code == 400 and "doomed" in r.json()["error"]
