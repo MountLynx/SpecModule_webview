@@ -321,3 +321,116 @@ export const postCheckpoint = (
 ) =>
   postJson<{ label: string; tick: number; overwritten: boolean }>(
     `/api/runs/${encodeURIComponent(runId)}/checkpoints`, body);
+
+// ------------------------------------------------------------------
+// 模块构建器：组件库 / 草稿 / 组装安装
+// ------------------------------------------------------------------
+
+export type LibraryKind =
+  | "harnesses" | "commands" | "scripts" | "guards" | "submodules" | "drafts";
+
+export interface LibraryIndex {
+  harnesses: string[];
+  commands: string[];
+  scripts: string[];
+  guards: string[];
+  submodules: { name: string; added_at: string }[];
+  drafts: string[];
+}
+
+export const fetchLibrary = () => getJson<LibraryIndex>("/api/library");
+
+/** 单组件详情：harness/command = 配置 JSON；scripts/guards = {name, code}；draft = 草稿 */
+export const fetchLibraryItem = (kind: LibraryKind, name: string) =>
+  getJson<Record<string, unknown>>(
+    `/api/library/${kind}/${encodeURIComponent(name)}`);
+
+export const putLibraryJson = (kind: LibraryKind, name: string, payload: unknown) =>
+  request<{ saved: boolean }>(`/api/library/${kind}/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+/** 上传代码（scripts/guards）：raw body UTF-8 文本，stem = 注册函数名 */
+export const putLibraryCode = (kind: LibraryKind, name: string, code: string) =>
+  request<{ saved: boolean }>(`/api/library/${kind}/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "text/x-python" },
+    body: code,
+  });
+
+export const deleteLibraryItem = (kind: LibraryKind, name: string) =>
+  request<{ deleted: boolean }>(`/api/library/${kind}/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+
+export interface BuilderMeta { name: string; version: string; description: string }
+
+export type SpecTypeName = "str" | "int" | "float" | "bool" | "list" | "dict" | "any";
+export interface SpecField { field: string; type: SpecTypeName }
+
+export type BuilderNodeType = "harness" | "script" | "command" | "submodule";
+
+export interface BuilderNode {
+  id: string;
+  /** = tasklist 任务名（Flow 引用名，标识符） */
+  label: string;
+  type: BuilderNodeType;
+  harness?: string; script?: string; command?: string; submodule?: string;
+  is_start: boolean;
+  join: "AND" | "OR";
+  position: { x: number; y: number };
+  inputs: Record<string, string>;
+  /** harness/command 节点的 TaskDefinition 逐项覆盖 */
+  overrides?: Record<string, unknown>;
+  /** submodule 输出映射 {本节点字段: 子输出字段} */
+  outputs?: Record<string, string>;
+}
+
+export interface BuilderEdge { id: string; from: string; to: string; guard: string | null }
+
+export interface BuilderDraft {
+  meta: BuilderMeta;
+  spec_schema: SpecField[];
+  default_spec: Record<string, unknown>;
+  nodes: BuilderNode[];
+  edges: BuilderEdge[];
+  updated_at?: string;
+}
+
+export const emptyDraft = (name: string): BuilderDraft => ({
+  meta: { name, version: "0.1.0", description: "" },
+  spec_schema: [],
+  default_spec: {},
+  nodes: [],
+  edges: [],
+});
+
+export const fetchDraft = (name: string) =>
+  fetchLibraryItem("drafts", name) as unknown as Promise<BuilderDraft>;
+
+export const putDraft = (d: BuilderDraft) => putLibraryJson("drafts", d.meta.name, d);
+
+export const deleteDraft = (name: string) => deleteLibraryItem("drafts", name);
+
+export interface ValidatePackResult {
+  ok: boolean;
+  manifest: Record<string, unknown>;
+  tasklist: { Tasks: Record<string, unknown>; Flow: string };
+}
+
+export const validatePack = (draftName: string) =>
+  postJson<ValidatePackResult>("/api/modules/packs/validate", { draft: draftName });
+
+export const installPack = (draftName: string) =>
+  postJson<ModuleDetail>("/api/modules/packs", { draft: draftName });
+
+/** 节点类型 → 草稿引用字段（builder/NodePanel 与画布共用） */
+export const NODE_REF_FIELD: Record<BuilderNodeType, keyof BuilderNode> = {
+  harness: "harness", script: "script", command: "command", submodule: "submodule",
+};
+
+/** 生成短随机 id（节点 n_xxx / 边 e_xxx） */
+export const genId = (prefix: string) =>
+  `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
