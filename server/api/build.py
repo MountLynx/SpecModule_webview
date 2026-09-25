@@ -186,8 +186,9 @@ def draft_to_tasklist(draft: dict) -> dict:
 
     edges 的 from/to 是节点 id；起点标记 `[名]` 只在该起点节点首条出边出现一次
     （tickflow 允许多起点，各起点各自的边各自带标记）；孤立起点（零出边）补
-    裸名行（prepare_flow 自动包成 [名]，单节点模块 Flow 不为空）；join 覆盖
-    （非 AND）追加 `<名>.join: OR` 行。生成正确性最终由 validate_pack_dir 把关。
+    `[名]` 标记行（裸名整行只在单节点 Flow 可解析，标记行任何位置都可解析且
+    注册起点）；join 覆盖（非 AND）追加 `<名>.join: OR` 行。生成正确性最终由
+    validate_pack_dir 把关。
     """
     nodes = draft["nodes"]
     label_of = {n["id"]: n["label"] for n in nodes}
@@ -213,11 +214,12 @@ def draft_to_tasklist(draft: dict) -> dict:
             marked.add(e["from"])
         arrow = f"--|{e['guard']}|-->" if e.get("guard") else "-->"
         lines.append(f"{src} {arrow} {label_of[e['to']]}")
-    # Fix C：孤立起点（零出边）没有行可打标记——补裸名行，否则单节点模块
-    # Flow 为空过不了库 parse（prepare_flow 把裸名包成 [名]）
+    # Fix C：孤立起点（零出边）没有行可打标记——补 `[名]` 标记行。裸名整行
+    # 只在整条 Flow 为单名时可解析（混合流 parse 拒收）；[名] 行任意位置
+    # 可解析且注册起点，单节点模块 Flow 也不为空。
     for n in nodes:
         if n["id"] in starts and n["id"] not in marked:
-            lines.append(n["label"])
+            lines.append(f"[{n['label']}]")
     for n in nodes:
         if n.get("join", "AND") == "OR":
             lines.append(f"{n['label']}.join: OR")
@@ -381,45 +383,50 @@ def _find_packed_source(name: str, search: list[Path]) -> Path:
 
 
 def _assemble_pack(draft: dict, search: list[Path]) -> Path:
-    """草稿 → 临时 pack 目录（不落 store；调用方负责 rmtree）。失败抛 ValueError。
+    """草稿 → 临时 pack 目录（不落 store；失败自清理，成功后调用方负责 rmtree）。
 
     只拷被引用组件（包自包含——拷贝进包语义）；submodule 整包 copytree 进
     submodules/<键>/，manifest modules 列表与目录双向一致。
     """
-    meta = draft["meta"]
     pack = Path(tempfile.mkdtemp(prefix="specmodule_build_"))
-    root = library_root()
-    schema = {f["field"]: f["type"] for f in draft.get("spec_schema", [])}
-    sub_names = sorted({n["submodule"] for n in draft["nodes"] if n["type"] == "submodule"})
-    manifest = {
-        "name": meta["name"],
-        "version": meta.get("version", "0.1.0"),
-        "description": meta.get("description", ""),
-        "submodule": False,
-        "spec_schema": {"input": schema},
-        "requires": [],
-        "modules": sub_names,
-        "tasklist": draft_to_tasklist(draft),
-    }
-    (pack / "module.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        meta = draft["meta"]
+        root = library_root()
+        schema = {f["field"]: f["type"] for f in draft.get("spec_schema", [])}
+        sub_names = sorted(
+            {n["submodule"] for n in draft["nodes"] if n["type"] == "submodule"})
+        manifest = {
+            "name": meta["name"],
+            "version": meta.get("version", "0.1.0"),
+            "description": meta.get("description", ""),
+            "submodule": False,
+            "spec_schema": {"input": schema},
+            "requires": [],
+            "modules": sub_names,
+            "tasklist": draft_to_tasklist(draft),
+        }
+        (pack / "module.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def copy_kind(kind: str, names, ext: str) -> None:
-        for nm in sorted(names):
-            src = root / kind / f"{nm}{ext}"
-            if not src.is_file():
-                raise ValueError(f"库组件缺失: {kind}/{nm}")
-            dst = pack / kind
-            dst.mkdir(exist_ok=True)
-            shutil.copy2(src, dst / src.name)
+        def copy_kind(kind: str, names, ext: str) -> None:
+            for nm in sorted(names):
+                src = root / kind / f"{nm}{ext}"
+                if not src.is_file():
+                    raise ValueError(f"库组件缺失: {kind}/{nm}")
+                dst = pack / kind
+                dst.mkdir(exist_ok=True)
+                shutil.copy2(src, dst / src.name)
 
-    copy_kind("harnesses", {n["harness"] for n in draft["nodes"] if n["type"] == "harness"}, ".json")
-    copy_kind("commands", {n["command"] for n in draft["nodes"] if n["type"] == "command"}, ".json")
-    copy_kind("scripts", {n["script"] for n in draft["nodes"] if n["type"] == "script"}, ".py")
-    copy_kind("guards", {e["guard"] for e in draft["edges"] if e.get("guard")}, ".py")
-    for nm in sub_names:
-        shutil.copytree(_find_packed_source(nm, search), pack / "submodules" / nm)
-    return pack
+        copy_kind("harnesses", {n["harness"] for n in draft["nodes"] if n["type"] == "harness"}, ".json")
+        copy_kind("commands", {n["command"] for n in draft["nodes"] if n["type"] == "command"}, ".json")
+        copy_kind("scripts", {n["script"] for n in draft["nodes"] if n["type"] == "script"}, ".py")
+        copy_kind("guards", {e["guard"] for e in draft["edges"] if e.get("guard")}, ".py")
+        for nm in sub_names:
+            shutil.copytree(_find_packed_source(nm, search), pack / "submodules" / nm)
+        return pack
+    except BaseException:
+        shutil.rmtree(pack, ignore_errors=True)
+        raise
 
 
 @router.post("/modules/packs/validate")
@@ -436,4 +443,6 @@ def validate_pack(body: dict, search: list[Path] = Depends(get_search_paths)) ->
     finally:
         if pack is not None:
             shutil.rmtree(pack, ignore_errors=True)
-    return {"ok": True, "manifest": manifest, "tasklist": draft_to_tasklist(draft)}
+    # manifest 即我们写入的 module.json 解析回读，tasklist 与 draft_to_tasklist
+    # 同一 dict——直接复用，不重算（validate_pack_dir 缺 tasklist 即抛，必存在）
+    return {"ok": True, "manifest": manifest, "tasklist": manifest["tasklist"]}

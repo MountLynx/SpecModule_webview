@@ -308,12 +308,12 @@ class TestDraftToTasklist:
         tl = draft_to_tasklist(draft)
         assert tl["Tasks"]["Sub"] == {"type": "submodule", "submodule": "sub_greet",
                                       "outputs": {"msg": "hi"}}
-        # Fix C：孤立起点（零出边）补裸名行——单节点模块 Flow 不再为空
-        assert tl["Flow"] == "Sub"
+        # Fix C：孤立起点（零出边）补 [名] 标记行——单节点模块 Flow 不再为空
+        assert tl["Flow"] == "[Sub]"
 
-    def test_isolated_start_bare_line(self):
-        """Fix C：带出边的起点照常打 [标记]，孤立起点补裸名行（prepare_flow
-        自动包成 [名]，单节点模块得以通过库 parse）。"""
+    def test_isolated_start_marker_line(self):
+        """Fix C：带出边的起点照常打 [标记]，孤立起点补 [名] 标记行（裸名整行
+        只在单节点 Flow 可解析，[名] 行在混合流中任意位置可解析）。"""
         draft = {
             "meta": {"name": "m", "version": "0.1.0", "description": ""},
             "spec_schema": [], "default_spec": {},
@@ -331,7 +331,7 @@ class TestDraftToTasklist:
             "edges": [{"id": "e1", "from": "x1", "to": "x2", "guard": None}],
         }
         tl = draft_to_tasklist(draft)
-        assert tl["Flow"] == "[Echo] --> Echo2\nSub"
+        assert tl["Flow"] == "[Echo] --> Echo2\n[Sub]"
 
 
 def seed_builder(client) -> dict:
@@ -417,3 +417,31 @@ class TestValidatePack:
                      encoding="utf-8")
         r = client.post("/api/modules/packs/validate", json={"draft": "sneaky"})
         assert r.status_code == 400
+
+    def test_validate_with_submodule(self, client, base):
+        """组装的 submodule 分支：整包 copytree 进 submodules/，manifest modules
+        列表双向一致，经库 validate_pack_dir 全量校验。"""
+        seed_pack_module(base)
+        assert client.put("/api/library/submodules/sub_greet").status_code == 200
+        draft = {
+            "meta": {"name": "with_sub", "version": "0.1.0", "description": ""},
+            "spec_schema": [], "default_spec": {},
+            "nodes": [{"id": "s", "label": "Sub", "type": "submodule",
+                       "submodule": "sub_greet", "is_start": True, "join": "AND",
+                       "position": {"x": 0, "y": 0}, "inputs": {},
+                       "outputs": {"msg": "hi"}}],
+            "edges": [],
+        }
+        client.put("/api/library/drafts/with_sub", json=draft)
+        r = client.post("/api/modules/packs/validate", json={"draft": "with_sub"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["ok"] is True
+        assert d["manifest"]["modules"] == ["sub_greet"]
+        assert d["manifest"]["tasklist"]["Tasks"]["Sub"] == {
+            "type": "submodule", "submodule": "sub_greet", "outputs": {"msg": "hi"}}
+        # Fix 3 复用 manifest tasklist：与响应顶层 tasklist 同源同形
+        assert d["tasklist"] == d["manifest"]["tasklist"]
+        assert d["tasklist"]["Flow"] == "[Sub]"
+        # dry-run 不落 store
+        assert "with_sub" not in [m["name"] for m in client.get("/api/modules").json()["modules"]]
