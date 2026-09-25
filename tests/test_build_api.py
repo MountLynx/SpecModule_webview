@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from server.api.build import draft_to_tasklist
+
 HARNESS = {"name": "summarize", "prompt_core": "总结：{text}", "temperature": 0.3}
 
 
@@ -246,3 +248,43 @@ class TestDrafts:
         badschema = draft_json()
         badschema["spec_schema"] = [{"field": "x", "type": "long"}]
         assert client.put("/api/library/drafts/my_mod", json=badschema).status_code == 400
+
+
+class TestDraftToTasklist:
+    def test_flow_dsl_generation(self):
+        draft = {
+            "meta": {"name": "m", "version": "0.1.0", "description": ""},
+            "spec_schema": [], "default_spec": {},
+            "nodes": [
+                {"id": "a", "label": "Summarize", "type": "harness", "harness": "summarize",
+                 "is_start": True, "join": "AND", "position": {"x": 0, "y": 0},
+                 "inputs": {"text": "{spec.raw_text}"}, "overrides": {"temperature": 0.3}},
+                {"id": "b", "label": "Echo", "type": "script", "script": "echo",
+                 "is_start": False, "join": "OR", "position": {"x": 0, "y": 0},
+                 "inputs": {"data": "Summarize"}},
+            ],
+            "edges": [{"id": "e1", "from": "a", "to": "b", "guard": "has_issues"}],
+        }
+        tl = draft_to_tasklist(draft)
+        assert tl["Tasks"] == {
+            "Summarize": {"type": "harness", "harness": "summarize", "temperature": 0.3,
+                          "inputs": {"text": "{spec.raw_text}"}},
+            "Echo": {"type": "script", "script": "echo", "inputs": {"data": "Summarize"}},
+        }
+        assert tl["Flow"] == "[Summarize] --|has_issues|--> Echo\nEcho.join: OR"
+
+    def test_submodule_outputs_and_join_default(self):
+        draft = {
+            "meta": {"name": "m", "version": "0.1.0", "description": ""},
+            "spec_schema": [], "default_spec": {},
+            "nodes": [
+                {"id": "s", "label": "Sub", "type": "submodule", "submodule": "sub_greet",
+                 "is_start": True, "join": "AND", "position": {"x": 0, "y": 0},
+                 "inputs": {}, "outputs": {"msg": "hi"}},
+            ],
+            "edges": [],
+        }
+        tl = draft_to_tasklist(draft)
+        assert tl["Tasks"]["Sub"] == {"type": "submodule", "submodule": "sub_greet",
+                                      "outputs": {"msg": "hi"}}
+        assert tl["Flow"] == ""

@@ -169,6 +169,43 @@ def _delete_draft(name: str) -> dict:
     return {"deleted": True, "kind": "drafts", "name": name}
 
 
+def draft_to_tasklist(draft: dict) -> dict:
+    """草稿 → tasklist dict（{Tasks, Flow}）——组装与 validate 共用的唯一实现。
+
+    edges 的 from/to 是节点 id；起点标记 `[名]` 只在该起点节点首条出边出现一次
+    （tickflow 允许多起点，各起点各自的边各自带标记）；join 覆盖（非 AND）追加
+    `<名>.join: OR` 行。生成正确性最终由 validate_pack_dir 把关。
+    """
+    nodes = draft["nodes"]
+    label_of = {n["id"]: n["label"] for n in nodes}
+    starts = {n["id"] for n in nodes if n.get("is_start")}
+    tasks: dict[str, dict] = {}
+    for n in nodes:
+        field = _REF_FIELD[n["type"]]
+        d: dict = {"type": n["type"], field: n[field]}
+        if n["type"] == "submodule":
+            if n.get("outputs"):
+                d["outputs"] = dict(n["outputs"])
+        else:
+            d.update(n.get("overrides") or {})
+        if n.get("inputs"):
+            d["inputs"] = dict(n["inputs"])
+        tasks[n["label"]] = d
+    lines: list[str] = []
+    marked: set[str] = set()
+    for e in draft["edges"]:
+        src = label_of[e["from"]]
+        if e["from"] in starts and e["from"] not in marked:
+            src = f"[{src}]"
+            marked.add(e["from"])
+        arrow = f"--|{e['guard']}|-->" if e.get("guard") else "-->"
+        lines.append(f"{src} {arrow} {label_of[e['to']]}")
+    for n in nodes:
+        if n.get("join", "AND") == "OR":
+            lines.append(f"{n['label']}.join: OR")
+    return {"Tasks": tasks, "Flow": "\n".join(lines)}
+
+
 @router.get("/library")
 def library_index() -> dict:
     """组件库分组清单（名字列表 + submodule 索引 + 草稿名）。"""
