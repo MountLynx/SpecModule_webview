@@ -1,6 +1,6 @@
 // App 壳层（二期·页签制）：顶部页签栏——模块库固定页签 + chat 会话 / run 视图
-// 动态页签多实例共存。活动栏五页签：tree 为「页签配套功能」（内容随激活
-// chat 页签切换）；chat/modules/runs/settings 为「全局功能」（不随页签变，只变
+// /构建草稿 动态页签多实例共存。活动栏六页签：tree 为「页签配套功能」（内容随激活
+// chat 页签切换）；chat/modules/build/runs/settings 为「全局功能」（不随页签变，只变
 // 列表选中高亮）。会话状态按 sid 多实例（一期 TreeChat webui 为单活动会话）。
 // 不引 router（useState 范式，两仓库一致）。
 // 三期（chat as modules）：回合升级 SSE 流式——回调闭包绑定发起 sid，按 sid 多实例
@@ -24,11 +24,13 @@ import { Composer } from "./chat/Composer";
 import { SettingsPanel } from "./chat/SettingsPanel";
 import { TreePanel } from "./chat/TreePanel";
 import { ActivityBar, type Tab } from "./components/ActivityBar";
+import { LibraryPanel } from "./components/LibraryPanel";
 import { ModuleDetail } from "./components/ModuleDetail";
 import { ModuleList } from "./components/ModuleList";
 import { RunList } from "./components/RunList";
 import { RunView, type ResumeRequestMsg } from "./components/RunView";
 import { ResizeHandle, useResizableWidth } from "./components/ResizeHandle";
+import { ModuleBuilder } from "./components/builder/ModuleBuilder";
 import { TabBar, type TabItem } from "./components/TabBar";
 
 /** 主区空态（图标在标题上方，居中） */
@@ -61,8 +63,8 @@ const EMPTY_CHAT_UI: ChatUi = {
   cardSeqs: [], cardGenOpen: false, cardsOpen: true, busy: false, error: null, run: null,
 };
 
-/** 动态页签：kind + 原始 key（sid / runId）；页签 id = `${kind}:${key}` */
-interface DynTab { kind: "chat" | "run"; key: string }
+/** 动态页签：kind + 原始 key（sid / runId / 构建草稿名）；页签 id = `${kind}:${key}` */
+interface DynTab { kind: "chat" | "run" | "build"; key: string }
 const tabId = (t: DynTab) => `${t.kind}:${t.key}`;
 
 export default function App() {
@@ -174,7 +176,7 @@ export default function App() {
 
   // ── 页签开/关 ──
 
-  const ensureTab = useCallback((kind: "chat" | "run", key: string) => {
+  const ensureTab = useCallback((kind: "chat" | "run" | "build", key: string) => {
     setDynTabs((prev) =>
       prev.some((t) => t.kind === kind && t.key === key) ? prev : [...prev, { kind, key }]);
   }, []);
@@ -185,6 +187,12 @@ export default function App() {
   const openRunTab = useCallback((rid: string) => {
     ensureTab("run", rid);
     setActiveId(`run:${rid}`);
+  }, [ensureTab]);
+  // 构建板块：打开/新建草稿 → build 页签（侧栏随之切组件库）
+  const openBuilder = useCallback((name: string) => {
+    ensureTab("build", name);
+    setActiveId(`build:${name}`);
+    setSidebarTab("build");
   }, [ensureTab]);
 
   // 关闭激活页签 → 激活同位置后一页签，没有则前一页签，再没有回落模块库
@@ -202,6 +210,7 @@ export default function App() {
   // 激活 chat 页签的会话状态懒加载（切回已打开页签走缓存不重拉）
   const activeChatSid = activeId.startsWith("chat:") ? activeId.slice(5) : null;
   const activeRunId = activeId.startsWith("run:") ? activeId.slice(4) : null;
+  const activeBuildName = activeId.startsWith("build:") ? activeId.slice(6) : null;
   useEffect(() => {
     if (!activeChatSid || convs[activeChatSid]) return;
     let alive = true;
@@ -385,10 +394,12 @@ export default function App() {
     ...dynTabs.map((t) =>
       t.kind === "chat"
         ? { id: tabId(t), kind: "chat" as const, label: convs[t.key]?.name ?? t.key, closable: true }
-        : {
-            id: tabId(t), kind: "run" as const,
-            label: runs.find((r) => r.run_id === t.key)?.module || t.key, closable: true,
-          },
+        : t.kind === "build"
+          ? { id: tabId(t), kind: "build" as const, label: t.key, closable: true }
+          : {
+              id: tabId(t), kind: "run" as const,
+              label: runs.find((r) => r.run_id === t.key)?.module || t.key, closable: true,
+            },
     ),
   ];
 
@@ -434,6 +445,14 @@ export default function App() {
         )}
         {sidebarTab === "modules" && (
           <ModuleList selected={openModuleName} onSelect={selectModule} />
+        )}
+        {sidebarTab === "build" && (
+          <LibraryPanel
+            activeDraft={activeBuildName}
+            onOpenDraft={openBuilder}
+            onCreated={openBuilder}
+            onDeleted={(name) => closeTab(`build:${name}`)}
+          />
         )}
         {sidebarTab === "runs" && (
           <RunList
@@ -566,6 +585,16 @@ export default function App() {
               onResumeRequestConsumed={consumeResumeRequest}
               onRequestResume={(rid) => setResumeRequest({ runId: rid, seq: Date.now() })}
               onRefreshRuns={refreshRuns}
+            />
+          ) : activeBuildName ? (
+            <ModuleBuilder
+              key={activeBuildName}
+              name={activeBuildName}
+              onInstalled={(moduleName) => {
+                setOpenModuleName(moduleName);
+                setActiveId("modules");
+                setSidebarTab("modules");
+              }}
             />
           ) : null}
         </div>

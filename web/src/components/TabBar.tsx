@@ -1,13 +1,13 @@
 // 顶部页签栏（二期页签制核心）：模块库固定页签永远在首位；每个 chat 会话、
 // 每个 run 视图各占一页签，可同时存在。点选激活主区内容，× 关闭（模块库不可关）。
 // 激活页签 = primary 反色胶囊（选中强调，亮色黑底白字），非激活 hover 微底色。
-import { Box, MessageSquare, Play, X } from "lucide-react";
+import { Box, Hammer, MessageSquare, Play, X } from "lucide-react";
 import { cn } from "../lib/utils";
 
-export type TabKind = "modules" | "chat" | "run";
+export type TabKind = "modules" | "chat" | "run" | "build";
 
 export interface TabItem {
-  /** "modules" | `chat:${sid}` | `run:${runId}` */
+  /** "modules" | `chat:${sid}` | `run:${runId}` | `build:${name}` */
   id: string;
   kind: TabKind;
   label: string;
@@ -26,7 +26,10 @@ export function TabBar({ tabs, activeId, onSelect, onClose }: Props) {
     <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b bg-sidebar px-1.5">
       {tabs.map((t) => {
         const active = t.id === activeId;
-        const Icon = t.kind === "modules" ? Box : t.kind === "chat" ? MessageSquare : Play;
+        const Icon =
+          t.kind === "modules" ? Box :
+          t.kind === "build" ? Hammer :
+          t.kind === "chat" ? MessageSquare : Play;
         return (
           <div
             key={t.id}
