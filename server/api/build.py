@@ -54,7 +54,10 @@ def _read_submodule_index() -> list[dict]:
         data = json.loads(p.read_text(encoding="utf-8"))
     except ValueError:
         return []
-    return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
+    return (
+        [e for e in data if isinstance(e, dict) and isinstance(e.get("name"), str)]
+        if isinstance(data, list) else []
+    )
 
 
 def _now() -> str:
@@ -91,7 +94,8 @@ _CFG_CLS = {"harnesses": HarnessConfig, "commands": CommandConfig}
 
 @router.get("/library/{kind}/{name}")
 def library_item(kind: str, name: str) -> dict:
-    """单组件详情：harness/command = 存储 JSON；scripts/guards = {name, code}。"""
+    """单组件详情：harness/command = 存储 JSON；scripts/guards = {name, code}；
+    submodules = 索引条目（{name, added_at}，未登记 → 404）。"""
     _check_name(name)
     if kind in _CFG_CLS:
         p = library_root() / kind / f"{name}.json"
@@ -154,19 +158,12 @@ def _save_code(kind: str, name: str, raw: bytes) -> dict:
 
 def _add_submodule(name: str, search: list[Path]) -> dict:
     """登记已安装 packed 模块为可引用 submodule（索引记名，组装时才拷包）。"""
-    found = False
-    for sources in store.list_modules(search=search).values():
-        for s in sources:
-            if s.name == name:
-                found = True
-                if s.kind not in ("packed", "pip"):
-                    raise HTTPException(status_code=400, detail={
-                        "error": f"模块 '{name}' 为 {s.kind} 形态，仅 packed 可作 submodule"})
-                break
-        if found:
-            break
-    if not found:
+    src = store.resolve_module(name, search=search)
+    if src is None:
         raise HTTPException(status_code=404, detail={"error": f"模块 '{name}' 未找到"})
+    if src.kind not in ("packed", "pip"):
+        raise HTTPException(status_code=400, detail={
+            "error": f"模块 '{name}' 为 {src.kind} 形态，仅 packed/pip 可作 submodule"})
     entries = _read_submodule_index()
     if not any(e.get("name") == name for e in entries):
         entries.append({"name": name, "added_at": _now()})
@@ -193,7 +190,8 @@ async def save_library_item(
 
 @router.delete("/library/{kind}/{name}")
 def delete_library_item(kind: str, name: str) -> dict:
-    """删除组件：json/py 按类别扩展名定位，不存在 → 404。"""
+    """删除组件：json/py 按类别扩展名定位，不存在 → 404；submodules 按
+    名过滤索引条目（幂等——未登记也返回 deleted，不 404）。"""
     _check_name(name)
     if kind in _KINDS:
         p = library_root() / kind / f"{name}{_EXT[kind]}"

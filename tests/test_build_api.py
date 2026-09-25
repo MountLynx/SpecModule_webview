@@ -181,16 +181,17 @@ class TestSubmoduleIndex:
         assert d["name"] == "sub_greet"
 
     def test_corrupt_index_tolerated(self, client, base):
-        """非 dict 元素索引（手改损坏）不致 500：读端回落空 + 登记重写干净索引。"""
+        """损坏索引（非 dict 元素 / 缺 name 键）不致 500：读端回落空 + 登记重写干净索引。"""
         seed_pack_module(base)
         p = base / "home" / "library" / "submodules.json"
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("[1, 2]", encoding="utf-8")
-        assert client.get("/api/library").json()["submodules"] == []
-        # 损坏在场时增删皆不抛异常
-        assert client.put("/api/library/submodules/sub_greet").status_code == 200
-        d = client.get("/api/library").json()
-        assert d["submodules"] == [
-            {"name": "sub_greet", "added_at": d["submodules"][0]["added_at"]}]
-        assert client.delete("/api/library/submodules/sub_greet").json()["deleted"] is True
-        assert client.get("/api/library").json()["submodules"] == []
+        for corrupt in ("[1, 2]", '[{"foo": 1}]'):
+            p.write_text(corrupt, encoding="utf-8")
+            assert client.get("/api/library").json()["submodules"] == []
+            # 损坏在场时增删皆不抛异常
+            assert client.put("/api/library/submodules/sub_greet").status_code == 200
+            d = client.get("/api/library").json()
+            assert d["submodules"] == [
+                {"name": "sub_greet", "added_at": d["submodules"][0]["added_at"]}]
+            assert client.delete("/api/library/submodules/sub_greet").json()["deleted"] is True
+            assert client.get("/api/library").json()["submodules"] == []
