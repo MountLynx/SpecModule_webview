@@ -11,6 +11,7 @@ from server.api import runs
 from server.api import manage
 from server.api import graph
 from server.api import control
+from server.api import build
 from server.chat import mount_chat
 from server.deps import get_base_dir
 from server.ws import router as ws_router
@@ -32,6 +33,7 @@ def flatten_http_exception(request: Request, exc: HTTPException) -> JSONResponse
 
 app.include_router(runs.router)
 app.include_router(manage.router)
+app.include_router(build.router)
 app.include_router(graph.router)
 app.include_router(control.router)
 app.include_router(ws_router)
