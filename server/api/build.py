@@ -18,11 +18,13 @@ from module_harness import store
 from module_harness.cli.command import CommandConfig
 from module_harness.cli.scaffold import validate_module_name
 from module_harness.core.config import HarnessConfig
+from server.deps import get_search_paths
 
 router = APIRouter(prefix="/api")
 
 _KINDS = ("harnesses", "commands", "scripts", "guards")
 _EXT = {"harnesses": ".json", "commands": ".json", "scripts": ".py", "guards": ".py"}
+_PY_KINDS = ("scripts", "guards")
 
 
 def library_root() -> Path:
@@ -53,6 +55,16 @@ def _read_submodule_index() -> list[dict]:
     except ValueError:
         return []
     return data if isinstance(data, list) else []
+
+
+def _now() -> str:
+    from datetime import datetime
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _write_submodule_index(entries: list[dict]) -> None:
+    p = library_root() / "submodules.json"
+    p.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _list_drafts() -> list[str]:
@@ -90,7 +102,7 @@ def library_item(kind: str, name: str) -> dict:
         except (ValueError, UnicodeDecodeError) as e:
             raise HTTPException(
                 status_code=400, detail={"error": f"{kind}/{name} 读取失败: {e}"})
-    if kind in ("scripts", "guards"):
+    if kind in _PY_KINDS:
         p = library_root() / kind / f"{name}.py"
         if not p.is_file():
             raise HTTPException(status_code=404, detail={"error": f"{kind}/{name} 不存在"})
@@ -100,6 +112,11 @@ def library_item(kind: str, name: str) -> dict:
             raise HTTPException(
                 status_code=400, detail={"error": f"{kind}/{name} 读取失败: {e}"})
         return {"name": name, "code": code}
+    if kind == "submodules":
+        for e in _read_submodule_index():
+            if e.get("name") == name:
+                return e
+        raise HTTPException(status_code=404, detail={"error": f"submodule '{name}' 未登记"})
     raise HTTPException(status_code=404, detail={"error": f"未知组件类别: {kind}"})
 
 
@@ -135,14 +152,42 @@ def _save_code(kind: str, name: str, raw: bytes) -> dict:
     return {"saved": True, "kind": kind, "name": name}
 
 
+def _add_submodule(name: str, search: list[Path]) -> dict:
+    """登记已安装 packed 模块为可引用 submodule（索引记名，组装时才拷包）。"""
+    found = False
+    for sources in store.list_modules(search=search).values():
+        for s in sources:
+            if s.name == name:
+                found = True
+                if s.kind not in ("packed", "pip"):
+                    raise HTTPException(status_code=400, detail={
+                        "error": f"模块 '{name}' 为 {s.kind} 形态，仅 packed 可作 submodule"})
+                break
+        if found:
+            break
+    if not found:
+        raise HTTPException(status_code=404, detail={"error": f"模块 '{name}' 未找到"})
+    entries = _read_submodule_index()
+    if not any(e.get("name") == name for e in entries):
+        entries.append({"name": name, "added_at": _now()})
+        entries.sort(key=lambda e: e["name"])
+        _write_submodule_index(entries)
+    return {"saved": True, "kind": "submodules", "name": name}
+
+
 @router.put("/library/{kind}/{name}")
-async def save_library_item(kind: str, name: str, request: Request) -> dict:
+async def save_library_item(
+    kind: str, name: str, request: Request,
+    search: list[Path] = Depends(get_search_paths),
+) -> dict:
     """保存（PUT = create-or-update）：JSON 配置 / 代码文本 / 草稿 / submodule 登记。"""
     _check_name(name)
     if kind in _CFG_CLS:
         return _save_config(kind, name, await request.body())
-    if kind in ("scripts", "guards"):
+    if kind in _PY_KINDS:
         return _save_code(kind, name, await request.body())
+    if kind == "submodules":
+        return _add_submodule(name, search)
     raise HTTPException(status_code=404, detail={"error": f"未知组件类别: {kind}"})
 
 
@@ -156,4 +201,7 @@ def delete_library_item(kind: str, name: str) -> dict:
             raise HTTPException(status_code=404, detail={"error": f"{kind}/{name} 不存在"})
         p.unlink()
         return {"deleted": True, "kind": kind, "name": name}
+    if kind == "submodules":
+        _write_submodule_index([e for e in _read_submodule_index() if e.get("name") != name])
+        return {"deleted": True, "kind": "submodules", "name": name}
     raise HTTPException(status_code=404, detail={"error": f"未知组件类别: {kind}"})

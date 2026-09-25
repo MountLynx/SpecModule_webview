@@ -20,6 +20,22 @@ def seed_library(home: Path) -> None:
         "def echo(view):\n    return {'message': view.field('data')}\n", encoding="utf-8")
 
 
+def seed_pack_module(home: Path, name: str = "sub_greet") -> Path:
+    """隔离 store modules/ 下种最小 packed 模块（submodule 拷贝源夹具）。"""
+    p = home / "home" / "modules" / name
+    (p / "scripts").mkdir(parents=True)
+    (p / "module.json").write_text(json.dumps({
+        "name": name, "description": "子模块夹具", "submodule": True,
+        "spec_schema": {"input": {}, "output": {}},
+        "requires": [], "modules": [],
+        "tasklist": {"Tasks": {"Greet": {"type": "script", "script": "greet"}},
+                     "Flow": "[Greet]"},
+    }, ensure_ascii=False), encoding="utf-8")
+    (p / "scripts" / "greet.py").write_text(
+        "def greet(view):\n    return {'hi': 1}\n", encoding="utf-8")
+    return p
+
+
 class TestLibraryIndex:
     def test_empty_index(self, client, base):
         r = client.get("/api/library")
@@ -119,6 +135,9 @@ class TestCodeComponents:
         d = client.get("/api/library/scripts/echo").json()
         assert d == {"name": "echo", "code": SCRIPT}
         assert client.get("/api/library").json()["guards"] == ["has_issues"]
+        # guards 读端点同形状覆盖
+        d2 = client.get("/api/library/guards/has_issues").json()
+        assert d2 == {"name": "has_issues", "code": GUARD}
 
     def test_save_bad_name_400(self, client, base):
         r = client.put("/api/library/scripts/bad-name", content=b"x")
@@ -132,3 +151,31 @@ class TestCodeComponents:
         client.put("/api/library/scripts/echo", content=SCRIPT.encode("utf-8"))
         assert client.delete("/api/library/scripts/echo").json()["deleted"] is True
         assert client.delete("/api/library/scripts/echo").status_code == 404
+
+
+class TestSubmoduleIndex:
+    def test_add_list_remove(self, client, base):
+        seed_pack_module(base)
+        r = client.put("/api/library/submodules/sub_greet")
+        assert r.status_code == 200
+        d = client.get("/api/library").json()
+        assert d["submodules"] == [{"name": "sub_greet", "added_at": d["submodules"][0]["added_at"]}]
+        # 重复登记幂等
+        client.put("/api/library/submodules/sub_greet")
+        assert len(client.get("/api/library").json()["submodules"]) == 1
+        assert client.delete("/api/library/submodules/sub_greet").json()["deleted"] is True
+        assert client.get("/api/library").json()["submodules"] == []
+
+    def test_add_unknown_module_404(self, client, base):
+        assert client.put("/api/library/submodules/nope").status_code == 404
+
+    def test_add_entry_module_400(self, client, base):
+        """entry 形态模块不能作 submodule（tests/modules 夹具 mini_graph 是 entry）。"""
+        r = client.put("/api/library/submodules/mini_graph")
+        assert r.status_code == 400 and "packed" in r.json()["error"]
+
+    def test_detail_of_indexed(self, client, base):
+        seed_pack_module(base)
+        client.put("/api/library/submodules/sub_greet")
+        d = client.get("/api/library/submodules/sub_greet").json()
+        assert d["name"] == "sub_greet"
