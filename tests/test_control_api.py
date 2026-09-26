@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from server import runservice
 from server.api import control as control_api
 from tests.conftest import MINI_TASKLIST, seed_run
 
@@ -31,15 +32,15 @@ class FakePopen:
 
 @pytest.fixture()
 def stub_spawn(monkeypatch):
-    """替换 _spawn：记录 argv/cwd，返回 FakePopen；进程注册表隔离。"""
+    """替换 runservice._spawn：记录 argv/cwd，返回 FakePopen；进程注册表隔离。"""
     calls: list[dict[str, Any]] = []
 
     def _fake_spawn(argv, cwd, log_fh):
         calls.append({"argv": list(argv), "cwd": cwd})
         return FakePopen()
 
-    monkeypatch.setattr(control_api, "_spawn", _fake_spawn)
-    monkeypatch.setattr(control_api, "_PROCS", {})
+    monkeypatch.setattr(runservice, "_spawn", _fake_spawn)
+    monkeypatch.setattr(runservice, "_PROCS", {})
     return calls
 
 
@@ -143,7 +144,7 @@ class TestResumeEndpoint:
         }
         call = stub_spawn[0]
         argv = call["argv"]
-        assert argv[:4] == [control_api.sys.executable, "-m", "module_harness.cli", "resume"]
+        assert argv[:4] == [runservice.sys.executable, "-m", "module_harness.cli", "resume"]
         assert "1" in argv  # 回退目标位置参数
         assert argv[argv.index("--module") + 1] == "mini_graph"
         assert argv[argv.index("--run-id") + 1] == "mini_graph"
@@ -242,7 +243,7 @@ class TestLaunchEndpoint:
         }
         call = stub_spawn[0]
         argv = call["argv"]
-        assert argv[:4] == [control_api.sys.executable, "-m", "module_harness.cli", "run"]
+        assert argv[:4] == [runservice.sys.executable, "-m", "module_harness.cli", "run"]
         assert argv[argv.index("--module") + 1] == "mini_graph"
         assert argv[argv.index("--run-id") + 1] == "my_run"
         assert argv[argv.index("--template") + 1] == "t1"
@@ -311,7 +312,7 @@ class TestLaunchEndpoint:
 
     def test_launch_409_active_process_in_registry(self, base, client, stub_spawn):
         """注册表同 run_id 活进程 → 409（互斥对发起运行与 resume 同源）。"""
-        control_api._PROCS["busy_run"] = control_api._Proc(FakePopen(), [])
+        runservice._PROCS["busy_run"] = runservice._Proc(FakePopen(), [])
         r = client.post("/api/runs", json={"module": "mini_graph", "run_id": "busy_run"})
         assert r.status_code == 409
         assert "已有运行进程" in r.json()["error"]
@@ -361,7 +362,7 @@ class TestDeleteRunEndpoint:
         r = client.delete("/api/runs/proc_run", params={"force": "true"})
         assert r.status_code == 409
         # 子进程退出（惰性收割）后可删
-        control_api._PROCS["proc_run"].popen.exit_code = 0
+        runservice._PROCS["proc_run"].popen.exit_code = 0
         r = client.delete("/api/runs/proc_run")
         assert r.status_code == 200
         assert not (base / ".specmodule" / "runs" / "proc_run").exists()
@@ -390,12 +391,12 @@ class TestProcessEndpoint:
         argv = stub_spawn[0]["argv"]
         tmp = Path(argv[argv.index("--spec-file") + 1])
         assert tmp.exists()
-        proc = control_api._PROCS["mini_graph"]
+        proc = runservice._PROCS["mini_graph"]
         proc.popen.exit_code = 0
         d = client.get("/api/runs/mini_graph/process").json()
         assert d["running"] is False
         assert not tmp.exists()
-        assert "mini_graph" not in control_api._PROCS
+        assert "mini_graph" not in runservice._PROCS
 
 
 # ------------------------------------------------------------------
@@ -507,4 +508,4 @@ class TestTerminateEndpoint:
         assert r.status_code == 200
         d = r.json()
         assert d["terminated"] is True and d["pid"] == 4321
-        assert control_api._PROCS["mini_graph"].popen.terminated is True
+        assert runservice._PROCS["mini_graph"].popen.terminated is True
