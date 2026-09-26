@@ -3,6 +3,8 @@
 
 server/api/control.py（HTTP 端点）与 treechat ops agent 工具共用——单一注册表、
 单一 spawn 模型（treechat 发起的 run 即刻进 Runs 页签，被既有 WS 流监控）。
+注册表内存语义：单写者防重入（同 run 双 resume → 409）；server 重启丢注册表
+不影响子进程继续跑（监控只依赖落盘产物）。
 异常不携带 HTTP 语义：RunServiceError 子类由调用方各自映射（端点 → HTTPException，
 工具 → {"error": ...} 喂回模型）；库抛的 ValueError 原样上抛（端点 400）。
 """
@@ -41,6 +43,10 @@ class ModuleUnresolvedError(RunServiceError):
 
 class RunNotFoundError(RunServiceError):
     """目标 run 无 status.json（控制/恢复只对已落盘运行有意义）。"""
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        super().__init__(f"无运行记录: {run_id}")
 
 
 class RunExistsError(RunServiceError):

@@ -315,6 +315,7 @@ class TestLaunchEndpoint:
         r = client.post("/api/runs", json={"module": "mini_graph", "run_id": "busy_run"})
         assert r.status_code == 409
         assert "已有运行进程" in r.json()["error"]
+        assert r.json()["run_id"] == "busy_run"  # 409 载荷带 run_id（对齐原契约）
         assert stub_spawn == []  # 未 spawn
 
 
@@ -499,6 +500,7 @@ class TestTerminateEndpoint:
         r = client.post("/api/runs/t_run/process/terminate")
         assert r.status_code == 409
         assert "无本 server 启动的恢复进程" in r.json()["error"]
+        assert r.json()["run_id"] == "t_run"  # 409 载荷带 run_id（对齐原契约）
 
     def test_terminate_running_process(self, base, client, stub_spawn):
         _seed_resumable(base)
