@@ -54,6 +54,10 @@ class RunExistsError(RunServiceError):
 class ProcessBusyError(RunServiceError):
     """注册表互斥冲突 / 运行进行中 / 无被跟踪进程。"""
 
+    def __init__(self, message: str, run_id: str | None = None) -> None:
+        self.run_id = run_id
+        super().__init__(message)
+
 
 class InvalidInputError(RunServiceError):
     """非法 run_id / 非法回退目标 / 无可恢复快照。"""
@@ -139,7 +143,7 @@ def launch_run(module: str, *, spec: dict | None = None, template: str | None = 
     if run_dir.exists():
         raise RunExistsError(f"运行已存在: {run_id}（防覆盖历史，请换 run_id）", run_id)
     if reap(run_id) is not None:
-        raise ProcessBusyError("该 run_id 已有运行进程在跑")
+        raise ProcessBusyError("该 run_id 已有运行进程在跑", run_id)
 
     tmp_paths: list[Path] = []
     argv = [sys.executable, "-m", "module_harness.cli", "run",
@@ -164,10 +168,10 @@ def resume_run(run_id: str, *, module: str | None = None,
     if not (base_dir / ".specmodule" / "runs" / run_id / "run.sqlite").exists():
         raise InvalidInputError("无可恢复快照（运行未落盘 run.sqlite）")
     if reap(run_id) is not None:
-        raise ProcessBusyError("该 run 已有恢复进程在跑")
+        raise ProcessBusyError("该 run 已有恢复进程在跑", run_id)
     st = query_run_status(run_id, base_dir=base_dir)
     if st is not None and st.phase == "running" and not force:
-        raise ProcessBusyError("运行进行中——先取消/暂停再恢复")
+        raise ProcessBusyError("运行进行中——先取消/暂停再恢复", run_id)
     module_name = module or run_id
     if store.resolve_module(module_name, search=search) is None:
         raise ModuleUnresolvedError(module_name)

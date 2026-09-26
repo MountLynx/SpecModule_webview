@@ -11,7 +11,6 @@ from typing import Any
 import pytest
 
 from server import runservice
-from server.api import control as control_api
 from tests.conftest import MINI_TASKLIST, seed_run
 
 

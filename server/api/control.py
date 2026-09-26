@@ -125,7 +125,7 @@ def post_run(body: LaunchBody, base_dir: Path = Depends(get_base_dir)) -> dict:
         raise HTTPException(status_code=409,
                             detail={"error": str(e), "run_id": e.run_id})
     except runservice.ProcessBusyError as e:
-        raise HTTPException(status_code=409, detail={"error": str(e)})
+        raise HTTPException(status_code=409, detail={"error": str(e), "run_id": e.run_id})
     except runservice.InvalidInputError as e:
         raise HTTPException(status_code=400, detail={"error": str(e)})
     except ValueError as e:
@@ -191,7 +191,7 @@ def post_terminate(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
     try:
         return runservice.terminate_process(run_id)
     except runservice.ProcessBusyError as e:
-        raise HTTPException(status_code=409, detail={"error": str(e)})
+        raise HTTPException(status_code=409, detail={"error": str(e), "run_id": run_id})
 
 
 @router.post("/{run_id}/resume", status_code=202)
