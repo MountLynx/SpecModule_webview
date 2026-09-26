@@ -70,10 +70,17 @@ TreeChat 整合一/二/三期已落地（对话引擎已收编为本仓库 `tree
 - [x] 组装安装闭环（拷贝进包 → validate_pack_dir → install_pack → 试运行）
 - [ ] 后排：编辑/反解已安装模块、output 侧 spec_schema、库版本管理
 
-### TreeChat 后续
+### TreeChat 后续 —— ops agent（chat × module 打通）
 
-- [ ] 业务 run 联动收口：chat spec 卡片 → 发起业务 run（spec-builder 一键转化 v1.1、
-  推荐输出=自动路由种子 v2，按需再议）
+设计定稿：[specs/2026-09-26-treechat-ops-agent-design.md](../docs/superpowers/specs/2026-09-26-treechat-ops-agent-design.md)
+（进程内工具桥，不走 MCP；run 永不进回合关键路径）
+
+- [ ] S0 上游 `chat()` 工具消息形状（Anthropic `_convert_messages` + api.md 补录）
+- [ ] S1 runservice 提取（`server/runservice.py`，纯重构，测试保持绿）
+- [ ] S2 ops 模式 + agent 循环 + 数据工具 v1（7 个）
+- [ ] S3 SSE tool_call/tool_result 帧 + webapp 接线
+- [ ] S4 前端 RunBlock 工具块 + WS 进度 + run 跳转
+- [ ] S5 refine_spec 能力工具 + 端到端闭环验收
 
 ## 问题与遗留
 
