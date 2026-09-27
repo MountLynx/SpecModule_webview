@@ -51,18 +51,30 @@ def test_main_new_creates_session(tmp_path, capsys, fake_module, monkeypatch):
 
 
 def test_main_open_passes_config_mode_modules(tmp_path, fake_module, monkeypatch, capsys):
-    """CLI 打开会话时必须透传 config.mode_modules，否则绑定覆盖失效。"""
+    """CLI 打开会话必须透传 config.mode_modules——自定义映射绑定非内建 category 生效。
+
+    内建 key 直查（identity）：映射解绑不了内建模式，故改用「工作 → grilling」
+    验证透传链（CLI open → TreeChatSession.open(mode_modules=...)）。
+    """
+    import json
+
     from treechat import llm_bridge
     from treechat.core.conversation import Conversation
     monkeypatch.setattr(llm_bridge, "create_client", lambda model=None: fake_module)
-    config = TreeChatConfig(data_dir=tmp_path, mode_modules={})  # 解绑 grilling
+    config = TreeChatConfig(data_dir=tmp_path, mode_modules={"工作": "grilling"})
     conv = Conversation.create(config.sessions_dir() / "g.jsonl", name="g")
-    conv.set_category("grilling")
-    fake_module.responses = ["直接回答"]  # 成功回落 direct 时只会调用一次
+    conv.set_category("工作")
+    fake_module.responses = [
+        "# 树-v1",
+        json.dumps({"questions_md": "❓ Q1", "done": False, "terms_md": ""}),
+        json.dumps({"glossary_md": "**Order**: 订单", "adr_candidates": ""}),
+    ]
     code = main(["open", "g"], config=config,
                 input_fn=_make_input(["问题", "/quit"]))
     assert code == 0
-    assert "直接回答" in capsys.readouterr().out
+    # grilling TreeUpdate 节点的 prompt（direct 单节点会是"请直接回答"）
+    assert any("设计树" in c["prompt"] for c in fake_module.calls)
+    assert len(fake_module.calls) == 3                  # 完整 grilling 三 LLM 节点
 
 
 def test_main_list(tmp_path, capsys):

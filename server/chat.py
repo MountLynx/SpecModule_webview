@@ -45,7 +45,13 @@ def mount_chat(app: FastAPI, base_dir: Path | None = None) -> bool:
         # 运行根下的 config.json/.env 优先，缺省回落 ~/.specmodule
         return create_client(model, project_root=root)
 
-    sub = create_app(config, client_factory=client_factory, static_dir=_DISABLED_STATIC)
+    from module_harness.infra import store as mh_store
+    from treechat.tools import ToolContext
+
+    # ops 工具上下文：与 server 同一 base_dir/搜索路径纪律（deps 同款解析）
+    tool_context = ToolContext(base_dir=root, search=mh_store.search_paths(root))
+    sub = create_app(config, client_factory=client_factory,
+                     static_dir=_DISABLED_STATIC, tool_context=tool_context)
     app.mount("/treechat", sub)
     app.state.chat_registry = sub.state.registry
     return True

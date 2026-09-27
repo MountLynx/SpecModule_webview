@@ -300,8 +300,18 @@ def test_unknown_category_falls_back_to_direct(tmp_path, fake_module, fake_card_
 
 
 def test_session_mode_modules_override(tmp_path, fake_module, fake_card_client):
+    """mode_modules 覆盖绑定对非内建 category 生效（工作 → grilling）。
+
+    内建 key 直查（identity）：自定义映射解绑不了 grilling/ops——
+    解绑语义只对映射表里的非内建 category 有效（spec §4）。
+    """
     s = _session(tmp_path, fake_module, fake_card_client)
-    s.mode_modules = {}  # 解绑 grilling → 全回落直答
-    s.conversation.set_category("grilling")
-    a = asyncio.run(s.turn("问"))
-    assert s.conversation.nodes[a].output == "mock reply"
+    s.mode_modules = {"工作": "grilling"}
+    s.conversation.set_category("工作")
+    fake_module.responses = [
+        "# 树-v1",
+        json.dumps({"questions_md": "❓ Q1", "done": False, "terms_md": ""}),
+        json.dumps({"glossary_md": "**Order**: 订单", "adr_candidates": ""}),
+    ]
+    a = asyncio.run(s.turn("做一个订单系统"))
+    assert s.conversation.nodes[a].output == "❓ Q1"    # 走的是 grilling 管线（非直答）

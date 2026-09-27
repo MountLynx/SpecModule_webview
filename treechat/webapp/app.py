@@ -137,9 +137,10 @@ def _summary_dict(m) -> dict[str, Any]:
 
 def create_app(config: TreeChatConfig | None = None, *,
                client_factory: Any = None,
-               static_dir: Path | None = None) -> FastAPI:
+               static_dir: Path | None = None,
+               tool_context: Any = None) -> FastAPI:
     config = config or TreeChatConfig()
-    registry = SessionRegistry(config, client_factory)
+    registry = SessionRegistry(config, client_factory, tool_context=tool_context)
     app = FastAPI(title="TreeChat WebUI", docs_url=None, redoc_url=None)
     app.state.registry = registry
     app.state.llm_probed = False

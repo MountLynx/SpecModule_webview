@@ -447,7 +447,7 @@ def test_sid_path_traversal_rejected(api):
 
 def test_modes_endpoint(api):
     modes = api.get("/api/modes").json()
-    assert [m["key"] for m in modes] == ["direct", "grilling"]
+    assert [m["key"] for m in modes] == ["direct", "grilling", "ops"]
     assert all(set(m) == {"key", "displayName", "description"} for m in modes)
 
 

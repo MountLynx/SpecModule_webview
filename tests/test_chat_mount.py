@@ -183,14 +183,15 @@ def test_turn_llm_failure_contract(env):
 
 
 def test_modes_endpoint_and_categorized_session(env):
-    """模式枚举透传（BUILT_IN：direct/grilling——grilling 已吸收 domain-modeling）
+    """模式枚举透传（BUILT_IN：direct/grilling/ops——grilling 已吸收 domain-modeling）
     + 分类创建会话（三期模式入口的挂载级契约）。"""
     c, _, _ = env
     modes = c.get("/treechat/api/modes").json()
-    assert [m["key"] for m in modes] == ["direct", "grilling"]
+    assert [m["key"] for m in modes] == ["direct", "grilling", "ops"]
     assert modes[0]["displayName"] == "直答"
     assert modes[1]["displayName"] == "拷问"
-    assert modes[1]["description"]
+    assert modes[2]["displayName"] == "模块运营"
+    assert modes[1]["description"] and modes[2]["description"]
     r = c.post("/treechat/api/sessions", json={"name": "g", "category": "grilling"})
     assert r.status_code == 200 and r.json()["category"] == "grilling"
     assert c.get("/treechat/api/sessions/g").json()["category"] == "grilling"

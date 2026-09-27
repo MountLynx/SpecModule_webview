@@ -48,8 +48,10 @@ class SessionRegistry:
     """打开会话的进程内登记表。"""
 
     def __init__(self, config: TreeChatConfig,
-                 client_factory: ClientFactory | None = None) -> None:
+                 client_factory: ClientFactory | None = None,
+                 tool_context: Any = None) -> None:
         self.config = config
+        self.tool_context = tool_context
         self._client_factory: ClientFactory = client_factory or self._default_factory
         self._sessions: dict[str, TreeChatSession] = {}
         self._locks: dict[str, asyncio.Lock] = {}
@@ -74,7 +76,8 @@ class SessionRegistry:
         except Exception:  # noqa: BLE001 —— 配置链任何失败都降级，不阻塞管理功能
             client = _UnconfiguredClient()
         s = TreeChatSession(conversation=conv, client=client,
-                            mode_modules=self.config.mode_modules)
+                            mode_modules=self.config.mode_modules,
+                            tool_context=self.tool_context)
         self._sessions[sid] = s
         return s
 
@@ -88,7 +91,8 @@ class SessionRegistry:
         except Exception:  # noqa: BLE001
             client = _UnconfiguredClient()
         s = TreeChatSession(conversation=conv, client=client,
-                            mode_modules=self.config.mode_modules)
+                            mode_modules=self.config.mode_modules,
+                            tool_context=self.tool_context)
         self._sessions[sid] = s
         return s
 

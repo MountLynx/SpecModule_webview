@@ -50,17 +50,26 @@ class TestFieldStreamShaper:
         assert out == 'a\nb"c'
 
 
-def test_registry_builtin_two_modes():
-    assert set(BUILT_IN) == {"direct", "grilling"}
+def test_registry_builtin_modes():
+    assert set(BUILT_IN) == {"direct", "grilling", "ops"}
 
 
 def test_resolve_category_mapping_and_fallback():
     assert resolve_module("").key == "direct"
     assert resolve_module("grilling").key == "grilling"
     assert resolve_module("工作").key == "direct"          # 旧值回落直答（spec §4）
-    assert resolve_module("grilling", {}).key == "direct"  # 自定义映射可解绑
+    assert resolve_module("grilling", {}).key == "grilling"  # 内建 key 直查：映射解绑不了内建（identity）
     assert resolve_module("g", {"g": "grilling"}).key == "grilling"
-    assert DEFAULT_MODE_MAP == {"grilling": "grilling"}
+    assert DEFAULT_MODE_MAP == {"grilling": "grilling", "ops": "ops"}
+
+
+def test_builtin_identity_and_ops():
+    """内建 key 直查（identity）——ops/grilling 不经映射表也命中；未知回落直答。"""
+    assert resolve_module("ops").key == "ops"
+    assert resolve_module("grilling").key == "grilling"
+    assert resolve_module("").key == "direct"
+    assert resolve_module("zzz").key == "direct"
+    assert resolve_module("mycat", {"mycat": "grilling"}).key == "grilling"
 
 
 def test_direct_tasklist_single_node_start():

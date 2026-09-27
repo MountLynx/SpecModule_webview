@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from . import llm_bridge, module_bridge
+from . import agent_bridge, llm_bridge, module_bridge
 from .config import TreeChatConfig
 from .core.cards import doc_card_id
 from .core.context import TokenWindowStrategy, WindowStrategy
@@ -22,7 +22,7 @@ from .core.events import (
     SessionArchive, SessionCategory, SessionMeta, SessionRename,
     UserMsg, event_from_dict,
 )
-from .modules import ConversationalModule, resolve_module
+from .modules import AgentMode, ConversationalModule, resolve_module
 
 
 @dataclass
@@ -36,6 +36,8 @@ class TreeChatSession:
     """卡片提炼客户端（需支持 complete）；None = 复用 client（真客户端两者都有）。"""
     mode_modules: dict[str, str] | None = None
     """category → 模块名映射覆盖；None = 内置默认映射。Web/CLI 创建时传 config.mode_modules。"""
+    tool_context: Any = None
+    """ops 回合的工具执行上下文（ToolContext；None = agent_bridge 内回落缺省）。"""
 
     # ── 构造 ──
 
@@ -43,24 +45,26 @@ class TreeChatSession:
     def create(cls, path: Path, name: str, system: str = "", *,
                model: str | None = None,
                window: WindowStrategy | None = None,
-               mode_modules: dict[str, str] | None = None) -> "TreeChatSession":
+               mode_modules: dict[str, str] | None = None,
+               tool_context: Any = None) -> "TreeChatSession":
         conv = Conversation.create(path, name, system)
         return cls(conversation=conv, client=llm_bridge.create_client(model),
                    window=_window_or_default(window),
-                   mode_modules=mode_modules)
+                   mode_modules=mode_modules, tool_context=tool_context)
 
     @classmethod
     def open(cls, path: Path, *, model: str | None = None,
              window: WindowStrategy | None = None,
-             mode_modules: dict[str, str] | None = None) -> "TreeChatSession":
+             mode_modules: dict[str, str] | None = None,
+             tool_context: Any = None) -> "TreeChatSession":
         conv = Conversation.open(path)
         return cls(conversation=conv, client=llm_bridge.create_client(model),
                    window=_window_or_default(window),
-                   mode_modules=mode_modules)
+                   mode_modules=mode_modules, tool_context=tool_context)
 
     # ── 轮次 ──
 
-    def module_for(self, user_seq: int) -> ConversationalModule:
+    def module_for(self, user_seq: int) -> ConversationalModule | AgentMode:
         """轮次生效模块：轮上记录优先，回落会话 category（resolve_module 兜底直答）。"""
         conv = self.conversation
         return resolve_module(conv.nodes[user_seq].module or conv.category,
@@ -87,9 +91,15 @@ class TreeChatSession:
         if user_seq not in conv.nodes or conv.nodes[user_seq].output is not None:
             raise TreeChatError(f"complete 目标必须是未答轮次: {user_seq}")
         module = self.module_for(user_seq)
-        outcome = await module_bridge.run_turn(
-            module, conv, user_seq, client=self.client, window=self.window,
-            on_event=on_event or (lambda evt: None))
+        if isinstance(module, AgentMode):
+            outcome = await agent_bridge.run_agent_turn(
+                conv, user_seq, client=self.client, window=self.window,
+                tool_context=self.tool_context,
+                on_event=on_event or (lambda evt: None))
+        else:
+            outcome = await module_bridge.run_turn(
+                module, conv, user_seq, client=self.client, window=self.window,
+                on_event=on_event or (lambda evt: None))
         cfg = getattr(self.client, "config", None)
         model = getattr(cfg, "model", "") if cfg is not None else ""
         for doc_key, title, body in outcome.documents:
