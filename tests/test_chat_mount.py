@@ -77,13 +77,14 @@ def sse_events(client, url, **kwargs):
 # ── 健康 / 挂载 ──
 
 def test_health_reports_workspace_data_dir(env):
-    c, base, _ = env
+    c, base, reg = env
     r = c.get("/treechat/api/health")
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
     assert "llmConfigured" in body
     assert Path(body["dataDir"]) == base / ".treechat"
+    assert reg.tool_context.base_dir == base   # mount 装配的 ToolContext 与挂载根同锚
 
 
 def test_treechat_data_dir_env_override(tmp_path, monkeypatch):

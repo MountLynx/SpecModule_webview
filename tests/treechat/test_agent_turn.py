@@ -2,7 +2,8 @@
 
 隔离：四个用例统一走 conftest 的 base fixture（SPECMODULE_BASE/PATH/HOME 隔离）——
 list_modules/run_status 工具真实执行，base_dir 锚定 tmp_path 不扫真实环境；
-default_tool_context() 经环境变量回落到同一隔离根（registry 未注入 tool_context 时）。
+tool_context 经 _make_client 显式注入（ToolContext + server.deps.get_search_paths，
+与 mount_chat 同款装配）——集成测试走注入路径而非环境变量回落。
 """
 from __future__ import annotations
 
@@ -11,7 +12,9 @@ import json
 from fastapi.testclient import TestClient
 from llm import LLMError, LLMResponse
 
+from server.deps import get_search_paths
 from treechat.config import TreeChatConfig
+from treechat.tools import ToolContext
 from treechat.webapp.app import create_app
 
 
@@ -60,7 +63,9 @@ def _by_event(frames):
 def _make_client(base, responses):
     fake = FakeAgentClient(responses)
     config = TreeChatConfig(data_dir=base)
-    client = TestClient(create_app(config, client_factory=lambda model=None: fake))
+    tool_context = ToolContext(base_dir=base, search=get_search_paths(base))
+    client = TestClient(create_app(config, client_factory=lambda model=None: fake,
+                                   tool_context=tool_context))
     client.fake = fake  # type: ignore[attr-defined]
     return client
 
@@ -123,3 +128,17 @@ def test_llm_error_leaves_unanswered(base):
     by = _by_event(frames)
     assert "error" in by
     assert by["error"][0]["state"]["unanswered"] is not None   # 悬而未答可 retry
+
+
+def test_ops_turn_unconfigured_client(base):
+    """client_factory 抛错 → 替身客户端：ops 回合 chat() 干净降级为 error 帧。"""
+    def broken_factory(model=None):
+        raise RuntimeError("配置链不可用")
+
+    client = TestClient(create_app(TreeChatConfig(data_dir=base),
+                                   client_factory=broken_factory))
+    client.post("/api/sessions", json={"name": "s1", "category": "ops"})
+    frames = _frames(client, "/api/sessions/s1/turn", json={"text": "hi"})
+    by = _by_event(frames)
+    assert "error" in by
+    assert "LLM 未配置" in by["error"][0]["error"]   # 非 AttributeError 内部错误

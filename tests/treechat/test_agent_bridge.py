@@ -16,7 +16,7 @@ from llm import LLMError, LLMResponse, Message
 
 from treechat import agent_bridge
 from treechat.core.conversation import Conversation
-from treechat.tools.base import ToolDef
+from treechat.tools.base import ToolContext, ToolDef
 
 
 @pytest.fixture()
@@ -132,6 +132,33 @@ def test_tool_call_loop_and_result_fed_back(conv):
     assert second[-2].role == "assistant" and second[-2].tool_calls[0]["id"] == "t1"
     assert second[-1].role == "tool"
     assert '"echo"' in second[-1].content
+
+
+def test_tool_context_client_backfilled(conv):
+    """显式 tool_context（client=None）→ 会话客户端回填进 ctx。
+
+    mount/default 装配的 ToolContext 都不带 client；能力工具（refine_spec）
+    消费 ctx.client，不回填则生产即死。
+    """
+    received: list[ToolContext] = []
+
+    async def spy(args, ctx):
+        received.append(ctx)
+        return {"ok": True}
+
+    spy_tool = ToolDef(name="echo", description="", parameters={"type": "object"},
+                       handler=spy)
+    base = conv.store.path.parent
+    ctx = ToolContext(base_dir=base, search=[])   # client 留 None
+    client = ScriptClient([
+        _call(LLMResponse(content=""), "echo", {}),
+        LLMResponse(content="done"),
+    ])
+    asyncio.run(agent_bridge.run_agent_turn(
+        conv, conv.unanswered(), client=client, window=None,
+        tool_context=ctx, tools=[spy_tool]))
+    assert received[0].client is client                # handler 收到的就是会话客户端
+    assert received[0].base_dir == base                # 其余字段原样保留（replace 语义）
 
 
 def test_tool_error_becomes_result_not_crash(conv):

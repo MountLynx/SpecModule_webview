@@ -91,7 +91,7 @@ class TreeChatSession:
         if user_seq not in conv.nodes or conv.nodes[user_seq].output is not None:
             raise TreeChatError(f"complete 目标必须是未答轮次: {user_seq}")
         module = self.module_for(user_seq)
-        if isinstance(module, AgentMode):
+        if isinstance(module, AgentMode):  # AgentMode = agent 形态：工具循环，无固定管线/文档卡
             outcome = await agent_bridge.run_agent_turn(
                 conv, user_seq, client=self.client, window=self.window,
                 tool_context=self.tool_context,

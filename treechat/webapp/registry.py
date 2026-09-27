@@ -19,11 +19,19 @@ ClientFactory = Callable[[str | None], Any]
 
 
 class _UnconfiguredClient:
-    """LLM 未配置时的替身客户端：轮次调用显式失败，不静默。"""
+    """LLM 未配置时的替身客户端：轮次调用显式失败，不静默。
+
+    complete（harness 回合）与 chat（ops 回合）都替身——ops 回合未配置 LLM 时
+    从 AttributeError→内部错误 降级为干净 error 帧。
+    """
 
     config = None
 
     async def complete(self, **kwargs) -> None:
+        raise LLMErrorUnconfigured(
+            "LLM 未配置：请完成 SpecModule 配置链（项目根 config.json / .env → ~/.specmodule）")
+
+    async def chat(self, messages, tools=None) -> None:
         raise LLMErrorUnconfigured(
             "LLM 未配置：请完成 SpecModule 配置链（项目根 config.json / .env → ~/.specmodule）")
 

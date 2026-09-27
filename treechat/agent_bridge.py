@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 from llm import Message
@@ -74,9 +75,15 @@ async def run_agent_turn(conv, user_seq: int, *, client: Any, window,
                          tools: list[ToolDef] | None = None,
                          on_event: OnEvent | None = None) -> TurnOutcome:
     """一次 ops 回合 = 工具调用循环。LLMError 上抛（悬而未答轮，retry 契约同
-    harness 模式）；工具失败永远喂回模型（model-recoverable），不炸回合。"""
+    harness 模式）；工具失败永远喂回模型（model-recoverable），不炸回合。
+
+    ctx.client 为 None 时回填会话客户端（能力工具如 refine_spec 消费）——
+    mount/default 两条装配路径的 ToolContext 都不带 client，统一在此补齐。
+    """
     emit = on_event or (lambda evt: None)
     ctx = tool_context or default_tool_context()
+    if ctx.client is None:
+        ctx = replace(ctx, client=client)   # 能力工具复用会话客户端（mounted/standalone 两路同覆盖）
     tool_list = tools if tools is not None else all_tools()
     schemas = tool_schemas(tool_list)
     messages = build_messages(conv, user_seq, window)
