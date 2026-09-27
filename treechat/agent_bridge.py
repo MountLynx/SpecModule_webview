@@ -29,7 +29,10 @@ AGENT_SYSTEM = """\
 
 
 def build_messages(conv, user_seq: int, window) -> list[Message]:
-    """assemble 复用（pinned 卡注入 system，与 module_bridge.build_spec 同源）。"""
+    """assemble 复用（pinned 卡注入 system，与 module_bridge.build_spec 同源）。
+
+    window=None = 不裁剪（测试用；生产经 session 缺省 TokenWindowStrategy）。
+    """
     pinned = [c for c in conv.cards.pinned_cards()
               if c.owner_seq is None and not c.id.startswith("spec:")]
     ctx = assemble(conv.path_to(user_seq), conv.system, pinned, strategy=window)
@@ -44,7 +47,7 @@ def build_messages(conv, user_seq: int, window) -> list[Message]:
 
 def summarize_result(name: str, result: Any) -> str:
     """tool_result 帧的渲染摘要（全量载荷不回传前端）。"""
-    if isinstance(result, dict) and "error" in result:
+    if isinstance(result, dict) and result.get("error"):   # 真值判定：run_status 成功载荷恒含 "error": None 键
         return str(result["error"])[:200]
     if name == "list_modules":
         return f"{len(result.get('modules', []))} 个模块"
@@ -93,11 +96,13 @@ async def run_agent_turn(conv, user_seq: int, *, client: Any, window,
             result = await dispatch_tool(tool_list, name, args, ctx)
             run_id = result.get("run_id") if isinstance(result, dict) else None
             emit({"event": "tool_result", "id": tc["id"], "name": name,
-                  "ok": not (isinstance(result, dict) and "error" in result),
+                  "ok": not (isinstance(result, dict) and result.get("error")),
                   "summary": summarize_result(name, result),
                   "runId": run_id if isinstance(run_id, str) else None})
             messages.append(Message(role="tool", tool_call_id=tc["id"],
                                     content=json.dumps(result, ensure_ascii=False)))
+    # 边角：末轮工具已执行、结果不再回喂模型（结果已经 tool_result 帧直达前端）
     return TurnOutcome(
-        message_text="已达单轮工具调用上限（12）。请拆分操作，或开新轮继续。",
+        message_text=(f"已达单轮工具调用上限（{MAX_ITERATIONS}）。"
+                      "请拆分操作，或开新轮继续。"),
         usage=usage_total)
