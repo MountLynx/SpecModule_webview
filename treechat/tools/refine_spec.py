@@ -3,7 +3,8 @@
 
 吃结构化参数（module + draft）、吐结构化结果（完整 spec dict）；不挂会话上下文、
 不做文档卡（与 ConversationalModule 的对话职责划界）。spec_schema 来自
-module_detail——schema 是完善 spec 的校验锚。写成型后可提升进 store，
+module_detail——schema 是完善 spec 的校验锚（prompt 锚定，不硬校验——
+硬校验由 run 侧 CLI spec 校验兜底）。写成型后可提升进 store，
 与业务 module 的 submodule 成为同一类资产。结构对照 llm_bridge.py 的
 CARD_HARNESS_CONFIG + extract_card（call_harness 校验 json_object + 显式键校验）。
 """
@@ -56,9 +57,12 @@ async def _refine_spec(args: dict, ctx: ToolContext) -> dict:
     if resolved is None:
         return {"error": f"模块 '{name}' 未找到"}
     detail = store.detail_to_dict(resolved)
+    schema = detail.get("spec_schema")
     result = await call_harness(
         REFINE_HARNESS_CONFIG,
-        {"module": name, "schema": detail.get("spec_schema") or {},
+        {"module": name,
+         "schema": (str(schema) if schema else
+                    "（模块未声明 spec_schema——参考模块描述与 default_spec 字段）"),
          "draft": str(args.get("draft") or ""),
          "requirements": str(args.get("requirements") or "无")},
         llm_client=ctx.client,
