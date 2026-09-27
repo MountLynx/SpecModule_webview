@@ -258,6 +258,7 @@ export default function App() {
         userSeq: d.userSeq, module: d.module, finished: false,
         nodes: d.nodes.map((n: { key: string; label: string }) => (
           { ...n, text: "", thinking: "", outcome: "running" as const, refs: [] })),
+        tools: [],
       }));
     } else if (ev.event === "node_start") {
       updRun(sid, (r) => r && { ...r, nodes: r.nodes.map((n) =>
@@ -269,6 +270,14 @@ export default function App() {
     } else if (ev.event === "node_end") {
       updRun(sid, (r) => r && { ...r, nodes: r.nodes.map((n) =>
         n.key === d.key ? { ...n, outcome: d.outcome, refs: d.refs ?? [] } : n) });
+    } else if (ev.event === "tool_call") {
+      updRun(sid, (r) => r && { ...r, tools: [...(r.tools ?? []), {
+        id: d.id, name: d.name, args: JSON.stringify(d.args ?? {}),
+        status: "running" as const, summary: "", runId: null }] });
+    } else if (ev.event === "tool_result") {
+      updRun(sid, (r) => r && { ...r, tools: (r.tools ?? []).map((t) =>
+        t.id === d.id ? { ...t, status: d.ok ? "ok" as const : "failed" as const,
+                          summary: d.summary ?? "", runId: d.runId ?? null } : t) });
     } else if (ev.event === "done") {
       setConvs((prev) => ({ ...prev, [sid]: d.state }));
       updRun(sid, (r) => r && { ...r, finished: true });
@@ -533,6 +542,7 @@ export default function App() {
                     onBranchFrom={(seq) => activeChatSid && navigateTurn(activeChatSid, seq)}
                     onRetry={() => activeChatSid && retry(activeChatSid)}
                     onLocateDoc={(seq) => updUi(activeChatSid, { cardsOpen: true, focusSeq: seq })}
+                    onOpenRun={openRunTab}
                   />
                   <Composer
                     leafMode={activeUi.leafMode}

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { GitFork, Layers, Pencil } from "lucide-react";
-import type { Card, ConvState, Mode, Node, RunTrace } from "./types";
+import type { Card, ConvState, Mode, Node, RunTrace, ToolStep } from "./types";
 import { activePath } from "./types";
+import { useRunStream } from "../ws";
 import { cn } from "../lib/utils";
 import { Markdown } from "./Markdown";
 import { Button } from "../components/ui/button";
@@ -26,6 +27,8 @@ interface Props {
   onRetry: () => void;
   /** 文档 ref 片点击：开卡片栏 + 聚焦挂载轮（滚动闪烁） */
   onLocateDoc: (seq: number) => void;
+  /** 工具块 runId 点击：打开 RunView 页签 */
+  onOpenRun: (runId: string) => void;
 }
 
 /** 主区聊天视图：活跃路径（path_to 指针）轮次流；节点 = 轮次（一问一答） */
@@ -75,7 +78,7 @@ export function ChatView(p: Props) {
                     onToggleCardSeq={p.onToggleCardSeq}
                     onRenameTurn={p.onRenameTurn} onBranchFrom={p.onBranchFrom} />
         ))}
-        {p.run && <RunBlock run={p.run} onLocateDoc={p.onLocateDoc} />}
+        {p.run && <RunBlock run={p.run} onLocateDoc={p.onLocateDoc} onOpenRun={p.onOpenRun} />}
         {p.busy && (
           <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
             <span className="flex gap-1">
@@ -223,12 +226,21 @@ function Dot({ delay }: { delay: string }) {
 }
 
 /** 回合运行块：节点预告 → 逐 token 全文 → 收口（文档节点折叠为卡片链接片）。 */
-function RunBlock({ run, onLocateDoc }: { run: RunTrace; onLocateDoc: (seq: number) => void }) {
+function RunBlock({ run, onLocateDoc, onOpenRun }: {
+  run: RunTrace; onLocateDoc: (seq: number) => void; onOpenRun: (rid: string) => void;
+}) {
   return (
     <div className="rounded-panel border border-border/60 bg-sidebar px-3 py-2">
       <div className="pb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
         {run.errored ? "回合失败" : run.finished ? "回合完成" : "回合运行中"} · {run.module}
       </div>
+      {(run.tools?.length ?? 0) > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {run.tools!.map((t) => (
+            <ToolItem key={t.id} step={t} onOpenRun={onOpenRun} />
+          ))}
+        </div>
+      )}
       <div className="flex flex-col gap-2.5">
         {run.nodes.map((n) => (
           <div key={n.key}>
@@ -268,5 +280,52 @@ function RunBlock({ run, onLocateDoc }: { run: RunTrace; onLocateDoc: (seq: numb
         ))}
       </div>
     </div>
+  );
+}
+
+/** 工具步骤块：名称 + 结果摘要；args 折叠；runId 块内订阅 WS 实时进度并可跳转 */
+function ToolItem({ step, onOpenRun }: { step: ToolStep; onOpenRun: (rid: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-panel border border-border/50 bg-background px-2.5 py-1.5">
+      <button onClick={() => setOpen((v) => !v)}
+              className="flex w-full items-center gap-1.5 text-left text-[12px]">
+        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+          {step.status === "failed" ? (
+            <X className="h-3 w-3 text-[var(--ph-aborted)]" strokeWidth={3} />
+          ) : step.status === "ok" ? (
+            <Check className="h-3 w-3 text-[var(--ph-done)]" strokeWidth={3} />
+          ) : (
+            <Circle className="h-3 w-3 animate-pulse text-muted-foreground/50" />
+          )}
+        </span>
+        <span className="shrink-0 font-mono text-foreground/80">{step.name}</span>
+        <span className={cn("min-w-0 flex-1 truncate",
+                            step.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
+          {step.summary}
+        </span>
+      </button>
+      {open && (
+        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-control bg-secondary/60 px-2 py-1 text-[11px] text-muted-foreground">
+          {step.args}
+        </pre>
+      )}
+      {step.runId && <RunProgress runId={step.runId} onOpenRun={onOpenRun} />}
+    </div>
+  );
+}
+
+/** runId 内嵌进度：复用 useRunStream（按 runId 打包/防陈旧流；终态停连） */
+function RunProgress({ runId, onOpenRun }: { runId: string; onOpenRun: (rid: string) => void }) {
+  const st = useRunStream(runId);
+  const phase = st?.msg.phase ?? "…";
+  return (
+    <button onClick={() => onOpenRun(runId)}
+            className="mt-1 flex w-full items-center gap-1.5 rounded-control bg-primary/[0.06] px-2 py-1 text-left text-[11px] text-muted-foreground hover:bg-primary/10">
+      <span className="font-mono">{runId}</span>
+      <span>phase={phase}</span>
+      {st?.msg.tick != null && <span>tick={st.msg.tick}</span>}
+      <span className="ml-auto shrink-0 text-primary">打开运行视图 →</span>
+    </button>
   );
 }

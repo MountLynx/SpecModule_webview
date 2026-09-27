@@ -88,11 +88,25 @@ export interface CardRef {
   title: string;
 }
 
+/** 工具步骤（ops 回合；tool_call/tool_result 帧，瞬态不持久化） */
+export interface ToolStep {
+  id: string;
+  name: string;
+  /** JSON.stringify(args) 原文（折叠展示） */
+  args: string;
+  status: "running" | "ok" | "failed";
+  summary: string;
+  /** 非空 = 该工具发起了 run（块内订阅 WS 实时进度） */
+  runId: string | null;
+}
+
 /** 回合运行迹（webui 瞬态：done 后保留链接片，新回合/刷新即清） */
 export interface RunTrace {
   userSeq: number;
   module: string;
   nodes: RunNodeState[];
+  /** ops 回合的工具轨迹；harness 回合恒空数组 */
+  tools: ToolStep[];
   finished: boolean;
   /** error 帧收口标记 */
   errored?: boolean;
