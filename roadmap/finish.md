@@ -535,7 +535,9 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
   映射解绑 grilling」语义移除）；Map 映射仍对非内建 category 生效。后排/遗留：per-template
   spec_schema 缺口（[#12](https://github.com/MountLynx/SpecModule_webview/issues/12)）；工具轨迹不
   持久化（v1 瞬态）；多节点能力工具的 tool_progress 帧；checkpoint/resume/delete 工具（UI 对话框
-  职责）；流式终文（chat_stream 上游候选）。验收：pytest 357 绿 + 库基线 680 绿 + `npm run build`
+  职责）；流式终文（chat_stream 上游候选）；run 终态自动通知会话（引擎层事件机制）——spec 后排明列；
+  能力工具提升进 store（refine_spec 型组件与业务 submodule 同类资产）——spec D3 后排。
+  验收：pytest 357 绿 + 库基线 680 绿 + `npm run build`
   过 + API 级端到端（live server：ops 回合 SSE 帧序 start(ops)→tool_call/tool_result（list_modules、
   run_module 带 runId、run_status）→done 全部正确，mock run `academic_writer_dcbf1a` phase=done 且
   status 端点一致；control 步骤因 run 已在回合内终态按约跳过；会话/run 即席清理零残留；浏览器
