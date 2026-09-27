@@ -72,15 +72,9 @@ TreeChat 整合一/二/三期已落地（对话引擎已收编为本仓库 `tree
 
 ### TreeChat 后续 —— ops agent（chat × module 打通）
 
-设计定稿：[specs/2026-09-26-treechat-ops-agent-design.md](../docs/superpowers/specs/2026-09-26-treechat-ops-agent-design.md)
+已全部落地（S0-S5，2026-09-27），明细归档见 [finish.md](finish.md)。设计定稿：
+[specs/2026-09-26-treechat-ops-agent-design.md](../docs/superpowers/specs/2026-09-26-treechat-ops-agent-design.md)
 （进程内工具桥，不走 MCP；run 永不进回合关键路径）
-
-- [ ] S0 上游 `chat()` 工具消息形状（Anthropic `_convert_messages` + api.md 补录）
-- [ ] S1 runservice 提取（`server/runservice.py`，纯重构，测试保持绿）
-- [ ] S2 ops 模式 + agent 循环 + 数据工具 v1（7 个）
-- [ ] S3 SSE tool_call/tool_result 帧 + webapp 接线
-- [ ] S4 前端 RunBlock 工具块 + WS 进度 + run 跳转
-- [ ] S5 refine_spec 能力工具 + 端到端闭环验收
 
 ## 问题与遗留
 
@@ -92,6 +86,7 @@ GitHub issues 跟踪，不在此积压：
 - [#8 上游缺口：latest_tick 取历史最大值，深回退后 status.tick 偏高](https://github.com/MountLynx/SpecModule_webview/issues/8)
 - [#9 技术债：paused 判定一行式三处内联（待第三形态收编库 control.paused()）](https://github.com/MountLynx/SpecModule_webview/issues/9)
 - [#10 UI 小项：RunList 行内控制按钮无 busy 态](https://github.com/MountLynx/SpecModule_webview/issues/10)
+- [#12 refine_spec 只取模块级 spec_schema——per-template 覆盖的模块会拿到空 schema](https://github.com/MountLynx/SpecModule_webview/issues/12)
 
 ## 数据契约与错误处理
 

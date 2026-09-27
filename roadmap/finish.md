@@ -518,3 +518,25 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
   submodule 递归传播——validate_pack_dir 零 LLM 客户端语义在 submodule 场景被破坏）+
   23f6754 / 3a36b5d（api.md validate_pack_dir / install_pack 补录）。计划：
   docs/superpowers/plans/2026-09-25-module-builder.md。
+- 2026-09-27 **TreeChat ops agent 落地：chat × module 打通**（进程内工具桥，不走 MCP；run 永不进
+  回合关键路径。设计定稿
+  docs/superpowers/specs/2026-09-26-treechat-ops-agent-design.md）。切片：S0 上游 `chat()` 工具消息
+  形状 + Anthropic 聚合（库仓库 8dea85d / a7fecc4 / 67643d2，api.md 补录）；S1 runservice 提取
+  （spawn 编排/进程注册表共享层，control.py 端点薄化，b86fa6e / 7d235ca / 44f75fb）；S2a 工具箱
+  基座 + 7 个数据类工具（薄映射，发起走 runservice 共享层，ac10d89 / d724ff5）；S2b agent 循环
+  （chat() 多轮 + 迭代上限 + 错误喂回，e625998 / 3993da5）；S2c/S3 ops 模式分派 + ToolContext 贯通
+  + SSE tool 帧接线（8290b4a / 1d1b2ee）；S4 前端 RunBlock 工具块 + runId WS 实时进度 + RunView
+  跳转（8e4f8d3 / de1a0c6）；S5 refine_spec 能力工具（call_harness 无头 module run，spec 完善
+  收口，0a0f955 / 3efecb7）。实施修正（审查产出）：agent 循环 error 真值判定（run_status 恒含
+  `error: None` 键，非 None 才判失败）；`run_agent_turn` 回填会话 client 进 ToolContext
+  （refine_spec 前置）；runservice `_launch` 成功路径关闭父进程 log_fh（control.py 时代遗留句柄
+  泄漏）；runservice 409 载荷补回 `run_id` 键契约。**语义备注**：ops 模式落地将 `resolve_module`
+  改内建 key 直查（identity）后，嵌入方 `mode_modules` 不再能解绑/重映射内建模式 key（原「空
+  映射解绑 grilling」语义移除）；Map 映射仍对非内建 category 生效。后排/遗留：per-template
+  spec_schema 缺口（[#12](https://github.com/MountLynx/SpecModule_webview/issues/12)）；工具轨迹不
+  持久化（v1 瞬态）；多节点能力工具的 tool_progress 帧；checkpoint/resume/delete 工具（UI 对话框
+  职责）；流式终文（chat_stream 上游候选）。验收：pytest 357 绿 + 库基线 680 绿 + `npm run build`
+  过 + API 级端到端（live server：ops 回合 SSE 帧序 start(ops)→tool_call/tool_result（list_modules、
+  run_module 带 runId、run_status）→done 全部正确，mock run `academic_writer_dcbf1a` phase=done 且
+  status 端点一致；control 步骤因 run 已在回合内终态按约跳过；会话/run 即席清理零残留；浏览器
+  手工验收留用户）。计划：docs/superpowers/plans/2026-09-27-treechat-ops-agent.md。
