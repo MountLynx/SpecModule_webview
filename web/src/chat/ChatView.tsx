@@ -234,9 +234,9 @@ function RunBlock({ run, onLocateDoc, onOpenRun }: {
       <div className="pb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
         {run.errored ? "回合失败" : run.finished ? "回合完成" : "回合运行中"} · {run.module}
       </div>
-      {(run.tools?.length ?? 0) > 0 && (
+      {run.tools.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          {run.tools!.map((t) => (
+          {run.tools.map((t) => (
             <ToolItem key={t.id} step={t} onOpenRun={onOpenRun} />
           ))}
         </div>
@@ -288,7 +288,7 @@ function ToolItem({ step, onOpenRun }: { step: ToolStep; onOpenRun: (rid: string
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-panel border border-border/50 bg-background px-2.5 py-1.5">
-      <button onClick={() => setOpen((v) => !v)}
+      <button onClick={() => setOpen((v) => !v)} aria-expanded={open}
               className="flex w-full items-center gap-1.5 text-left text-[12px]">
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           {step.status === "failed" ? (

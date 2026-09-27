@@ -285,7 +285,9 @@ export default function App() {
       refreshSessions();
     } else if (ev.event === "error") {
       if (d.state) setConvs((prev) => ({ ...prev, [sid]: d.state }));
-      updRun(sid, (r) => r && { ...r, finished: true, errored: true });
+      updRun(sid, (r) => r && { ...r, finished: true, errored: true,
+        tools: r.tools.map((t) => t.status === "running"
+          ? { ...t, status: "failed" as const, summary: t.summary || "回合中断" } : t) });
       updUi(sid, { error: d.error });
     }
   }, [updRun, updUi, refreshSessions, bufferDelta]);
