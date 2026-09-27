@@ -73,7 +73,10 @@ async def _run_timeline(args: dict, ctx: ToolContext) -> dict:
         tl = query.filter_tick(tl, int(args["tick"]))
     if args.get("node"):
         tl = query.filter_node(tl, str(args["node"]))
-    return query.timeline_to_dict(tl)
+    out = query.timeline_to_dict(tl)
+    limit = min(max(int(args.get("limit") or 50), 1), 200)
+    out["entries"] = out["entries"][-limit:]
+    return out
 
 
 async def _run_control(args: dict, ctx: ToolContext) -> dict:
@@ -143,7 +146,9 @@ register(ToolDef(
                 "properties": {"run_id": {"type": "string"},
                                "failed_only": {"type": "boolean"},
                                "tick": {"type": "integer"},
-                               "node": {"type": "string"}},
+                               "node": {"type": "string"},
+                               "limit": {"type": "integer",
+                                         "description": "最多返回的条目数（取最新，缺省 50，上限 200）"}},
                 "required": ["run_id"]},
     handler=_run_timeline))
 

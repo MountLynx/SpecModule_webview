@@ -138,6 +138,17 @@ def test_run_timeline_tick_and_node_filters(ctx, base):
     assert [e["node"] for e in tl_node["entries"]] == ["B"]
 
 
+def test_run_timeline_limit_takes_latest(ctx, base):
+    """limit 条目上限：取最新 N 条（防长 run 全量 timeline 喂模型）。"""
+    seed_run(base, "ops_r7",
+             firings=[{"tick": 1, "node": "A", "output": "a1"},
+                      {"tick": 2, "node": "B", "output": "b1"},
+                      {"tick": 3, "node": "C", "output": "c1"}],
+             status={"module_id": "mini_graph", "phase": "done", "updated_at": 3.0})
+    tl = _dispatch("run_timeline", {"run_id": "ops_r7", "limit": 1}, ctx)
+    assert [e["tick"] for e in tl["entries"]] == [3]
+
+
 def test_unknown_tool(ctx):
     out = _dispatch("nope", {}, ctx)
     assert out == {"error": "未知工具: nope"}
