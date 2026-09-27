@@ -105,6 +105,39 @@ def test_run_control_writes_control_file(ctx, base):
     assert out["control"]["action"] == "pause"
 
 
+def test_run_snapshot_bad_tick_becomes_error(ctx, base):
+    """库对不存在 tick 抛 KeyError（消息带可用清单）→ dispatch 兜底转 error dict。"""
+    seed_run(base, "ops_r4",
+             firings=[{"tick": 1, "node": "A", "output": "a1"}],
+             snapshots={2: {"tick": 2, "status": "running",
+                            "fireable": [], "fired": ["A"]}},
+             status={"module_id": "mini_graph", "phase": "done", "updated_at": 2.0})
+    out = _dispatch("run_snapshot", {"run_id": "ops_r4", "tick": 99999}, ctx)
+    assert "error" in out
+    assert "99999" in out["error"]
+
+
+def test_run_control_bad_action_becomes_error(ctx, base):
+    """库对非法 action 抛 ValueError → dispatch 兜底转 error dict。"""
+    seed_run(base, "ops_r5",
+             status={"module_id": "mini_graph", "phase": "running", "updated_at": 2.0})
+    out = _dispatch("run_control", {"run_id": "ops_r5", "action": "explode"}, ctx)
+    assert "error" in out
+
+
+def test_run_timeline_tick_and_node_filters(ctx, base):
+    seed_run(base, "ops_r6",
+             firings=[{"tick": 1, "node": "A", "output": "a1"},
+                      {"tick": 2, "node": "B", "output": "b1"}],
+             snapshots={2: {"tick": 2, "status": "running",
+                            "fireable": [], "fired": ["A", "B"]}},
+             status={"module_id": "mini_graph", "phase": "done", "updated_at": 3.0})
+    tl_tick = _dispatch("run_timeline", {"run_id": "ops_r6", "tick": 1}, ctx)
+    assert [e["tick"] for e in tl_tick["entries"]] == [1]
+    tl_node = _dispatch("run_timeline", {"run_id": "ops_r6", "node": "B"}, ctx)
+    assert [e["node"] for e in tl_node["entries"]] == ["B"]
+
+
 def test_unknown_tool(ctx):
     out = _dispatch("nope", {}, ctx)
     assert out == {"error": "未知工具: nope"}

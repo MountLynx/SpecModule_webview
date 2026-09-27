@@ -132,6 +132,7 @@ def _launch(argv: list[str], run_id: str, tmp_paths: list[Path], base_dir: Path,
             p.unlink(missing_ok=True)
         raise
     _PROCS[run_id] = _Proc(popen, tmp_paths)
+    log_fh.close()  # 父进程这份句柄关闭（子进程持继承句柄继续写；process_info 独立重开读）
     return {"started": True, "run_id": run_id, "pid": popen.pid, **extra}
 
 
