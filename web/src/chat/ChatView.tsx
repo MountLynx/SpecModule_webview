@@ -3,6 +3,7 @@ import { GitFork, Layers, Pencil } from "lucide-react";
 import type { Card, ConvState, Mode, Node, RunTrace, ToolStep } from "./types";
 import { activePath } from "./types";
 import { useRunStream } from "../ws";
+import { fetchStatus } from "../api";
 import { cn } from "../lib/utils";
 import { Markdown } from "./Markdown";
 import { Button } from "../components/ui/button";
@@ -315,10 +316,35 @@ function ToolItem({ step, onOpenRun }: { step: ToolStep; onOpenRun: (rid: string
   );
 }
 
-/** runId 内嵌进度：复用 useRunStream（按 runId 打包/防陈旧流；终态停连） */
+/** runId 内嵌进度：先过落盘等待门再连 WS（spawn→首写 status.json 有百毫秒窗口，
+ * 服务端对不存在的 run 拒连且前端永久停连——RunView 同款模式） */
 function RunProgress({ runId, onOpenRun }: { runId: string; onOpenRun: (rid: string) => void }) {
-  const st = useRunStream(runId);
-  const phase = st?.msg.phase ?? "…";
+  const [materialized, setMaterialized] = useState(false);
+  const [timeout, setTimeouted] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const started = Date.now();
+    const poll = () => {
+      fetchStatus(runId)
+        .then(() => {
+          if (!cancelled) {
+            setTimeouted(false);
+            setMaterialized(true);
+          }
+        })
+        .catch(() => {
+          if (!cancelled && Date.now() - started > 60_000) setTimeouted(true);
+        });
+    };
+    poll();
+    const t = setInterval(poll, 1_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [runId]);
+  const st = useRunStream(materialized ? runId : null);
+  const phase = timeout ? "落盘超时" : (st?.msg.phase ?? "…");
   return (
     <button onClick={() => onOpenRun(runId)}
             className="mt-1 flex w-full items-center gap-1.5 rounded-control bg-primary/[0.06] px-2 py-1 text-left text-[11px] text-muted-foreground hover:bg-primary/10">
