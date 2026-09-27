@@ -134,6 +134,33 @@ def test_tool_call_loop_and_result_fed_back(conv):
     assert '"echo"' in second[-1].content
 
 
+def test_oversized_tool_result_truncated(conv):
+    """超限工具结果：模型侧截断+注记，SSE 帧带 truncated 标志（issue #14）。"""
+
+    async def _big(args, ctx):
+        return {"blob": "字" * 20_000}
+
+    BIG = ToolDef(name="echo", description="大结果",
+                  parameters={"type": "object", "properties": {}},
+                  handler=_big)
+    client = ScriptClient([
+        _call(LLMResponse(content=""), "echo", {}),
+        LLMResponse(content="已收到"),
+    ])
+    events: list[dict] = []
+    outcome = asyncio.run(agent_bridge.run_agent_turn(
+        conv, conv.unanswered(), client=client, window=None, tools=[BIG],
+        on_event=events.append))
+    assert outcome.message_text == "已收到"
+    content = client.calls[1][-1].content
+    assert content.startswith('{"blob"')          # 截断从 JSON 头部开始
+    assert "已截断" in content                     # 注记随 payload 进 tool 消息
+    assert "字" * 20_000 not in content            # 完整载荷不进上下文
+    assert len(content) < agent_bridge.MAX_TOOL_RESULT_CHARS + 200
+    assert events[1]["truncated"] is True          # SSE 帧标志；summary 照常短摘要
+    assert len(events[1]["summary"]) <= 200
+
+
 def test_tool_context_client_backfilled(conv):
     """显式 tool_context（client=None）→ 会话客户端回填进 ctx。
 

@@ -70,6 +70,22 @@ def summarize_result(name: str, result: Any) -> str:
     return json.dumps(result, ensure_ascii=False)[:200]
 
 
+MAX_TOOL_RESULT_CHARS = 4_000
+"""工具结果喂回模型的字符上限（≈中文最坏 4k token）。超限截断并明示，提示
+模型用更窄参数重查；全量载荷不进上下文（SSE 帧只走 summarize_result 短摘要）。"""
+
+
+def _feed_payload(result: Any) -> tuple[str, bool]:
+    """工具结果的模型侧序列化。截断注记随 payload 一起进 tool 消息——
+    工具循环内的 messages 不再过窗口策略，这里是唯一的体积防线（issue #14）。"""
+    payload = json.dumps(result, ensure_ascii=False)
+    if len(payload) <= MAX_TOOL_RESULT_CHARS:
+        return payload, False
+    return (payload[:MAX_TOOL_RESULT_CHARS]
+            + f"\n…[已截断：结果共 {len(payload)} 字符，其余未纳入上下文；"
+              "如需完整信息，用更窄的参数重查（tick/节点过滤、更小 limit）]"), True
+
+
 async def run_agent_turn(conv, user_seq: int, *, client: Any, window,
                          tool_context: ToolContext | None = None,
                          tools: list[ToolDef] | None = None,
@@ -102,12 +118,14 @@ async def run_agent_turn(conv, user_seq: int, *, client: Any, window,
             emit({"event": "tool_call", "id": tc["id"], "name": name, "args": args})
             result = await dispatch_tool(tool_list, name, args, ctx)
             run_id = result.get("run_id") if isinstance(result, dict) else None
+            content, truncated = _feed_payload(result)
             emit({"event": "tool_result", "id": tc["id"], "name": name,
                   "ok": not (isinstance(result, dict) and result.get("error")),
                   "summary": summarize_result(name, result),
+                  "truncated": truncated,
                   "runId": run_id if isinstance(run_id, str) else None})
             messages.append(Message(role="tool", tool_call_id=tc["id"],
-                                    content=json.dumps(result, ensure_ascii=False)))
+                                    content=content))
     # 边角：末轮工具已执行、结果不再回喂模型（结果已经 tool_result 帧直达前端）
     return TurnOutcome(
         message_text=(f"已达单轮工具调用上限（{MAX_ITERATIONS}）。"

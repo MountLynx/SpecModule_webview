@@ -5,6 +5,7 @@ system 与卡片整块保留。V2 将升级为"摘要卡片 + compact 事件"（
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
@@ -14,10 +15,23 @@ from .errors import TreeChatError
 
 _CHARS_PER_TOKEN = 4
 
+# CJK 统一表意文字/扩展A/兼容、注音与假名、谚文、CJK 标点、全角形式——
+# 这些区间在主流 tokenizer 约 1 字 1 token，不适用英文 4 chars/token 经验值。
+_CJK_RE = re.compile(
+    "[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
+    "\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]"
+)
+
 
 def estimate_tokens(text: str) -> int:
-    """V1 估算：chars/4（后续可换 provider usage 精确计费，见 spec §10）。"""
-    return max(1, len(text) // _CHARS_PER_TOKEN)
+    """V1 估算：CJK 字符按 ~1 token/字计，其余 chars/4（spec §10）。
+
+    4 chars/token 对中文低估 2.5~4 倍——中文优先的会话里窗口会在真实
+    超限之后才裁剪，等于不设防。CJK 按 1 字 1 token 保守高估，宁可早裁；
+    provider usage 精确校准留作后续（issue #13）。
+    """
+    cjk = len(_CJK_RE.findall(text))
+    return max(1, cjk + (len(text) - cjk) // _CHARS_PER_TOKEN)
 
 
 def card_block(card: Card) -> str:
@@ -51,7 +65,11 @@ class WindowStrategy(Protocol):
 
 @dataclass
 class TokenWindowStrategy:
-    """V1 默认策略：system+卡片整块保留，history 从最新往回装填，丢最旧。"""
+    """V1 默认策略：system+卡片整块保留，history 从最新往回装填，丢最旧。
+
+    首条 history 消息不豁免预算检查——system 独占超预算时 history 为空，
+    警示照常注入（裁剪必显式告知，不静默塞入超预算内容）。
+    """
 
     budget_tokens: int = 100_000
     estimator: Callable[[str], int] = estimate_tokens
@@ -61,7 +79,7 @@ class TokenWindowStrategy:
         kept: list[dict[str, str]] = []
         for msg in reversed(history):
             cost = self.estimator(msg["content"])
-            if kept and used + cost > self.budget_tokens:
+            if used + cost > self.budget_tokens:
                 break
             kept.append(msg)
             used += cost

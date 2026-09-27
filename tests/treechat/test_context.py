@@ -2,7 +2,7 @@
 import pytest
 
 from treechat.core.cards import Card
-from treechat.core.context import TokenWindowStrategy, assemble
+from treechat.core.context import TokenWindowStrategy, assemble, estimate_tokens
 from treechat.core.conversation import MsgNode
 from treechat.core.errors import TreeChatError
 
@@ -74,3 +74,19 @@ def test_window_within_budget_no_warning():
     ctx = assemble(path, system="S", cards=[], strategy=TokenWindowStrategy(budget_tokens=10_000))
     assert "因窗口预算未纳入" not in ctx.system
     assert len(ctx.history) == 2
+
+
+def test_estimate_tokens_cjk_counts_per_char():
+    assert estimate_tokens("一二三四五六七八九十") == 10   # 中文 1 字 1 token（旧算法 = 2）
+    assert estimate_tokens("abcdefgh") == 2                # ASCII 保留 4 chars/token
+    assert estimate_tokens("abc中文") == 2                 # 混合分段：2 CJK + 3//4 ASCII
+    assert estimate_tokens("，。！") == 3                   # CJK 标点/全角同区间
+
+
+def test_window_oversized_system_drops_all_history():
+    # system 独占超预算：首条 history 消息不豁免，清空且警示照常注入
+    ctx = assemble(_path(("q1", "a1"), ("q2", None)),
+                   system="x" * 500, cards=[],
+                   strategy=TokenWindowStrategy(budget_tokens=100))
+    assert ctx.history == []
+    assert "因窗口预算未纳入" in ctx.system
