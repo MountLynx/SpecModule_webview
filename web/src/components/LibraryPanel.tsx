@@ -6,8 +6,8 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { errTextCls, labelCls, overlayCls, panelCls } from "./dialogTheme";
 import {
-  deleteLibraryItem, emptyDraft, fetchLibrary, fetchLibraryItem, fetchModules, putDraft,
-  putLibraryCode, putLibraryJson, type LibraryIndex,
+  deleteLibraryItem, emptyDraft, fetchLibrary, fetchLibraryItem, fetchModules, notifyLibraryChanged,
+  putDraft, putLibraryCode, putLibraryJson, type LibraryIndex,
 } from "../api";
 import { CommandDialog, HarnessDialog } from "./library/ComponentForms";
 
@@ -59,13 +59,18 @@ export function LibraryPanel({ activeDraft, onOpenDraft, onCreated, onDeleted }:
     fetchLibrary().then(setLib).catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
+  // 变更后刷新（挂载不用）：广播给在开消费方（如 ModuleBuilder）同步重拉清单
+  const refreshLib = useCallback(() => {
+    refresh();
+    notifyLibraryChanged();
+  }, [refresh]);
 
   const del = async (kind: Parameters<typeof deleteLibraryItem>[0], name: string) => {
     if (!window.confirm(`删除 ${kind}/${name}？`)) return;
     try {
       await deleteLibraryItem(kind, name);
       if (kind === "drafts") onDeleted(name);
-      refresh();
+      refreshLib();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -90,7 +95,7 @@ export function LibraryPanel({ activeDraft, onOpenDraft, onCreated, onDeleted }:
     try {
       await putLibraryCode(uploadKind.current, stem, await f.text());
       setError(null);
-      refresh();
+      refreshLib();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -120,7 +125,7 @@ export function LibraryPanel({ activeDraft, onOpenDraft, onCreated, onDeleted }:
     try {
       await putLibraryJson("submodules", name, {});
       setError(null);
-      refresh();
+      refreshLib();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -182,9 +187,9 @@ export function LibraryPanel({ activeDraft, onOpenDraft, onCreated, onDeleted }:
       {editKind && (
         editKind === "harnesses"
           ? <HarnessDialog initial={editName} onClose={() => setEditKind(null)}
-                           onSaved={() => { setEditKind(null); refresh(); }} />
+                           onSaved={() => { setEditKind(null); refreshLib(); }} />
           : <CommandDialog initial={editName} onClose={() => setEditKind(null)}
-                           onSaved={() => { setEditKind(null); refresh(); }} />
+                           onSaved={() => { setEditKind(null); refreshLib(); }} />
       )}
       {preview && (
         <div className={overlayCls} onClick={() => setPreview(null)}>
@@ -201,7 +206,7 @@ export function LibraryPanel({ activeDraft, onOpenDraft, onCreated, onDeleted }:
       )}
       {newDraftOpen && (
         <NewDraftDialog onClose={() => setNewDraftOpen(false)}
-                        onCreated={(name) => { setNewDraftOpen(false); onCreated(name); refresh(); }} />
+                        onCreated={(name) => { setNewDraftOpen(false); onCreated(name); refreshLib(); }} />
       )}
     </div>
   );

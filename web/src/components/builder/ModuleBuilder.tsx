@@ -2,6 +2,9 @@
 // 右侧配置面板 + 底部 tasklist 预览（validate 返回的服务端生成结果）。
 // 草稿自动保存：变更置脏 → 800ms 防抖 PUT；校验/安装前先显式保存（saveNow）。
 // 保存失败捕获服务端 message（saveError）就地透出——用户能看到为什么失败。
+// 添加节点走选择对话框：组件可视化挑选 + 任务名建议可改（不再静默取清单首个自动命名）；
+// 组件库清单监听变更事件自动刷新——侧栏新建 harness/command 后在开页签立即可选。
+// 元数据/Spec 对话框同 ComponentForms：遮罩不关闭 + 本地草稿（useFormDraft）。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, GitMerge, LayoutGrid, ShieldCheck, Table2 } from "lucide-react";
 import { Button } from "../ui/button";
@@ -9,10 +12,11 @@ import { Input } from "../ui/input";
 import { SpecForm } from "../SpecForm";
 import { errTextCls, fieldCls, labelCls, okTextCls, overlayCls, panelCls } from "../dialogTheme";
 import {
-  fetchDraft, fetchLibrary, genId, installPack, putDraft, validatePack,
+  fetchDraft, fetchLibrary, genId, installPack, onLibraryChanged, putDraft, validatePack,
   type BuilderDraft, type BuilderNode, type LibraryIndex, type ModuleDetail,
   type SpecField, type SpecTypeName, type ValidatePackResult,
 } from "../../api";
+import { useFormDraft } from "../../lib/formDraft";
 import { EditableCanvas, relayout, type Selection } from "./EditableCanvas";
 import { NodePanel } from "./NodePanel";
 
@@ -42,6 +46,7 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
   const [busy, setBusy] = useState(false);
   const [metaOpen, setMetaOpen] = useState(false);
   const [specOpen, setSpecOpen] = useState(false);
+  const [addType, setAddType] = useState<BuilderNode["type"] | null>(null);
   const [installed, setInstalled] = useState<ModuleDetail | null>(null);
   const saveTimer = useRef<number | null>(null);
   // 回调里读最新草稿（addNode/saveNow 不入依赖数组）
@@ -57,6 +62,11 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
   }, [name]);
 
   useEffect(() => { load(); }, [load]);
+
+  // 侧栏组件库增删改 → 重拉清单（window 事件；与 LibraryPanel 无共同父级状态）
+  useEffect(() => onLibraryChanged(() => {
+    fetchLibrary().then(setLibrary).catch(() => {});
+  }), []);
 
   const onChange = useCallback((fn: (d: BuilderDraft) => BuilderDraft) => {
     setDraft((prev) => prev && fn(prev));
@@ -129,24 +139,15 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
     }
   }, [busy, name, saveNow]);
 
-  const addNode = useCallback((type: BuilderNode["type"]) => {
-    const cur = draftRef.current;
-    const refPool =
-      type === "harness" ? library?.harnesses ?? [] :
-      type === "script" ? library?.scripts ?? [] :
-      type === "command" ? library?.commands ?? [] :
-      library?.submodules.map((s) => s.name) ?? [];
-    const ref = refPool[0] ?? "";
-    if (!ref) {
-      setCheckErrors([`组件库暂无 ${type} 组件——先到左侧组件库${type === "script" ? "上传" : "新建"}。`]);
-      return;
-    }
-    const i = cur?.nodes.length ?? 0;
-    // label = 引用名_序号；删除后再添加可能撞现存名（PUT 会 400 拒重名），递增避让
-    const names = new Set(cur?.nodes.map((n) => n.label) ?? []);
-    let label = `${ref}_${i}`;
-    let k = i;
-    while (names.has(label)) { k += 1; label = `${ref}_${k}`; }
+  // 打开添加对话框：顺带拉最新组件清单——侧栏刚建好的组件立即可选（事件刷新外的双保险）
+  const openAdd = useCallback((type: BuilderNode["type"]) => {
+    setAddType(type);
+    fetchLibrary().then(setLibrary).catch(() => {});
+  }, []);
+
+  // AddNodeDialog 确认：ref/label 由用户选定（label 建议已在对话框内避让现存名）
+  const addNode = useCallback((type: BuilderNode["type"], ref: string, label: string) => {
+    const i = draftRef.current?.nodes.length ?? 0;
     const node: BuilderNode = {
       id: genId("n"),
       label,
@@ -159,7 +160,8 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
     };
     onChange((d) => ({ ...d, nodes: [...d.nodes, node] }));
     setSelected({ kind: "node", id: node.id });
-  }, [library, onChange]);
+    setAddType(null);
+  }, [onChange]);
 
   if (loadErr) {
     return (
@@ -193,7 +195,7 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
         <Button variant="ghost" size="sm" onClick={() => setSpecOpen(true)}>Spec</Button>
         <div className="mx-1 h-5 w-px bg-border" />
         <select className="rounded-control border border-input bg-transparent px-1.5 py-1 text-[12px]"
-                value="" onChange={(e) => e.target.value && addNode(e.target.value as BuilderNode["type"])}>
+                value="" onChange={(e) => e.target.value && openAdd(e.target.value as BuilderNode["type"])}>
           <option value="">+ 添加节点…</option>
           {ADD_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
         </select>
@@ -259,12 +261,17 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
         </div>
       )}
 
+      {addType && (
+        <AddNodeDialog type={addType} draft={draft} library={library}
+                       onCancel={() => setAddType(null)}
+                       onAdd={(ref, label) => addNode(addType, ref, label)} />
+      )}
       {metaOpen && (
-        <MetaDialog draft={draft} onClose={() => setMetaOpen(false)}
+        <MetaDialog name={name} draft={draft} onClose={() => setMetaOpen(false)}
                     onSave={(meta) => { onChange((d) => ({ ...d, meta })); setMetaOpen(false); }} />
       )}
       {specOpen && (
-        <SpecDialog draft={draft} onClose={() => setSpecOpen(false)}
+        <SpecDialog name={name} draft={draft} onClose={() => setSpecOpen(false)}
                     onSave={(spec_schema, default_spec) => {
                       onChange((d) => ({ ...d, spec_schema, default_spec }));
                       setSpecOpen(false);
@@ -274,35 +281,47 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
   );
 }
 
-function MetaDialog({ draft, onClose, onSave }: {
-  draft: BuilderDraft; onClose: () => void;
+function MetaDialog({ name, draft, onClose, onSave }: {
+  name: string; draft: BuilderDraft; onClose: () => void;
   onSave: (meta: BuilderDraft["meta"]) => void;
 }) {
-  const [meta, setMeta] = useState(draft.meta);
+  const { value: meta, setValue: setMeta, persist, clear: clearDraft, restored } =
+    useFormDraft(`build-meta:${name}`, draft.meta);
   const [err, setErr] = useState<string | null>(null);
+  // 编辑统一走 upd（同步落草稿）
+  const upd = (patch: Partial<BuilderDraft["meta"]>) => {
+    const next = { ...meta, ...patch };
+    setMeta(next);
+    persist(next);
+  };
+  const discard = () => { clearDraft(); onClose(); };
   const save = () => {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(meta.name)) { setErr("模块名须为 Python 标识符"); return; }
     onSave(meta);
+    clearDraft();
   };
   return (
-    <div className={overlayCls} onClick={onClose}>
+    <div className={overlayCls}>
       <div className={panelCls} onClick={(e) => e.stopPropagation()}>
         <div className="text-[13px] font-semibold">模块元数据</div>
+        {restored && (
+          <div className="text-[11px] text-muted-foreground">已恢复上次未保存的编辑（「取消」将丢弃）</div>
+        )}
         <div>
           <div className={labelCls}>名称（包名/选择器，创建后建议不改——改名等于换草稿）</div>
-          <Input value={meta.name} onChange={(e) => setMeta({ ...meta, name: e.target.value })} className="font-mono" />
+          <Input value={meta.name} onChange={(e) => upd({ name: e.target.value })} className="font-mono" />
         </div>
         <div>
           <div className={labelCls}>版本</div>
-          <Input value={meta.version} onChange={(e) => setMeta({ ...meta, version: e.target.value })} className="font-mono" />
+          <Input value={meta.version} onChange={(e) => upd({ version: e.target.value })} className="font-mono" />
         </div>
         <div>
           <div className={labelCls}>描述</div>
-          <Input value={meta.description} onChange={(e) => setMeta({ ...meta, description: e.target.value })} />
+          <Input value={meta.description} onChange={(e) => upd({ description: e.target.value })} />
         </div>
         {err && <div className={errTextCls}>{err}</div>}
         <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
+          <Button variant="outline" size="sm" onClick={discard}>取消</Button>
           <Button size="sm" onClick={save}>保存</Button>
         </div>
       </div>
@@ -312,18 +331,38 @@ function MetaDialog({ draft, onClose, onSave }: {
 
 const SPEC_TYPES: SpecTypeName[] = ["str", "int", "float", "bool", "list", "dict", "any"];
 
-function SpecDialog({ draft, onClose, onSave }: {
-  draft: BuilderDraft; onClose: () => void;
+interface SpecFormState { schema: SpecField[]; defaultSpec: Record<string, unknown> }
+
+function SpecDialog({ name, draft, onClose, onSave }: {
+  name: string; draft: BuilderDraft; onClose: () => void;
   onSave: (schema: SpecField[], defaultSpec: Record<string, unknown>) => void;
 }) {
-  const [schema, setSchema] = useState<SpecField[]>(draft.spec_schema);
-  const [defaultSpec, setDefaultSpec] = useState<Record<string, unknown>>(draft.default_spec);
+  const { value: spec, setValue: setSpec, persist, clear: clearDraft, restored } =
+    useFormDraft<SpecFormState>(`build-spec:${name}`,
+      { schema: draft.spec_schema, defaultSpec: draft.default_spec });
+  const schema = spec.schema;
+  const defaultSpec = spec.defaultSpec;
+  // 编辑统一走包装器（同步落草稿）
+  const setSchema = (fn: (s: SpecField[]) => SpecField[]) => {
+    const next = { ...spec, schema: fn(spec.schema) };
+    setSpec(next);
+    persist(next);
+  };
+  const setDefaultSpec = (v: Record<string, unknown>) => {
+    const next = { ...spec, defaultSpec: v };
+    setSpec(next);
+    persist(next);
+  };
+  const discard = () => { clearDraft(); onClose(); };
   const schemaObj = Object.fromEntries(schema.map((f) => [f.field, f.type]));
   const addField = () => setSchema((s) => [...s, { field: `field_${s.length + 1}`, type: "str" }]);
   return (
-    <div className={overlayCls} onClick={onClose}>
+    <div className={overlayCls}>
       <div className={panelCls} onClick={(e) => e.stopPropagation()}>
         <div className="text-[13px] font-semibold">spec_schema 与参考 spec</div>
+        {restored && (
+          <div className="text-[11px] text-muted-foreground">已恢复上次未保存的编辑（「取消」将丢弃）</div>
+        )}
         <div>
           <div className={labelCls}>输入字段（{`type ∈ ${SPEC_TYPES.join("/")}`}）</div>
           <div className="flex flex-col gap-1">
@@ -351,8 +390,72 @@ function SpecDialog({ draft, onClose, onSave }: {
           />
         </div>
         <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
-          <Button size="sm" onClick={() => onSave(schema, defaultSpec)}>保存</Button>
+          <Button variant="outline" size="sm" onClick={discard}>取消</Button>
+          <Button size="sm" onClick={() => { onSave(schema, defaultSpec); clearDraft(); }}>保存</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 添加节点对话框：组件可视化挑选 + 任务名建议可改——不再静默取清单首个并自动命名
+function AddNodeDialog({ type, draft, library, onCancel, onAdd }: {
+  type: BuilderNode["type"]; draft: BuilderDraft; library: LibraryIndex | null;
+  onCancel: () => void; onAdd: (ref: string, label: string) => void;
+}) {
+  const pool: string[] =
+    type === "harness" ? library?.harnesses ?? [] :
+    type === "script" ? library?.scripts ?? [] :
+    type === "command" ? library?.commands ?? [] :
+    library?.submodules.map((s) => s.name) ?? [];
+  const names = new Set(draft.nodes.map((n) => n.label));
+  // 任务名建议 = 引用名_序号（避让现存名，与旧自动命名规则一致；PUT 拒重名）
+  const suggest = (ref: string) => {
+    let k = draft.nodes.length;
+    let label = `${ref}_${k}`;
+    while (names.has(label)) { k += 1; label = `${ref}_${k}`; }
+    return label;
+  };
+  const [ref, setRef] = useState(pool[0] ?? "");
+  const [label, setLabel] = useState(pool[0] ? suggest(pool[0]) : "");
+  const [labelTouched, setLabelTouched] = useState(false);
+  const typeLabel = ADD_TYPES.find((t) => t.type === type)?.label ?? type;
+  const pickRef = (r: string) => {
+    setRef(r);
+    if (!labelTouched) setLabel(suggest(r)); // 任务名没手改过才跟随换建议
+  };
+  const labelDup = label !== "" && names.has(label);
+  return (
+    <div className={overlayCls}>
+      <div className={panelCls} onClick={(e) => e.stopPropagation()}>
+        <div className="text-[13px] font-semibold">新建节点（{typeLabel}）</div>
+        <div>
+          <div className={labelCls}>组件引用（{type}）</div>
+          {pool.length === 0 ? (
+            <div className={errTextCls}>
+              组件库暂无 {type} 组件——先到左侧组件库{type === "script" ? "上传" : "新建"}。
+            </div>
+          ) : (
+            <div className="flex max-h-44 flex-col gap-0.5 overflow-auto rounded-control border border-input p-1">
+              {pool.map((o) => (
+                <label key={o}
+                       className={`flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 font-mono text-[12px] ${o === ref ? "bg-accent" : "hover:bg-accent/60"}`}>
+                  <input type="radio" name="builder-addnode-ref" checked={o === ref} onChange={() => pickRef(o)} />
+                  {o}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <div className={labelCls}>任务名（Flow 引用名，标识符）</div>
+          <Input value={label} className="font-mono"
+                 onChange={(e) => { setLabelTouched(true); setLabel(e.target.value.replace(/\s/g, "_")); }} />
+          {labelDup && <div className={errTextCls}>任务名已存在，换一个</div>}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onCancel}>取消</Button>
+          <Button size="sm" disabled={!ref || !label || labelDup} onClick={() => onAdd(ref, label)}>添加</Button>
         </div>
       </div>
     </div>

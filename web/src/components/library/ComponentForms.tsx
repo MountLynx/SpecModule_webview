@@ -2,11 +2,15 @@
 // 字段对照库 HarnessConfig / CommandConfig；保存走 PUT /api/library/{kind}/{name}，
 // 服务端 from_dict 实例化验形——前端不做深校验，错误透出。
 // 编辑模式（initial 非空）挂载时回填已存配置——同一端点 PUT，读-改-写而非盲覆盖。
+// 遮罩点击不关闭（防误触丢编辑，仅 ×/取消 显式退出）；编辑即时落本地草稿
+// （useFormDraft）——刷新/崩溃后重开自动恢复，「取消」显式丢弃。
 import { useEffect, useState, type ReactNode } from "react";
+import { X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input, Textarea } from "../ui/input";
 import { errTextCls, fieldCls, labelCls, overlayCls, panelCls } from "../dialogTheme";
 import { fetchLibraryItem, putLibraryJson } from "../../api";
+import { useFormDraft } from "../../lib/formDraft";
 
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -28,15 +32,28 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** 表单对话框外壳：遮罩点击不关闭（防误触丢编辑），仅 ×/取消 显式退出 */
 function Overlay({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
-    <div className={overlayCls} onClick={onClose}>
+    <div className={overlayCls}>
       <div className={panelCls} onClick={(e) => e.stopPropagation()}>
-        <div className="text-[13px] font-semibold">{title}</div>
+        <div className="flex items-center">
+          <div className="text-[13px] font-semibold">{title}</div>
+          <button className="ml-auto rounded p-1 text-muted-foreground hover:bg-accent"
+                  title="关闭" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
         {children}
       </div>
     </div>
   );
+}
+
+/** 草稿恢复提示（本次挂载来自 localStorage 恢复时置于表单顶部） */
+function RestoredHint({ restored }: { restored: boolean }) {
+  if (!restored) return null;
+  return <div className="text-[11px] text-muted-foreground">已恢复上次未保存的编辑（「取消」将丢弃）</div>;
 }
 
 function NewKeyInput({ onAdd }: { onAdd: (k: string) => void }) {
@@ -75,23 +92,33 @@ function KvRows({ value, onChange }: { value: Record<string, string>; onChange: 
   );
 }
 
-const HARNESS_EMPTY = {
-  prompt_core: "", model: "", temperature: "", think: "", api_params: "",
+/** harness 表单整体（含名称/动态选项集/否定约束，作为一份草稿持久化） */
+interface HarnessForm {
+  name: string;
+  prompt_core: string; model: string; temperature: string; think: string; api_params: string;
+  mode: string; image_size: string; image_dir: string;
+  out_type: string; out_schema: string; out_instruction: string;
+  promptModes: Record<string, string>; notdo: string;
+}
+
+const HARNESS_EMPTY: HarnessForm = {
+  name: "", prompt_core: "", model: "", temperature: "", think: "", api_params: "",
   mode: "text", image_size: "", image_dir: "images",
-  out_type: "", out_schema: "", out_instruction: "",
+  out_type: "", out_schema: "", out_instruction: "", promptModes: {}, notdo: "",
 };
 
 export function HarnessDialog({ initial, onClose, onSaved }: DialogProps) {
-  const [name, setName] = useState(initial ?? "");
-  const [f, setF] = useState(HARNESS_EMPTY);
-  const [promptModes, setPromptModes] = useState<Record<string, string>>({});
-  const [notdo, setNotdo] = useState("");
+  // 在途草稿按「类:名」锚定（新建 = __new__）；本地草稿优先于服务器回填——
+  // 草稿存在即有未保存的在途编辑，回填反而会覆盖用户意图。
+  const draftKey = `harness:${initial ?? "__new__"}`;
+  const { value: form, setValue: setForm, persist, clear: clearDraft, restored } =
+    useFormDraft<HarnessForm>(draftKey, HARNESS_EMPTY);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(!!initial);
-  // 编辑模式：挂载时回填已存配置；失败示错并保持对话框打开（必填校验挡住半空保存）
+  const [loading, setLoading] = useState(!!initial && !restored);
+  // 编辑模式回填（本地草稿优先时不拉取）；失败示错并保持对话框打开（必填校验挡住半空保存）
   useEffect(() => {
-    if (!initial) return;
+    if (!initial || restored) return;
     let cancelled = false;
     fetchLibraryItem("harnesses", initial)
       .then((raw) => {
@@ -103,7 +130,9 @@ export function HarnessDialog({ initial, onClose, onSaved }: DialogProps) {
         const ap = s.api_params;
         const apEmpty =
           ap == null || (typeof ap === "object" && Object.keys(ap as object).length === 0);
-        setF({
+        setForm({
+          ...HARNESS_EMPTY,
+          name: initial,
           prompt_core: asText(s.prompt_core),
           model: asText(s.model),
           temperature: s.temperature == null ? "" : String(s.temperature),
@@ -118,9 +147,9 @@ export function HarnessDialog({ initial, onClose, onSaved }: DialogProps) {
           out_type: asText(of.type),
           out_schema: of.schema == null ? "" : JSON.stringify(of.schema),
           out_instruction: asText(of.instruction),
+          promptModes: Object.fromEntries(Object.entries(pm).map(([k, v]) => [k, String(v)])),
+          notdo: Array.isArray(s.notdo) ? s.notdo.map(String).join(", ") : asText(s.notdo),
         });
-        setPromptModes(Object.fromEntries(Object.entries(pm).map(([k, v]) => [k, String(v)])));
-        setNotdo(Array.isArray(s.notdo) ? s.notdo.map(String).join(", ") : asText(s.notdo));
         setLoading(false);
       })
       .catch((e) => {
@@ -129,7 +158,7 @@ export function HarnessDialog({ initial, onClose, onSaved }: DialogProps) {
         setErr(e instanceof Error ? e.message : String(e));
       });
     return () => { cancelled = true; };
-  }, [initial]);
+  }, [initial, restored, setForm]);
   if (loading) {
     return (
       <Overlay title={initial ? `编辑 harness：${initial}` : "新建 harness"} onClose={onClose}>
@@ -137,44 +166,52 @@ export function HarnessDialog({ initial, onClose, onSaved }: DialogProps) {
       </Overlay>
     );
   }
-  const upd = (patch: Partial<typeof f>) => setF((p) => ({ ...p, ...patch }));
+  // 用户编辑统一走 upd（同步落草稿）；回填 setForm 不持久化——草稿只在用户动过之后存在
+  const upd = (patch: Partial<HarnessForm>) => {
+    const next = { ...form, ...patch };
+    setForm(next);
+    persist(next);
+  };
+  const discard = () => { clearDraft(); onClose(); };
 
   const save = async () => {
+    const name = form.name;
     if (!NAME_RE.test(name)) { setErr("名称须为 Python 标识符"); return; }
-    if (!f.prompt_core.trim()) { setErr("prompt_core 必填"); return; }
+    if (!form.prompt_core.trim()) { setErr("prompt_core 必填"); return; }
     // 载荷只带非空字段；数值/JSON 解析失败就地示错
-    const payload: Record<string, unknown> = { name, prompt_core: f.prompt_core };
-    if (Object.keys(promptModes).length) payload.prompt_modes = promptModes;
-    if (notdo.trim()) payload.notdo = notdo.split(",").map((s) => s.trim()).filter(Boolean);
-    if (f.model.trim()) payload.model = f.model.trim();
-    if (f.temperature.trim()) {
-      const t = Number(f.temperature);
+    const payload: Record<string, unknown> = { name, prompt_core: form.prompt_core };
+    if (Object.keys(form.promptModes).length) payload.prompt_modes = form.promptModes;
+    if (form.notdo.trim()) payload.notdo = form.notdo.split(",").map((s) => s.trim()).filter(Boolean);
+    if (form.model.trim()) payload.model = form.model.trim();
+    if (form.temperature.trim()) {
+      const t = Number(form.temperature);
       if (!Number.isFinite(t)) { setErr("temperature 须为数字"); return; }
       payload.temperature = t;
     }
-    if (f.think.trim()) {
-      if (f.think === "true" || f.think === "false") payload.think = f.think === "true";
-      else { try { payload.think = JSON.parse(f.think); } catch { setErr("think 须为 true/false/JSON"); return; } }
+    if (form.think.trim()) {
+      if (form.think === "true" || form.think === "false") payload.think = form.think === "true";
+      else { try { payload.think = JSON.parse(form.think); } catch { setErr("think 须为 true/false/JSON"); return; } }
     }
-    if (f.api_params.trim()) {
-      try { payload.api_params = JSON.parse(f.api_params); } catch { setErr("api_params 须为合法 JSON"); return; }
+    if (form.api_params.trim()) {
+      try { payload.api_params = JSON.parse(form.api_params); } catch { setErr("api_params 须为合法 JSON"); return; }
     }
-    if (f.mode === "image") {
+    if (form.mode === "image") {
       payload.mode = "image";
-      if (f.image_size.trim()) payload.image_size = f.image_size.trim();
-      payload.image_dir = f.image_dir || "images";
+      if (form.image_size.trim()) payload.image_size = form.image_size.trim();
+      payload.image_dir = form.image_dir || "images";
     }
-    if (f.out_type) {
-      const of: Record<string, unknown> = { type: f.out_type };
-      if (f.out_type === "json_schema" && f.out_schema.trim()) {
-        try { of.schema = JSON.parse(f.out_schema); } catch { setErr("output schema 须为合法 JSON"); return; }
+    if (form.out_type) {
+      const of: Record<string, unknown> = { type: form.out_type };
+      if (form.out_type === "json_schema" && form.out_schema.trim()) {
+        try { of.schema = JSON.parse(form.out_schema); } catch { setErr("output schema 须为合法 JSON"); return; }
       }
-      if (f.out_instruction.trim()) of.instruction = f.out_instruction;
+      if (form.out_instruction.trim()) of.instruction = form.out_instruction;
       payload.output_format = of;
     }
     setBusy(true); setErr(null);
     try {
       await putLibraryJson("harnesses", name, payload);
+      clearDraft();
       onSaved(name);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -182,92 +219,103 @@ export function HarnessDialog({ initial, onClose, onSaved }: DialogProps) {
   };
 
   return (
-    <Overlay title={initial ? `编辑 harness：${initial}` : "新建 harness"} onClose={onClose}>
+    <Overlay title={initial ? `编辑 harness：${initial}` : "新建 harness"} onClose={discard}>
+      <RestoredHint restored={restored} />
       <Row label="名称（注册名）">
-        <Input value={name} disabled={!!initial} onChange={(e) => setName(e.target.value)} className="font-mono" />
+        <Input value={form.name} disabled={!!initial} onChange={(e) => upd({ name: e.target.value })} className="font-mono" />
       </Row>
       <Row label="prompt_core（必填，支持 {key} 占位）">
-        <Textarea value={f.prompt_core} onChange={(e) => upd({ prompt_core: e.target.value })} rows={3} />
+        <Textarea value={form.prompt_core} onChange={(e) => upd({ prompt_core: e.target.value })} rows={3} />
       </Row>
-      <Row label="prompt_modes（动态选项集）"><KvRows value={promptModes} onChange={setPromptModes} /></Row>
+      <Row label="prompt_modes（动态选项集）">
+        <KvRows value={form.promptModes} onChange={(v) => upd({ promptModes: v })} />
+      </Row>
       <Row label="notdo（否定性约束，逗号分隔）">
-        <Input value={notdo} onChange={(e) => setNotdo(e.target.value)} />
+        <Input value={form.notdo} onChange={(e) => upd({ notdo: e.target.value })} />
       </Row>
       <div className="grid grid-cols-2 gap-2">
-        <Row label="model"><Input value={f.model} onChange={(e) => upd({ model: e.target.value })} /></Row>
-        <Row label="temperature"><Input value={f.temperature} onChange={(e) => upd({ temperature: e.target.value })} placeholder="0.3" /></Row>
+        <Row label="model"><Input value={form.model} onChange={(e) => upd({ model: e.target.value })} /></Row>
+        <Row label="temperature"><Input value={form.temperature} onChange={(e) => upd({ temperature: e.target.value })} placeholder="0.3" /></Row>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <Row label="think（true/false/JSON，空=不设）"><Input value={f.think} onChange={(e) => upd({ think: e.target.value })} /></Row>
+        <Row label="think（true/false/JSON，空=不设）"><Input value={form.think} onChange={(e) => upd({ think: e.target.value })} /></Row>
         <Row label="mode">
-          <select className={fieldCls} value={f.mode} onChange={(e) => upd({ mode: e.target.value })}>
+          <select className={fieldCls} value={form.mode} onChange={(e) => upd({ mode: e.target.value })}>
             <option value="text">text</option>
             <option value="image">image</option>
           </select>
         </Row>
       </div>
-      {f.mode === "image" && (
+      {form.mode === "image" && (
         <div className="grid grid-cols-2 gap-2">
-          <Row label="image_size"><Input value={f.image_size} onChange={(e) => upd({ image_size: e.target.value })} placeholder="1024x1024" /></Row>
-          <Row label="image_dir"><Input value={f.image_dir} onChange={(e) => upd({ image_dir: e.target.value })} /></Row>
+          <Row label="image_size"><Input value={form.image_size} onChange={(e) => upd({ image_size: e.target.value })} placeholder="1024x1024" /></Row>
+          <Row label="image_dir"><Input value={form.image_dir} onChange={(e) => upd({ image_dir: e.target.value })} /></Row>
         </div>
       )}
       <Row label="api_params（SDK 透传 JSON，空=不设）">
-        <Textarea value={f.api_params} onChange={(e) => upd({ api_params: e.target.value })} rows={2} className="font-mono" />
+        <Textarea value={form.api_params} onChange={(e) => upd({ api_params: e.target.value })} rows={2} className="font-mono" />
       </Row>
       <div className="grid grid-cols-3 gap-2">
         <Row label="output_format">
-          <select className={fieldCls} value={f.out_type} onChange={(e) => upd({ out_type: e.target.value })}>
+          <select className={fieldCls} value={form.out_type} onChange={(e) => upd({ out_type: e.target.value })}>
             <option value="">（不约束）</option>
             <option value="json_object">json_object</option>
             <option value="json_schema">json_schema</option>
             <option value="text">text</option>
           </select>
         </Row>
-        {f.out_type === "json_schema" && (
+        {form.out_type === "json_schema" && (
           <Row label="schema JSON">
-            <Textarea value={f.out_schema} onChange={(e) => upd({ out_schema: e.target.value })} rows={2} className="font-mono" />
+            <Textarea value={form.out_schema} onChange={(e) => upd({ out_schema: e.target.value })} rows={2} className="font-mono" />
           </Row>
         )}
-        {f.out_type && (
-          <Row label="instruction"><Input value={f.out_instruction} onChange={(e) => upd({ out_instruction: e.target.value })} /></Row>
+        {form.out_type && (
+          <Row label="instruction"><Input value={form.out_instruction} onChange={(e) => upd({ out_instruction: e.target.value })} /></Row>
         )}
       </div>
       {err && <div className={errTextCls}>{err}</div>}
       <div className="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
+        <Button variant="outline" size="sm" onClick={discard}>取消</Button>
         <Button size="sm" disabled={busy} onClick={save}>保存</Button>
       </div>
     </Overlay>
   );
 }
 
+/** command 表单整体（含名称/环境变量/开关，作为一份草稿持久化） */
+interface CommandForm {
+  name: string; command: string; timeout_: string; cwd: string;
+  env: Record<string, string>; capture: boolean; shell: boolean;
+}
+
+const COMMAND_EMPTY: CommandForm = { name: "", command: "", timeout_: "60", cwd: "", env: {}, capture: true, shell: true };
+
 export function CommandDialog({ initial, onClose, onSaved }: DialogProps) {
-  const [name, setName] = useState(initial ?? "");
-  const [command, setCommand] = useState("");
-  const [timeout_, setTimeout_] = useState("60");
-  const [cwd, setCwd] = useState("");
-  const [env, setEnv] = useState<Record<string, string>>({});
-  const [capture, setCapture] = useState(true);
-  const [shell, setShell] = useState(true);
+  const draftKey = `command:${initial ?? "__new__"}`;
+  const { value: form, setValue: setForm, persist, clear: clearDraft, restored } =
+    useFormDraft<CommandForm>(draftKey, COMMAND_EMPTY);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(!!initial);
-  // 编辑模式：挂载时回填已存配置；失败示错并保持对话框打开
+  const [loading, setLoading] = useState(!!initial && !restored);
+  // 编辑模式回填（本地草稿优先时不拉取）；失败示错并保持对话框打开
   useEffect(() => {
-    if (!initial) return;
+    if (!initial || restored) return;
     let cancelled = false;
     fetchLibraryItem("commands", initial)
       .then((raw) => {
         if (cancelled) return;
         const s = raw as Record<string, unknown>;
         const storedEnv = (s.env ?? {}) as Record<string, unknown>;
-        setCommand(asText(s.command));
-        setTimeout_(s.timeout == null ? "60" : String(s.timeout));
-        setCwd(asText(s.cwd));
-        setEnv(Object.fromEntries(Object.entries(storedEnv).map(([k, v]) => [k, String(v)])));
-        setCapture(s.capture_output == null ? true : Boolean(s.capture_output));
-        setShell(s.shell == null ? true : Boolean(s.shell));
+        setForm({
+          ...COMMAND_EMPTY,
+          name: initial,
+          command: asText(s.command),
+          timeout_: s.timeout == null ? "60" : String(s.timeout),
+          cwd: asText(s.cwd),
+          env: Object.fromEntries(Object.entries(storedEnv).map(([k, v]) => [k, String(v)])),
+          capture: s.capture_output == null ? true : Boolean(s.capture_output),
+          shell: s.shell == null ? true : Boolean(s.shell),
+        });
         setLoading(false);
       })
       .catch((e) => {
@@ -276,7 +324,7 @@ export function CommandDialog({ initial, onClose, onSaved }: DialogProps) {
         setErr(e instanceof Error ? e.message : String(e));
       });
     return () => { cancelled = true; };
-  }, [initial]);
+  }, [initial, restored, setForm]);
   if (loading) {
     return (
       <Overlay title={initial ? `编辑 command：${initial}` : "新建 command"} onClose={onClose}>
@@ -284,24 +332,32 @@ export function CommandDialog({ initial, onClose, onSaved }: DialogProps) {
       </Overlay>
     );
   }
+  const upd = (patch: Partial<CommandForm>) => {
+    const next = { ...form, ...patch };
+    setForm(next);
+    persist(next);
+  };
+  const discard = () => { clearDraft(); onClose(); };
 
   const save = async () => {
+    const name = form.name;
     if (!NAME_RE.test(name)) { setErr("名称须为 Python 标识符"); return; }
-    if (!command.trim()) { setErr("command 必填"); return; }
+    if (!form.command.trim()) { setErr("command 必填"); return; }
     let timeout = 60;
-    if (timeout_.trim()) {
-      const t = Number(timeout_);
+    if (form.timeout_.trim()) {
+      const t = Number(form.timeout_);
       if (!Number.isFinite(t) || t <= 0) { setErr("timeout 须为正数"); return; }
       timeout = t;
     }
-    const payload: Record<string, unknown> = { name, command, timeout };
-    if (cwd.trim()) payload.cwd = cwd.trim();
-    if (Object.keys(env).length) payload.env = env;
-    payload.capture_output = capture;
-    payload.shell = shell;
+    const payload: Record<string, unknown> = { name, command: form.command, timeout };
+    if (form.cwd.trim()) payload.cwd = form.cwd.trim();
+    if (Object.keys(form.env).length) payload.env = form.env;
+    payload.capture_output = form.capture;
+    payload.shell = form.shell;
     setBusy(true); setErr(null);
     try {
       await putLibraryJson("commands", name, payload);
+      clearDraft();
       onSaved(name);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -309,25 +365,26 @@ export function CommandDialog({ initial, onClose, onSaved }: DialogProps) {
   };
 
   return (
-    <Overlay title={initial ? `编辑 command：${initial}` : "新建 command"} onClose={onClose}>
+    <Overlay title={initial ? `编辑 command：${initial}` : "新建 command"} onClose={discard}>
+      <RestoredHint restored={restored} />
       <Row label="名称（注册名）">
-        <Input value={name} disabled={!!initial} onChange={(e) => setName(e.target.value)} className="font-mono" />
+        <Input value={form.name} disabled={!!initial} onChange={(e) => upd({ name: e.target.value })} className="font-mono" />
       </Row>
       <Row label="shell 命令（必填）">
-        <Textarea value={command} onChange={(e) => setCommand(e.target.value)} rows={2} className="font-mono" />
+        <Textarea value={form.command} onChange={(e) => upd({ command: e.target.value })} rows={2} className="font-mono" />
       </Row>
       <div className="grid grid-cols-2 gap-2">
-        <Row label="timeout（秒）"><Input value={timeout_} onChange={(e) => setTimeout_(e.target.value)} /></Row>
-        <Row label="cwd（空=缺省）"><Input value={cwd} onChange={(e) => setCwd(e.target.value)} /></Row>
+        <Row label="timeout（秒）"><Input value={form.timeout_} onChange={(e) => upd({ timeout_: e.target.value })} /></Row>
+        <Row label="cwd（空=缺省）"><Input value={form.cwd} onChange={(e) => upd({ cwd: e.target.value })} /></Row>
       </div>
-      <Row label="env（额外环境变量）"><KvRows value={env} onChange={setEnv} /></Row>
+      <Row label="env（额外环境变量）"><KvRows value={form.env} onChange={(v) => upd({ env: v })} /></Row>
       <div className="flex gap-4 text-[12px]">
-        <label className="flex items-center gap-1"><input type="checkbox" checked={capture} onChange={(e) => setCapture(e.target.checked)} />capture_output</label>
-        <label className="flex items-center gap-1"><input type="checkbox" checked={shell} onChange={(e) => setShell(e.target.checked)} />shell</label>
+        <label className="flex items-center gap-1"><input type="checkbox" checked={form.capture} onChange={(e) => upd({ capture: e.target.checked })} />capture_output</label>
+        <label className="flex items-center gap-1"><input type="checkbox" checked={form.shell} onChange={(e) => upd({ shell: e.target.checked })} />shell</label>
       </div>
       {err && <div className={errTextCls}>{err}</div>}
       <div className="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
+        <Button variant="outline" size="sm" onClick={discard}>取消</Button>
         <Button size="sm" disabled={busy} onClick={save}>保存</Button>
       </div>
     </Overlay>

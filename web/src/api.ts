@@ -365,6 +365,15 @@ export const deleteLibraryItem = (kind: LibraryKind, name: string) =>
     method: "DELETE",
   });
 
+// 组件库变更通知：侧栏组件库增删改后广播（window 事件，无共同父级的双实例解耦）——
+// ModuleBuilder 等在开消费方监听后重拉清单，不必重开页签。对齐 runs 列表「事件钩子」思路。
+export const LIBRARY_CHANGED = "specmodule:library-changed";
+export const notifyLibraryChanged = () => window.dispatchEvent(new Event(LIBRARY_CHANGED));
+export function onLibraryChanged(cb: () => void): () => void {
+  window.addEventListener(LIBRARY_CHANGED, cb);
+  return () => window.removeEventListener(LIBRARY_CHANGED, cb);
+}
+
 export interface BuilderMeta { name: string; version: string; description: string }
 
 export type SpecTypeName = "str" | "int" | "float" | "bool" | "list" | "dict" | "any";
