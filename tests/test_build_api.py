@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from server.api.build import draft_to_tasklist
@@ -686,3 +687,75 @@ class TestDecompile:
         pkg.write_text(json.dumps({"name": "loop_mod"}, ensure_ascii=False), encoding="utf-8")
         r = client.post("/api/modules/loop_mod/decompile")
         assert r.status_code == 400 and "加载失败" in r.json()["error"]
+
+    def test_drift_task_without_flow_400(self, client, base):
+        """Tasks 有 Flow 无（外部 pack 漂移）→ 库建图 KeyError → 400 非 500。"""
+        self._install_loop(client)
+        pkg = base / "home" / "modules" / "loop_mod" / "module.json"
+        manifest = json.loads(pkg.read_text(encoding="utf-8"))
+        manifest["tasklist"]["Tasks"]["Ghost"] = {"type": "script", "script": "echo"}
+        pkg.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        assert client.post("/api/modules/loop_mod/decompile").status_code == 400
+
+    def test_drift_flow_without_task_400(self, client, base):
+        """Flow 有 Tasks 无 → graph_to_dict 降级 unknown 节点 → 400 非 500。"""
+        self._install_loop(client)
+        pkg = base / "home" / "modules" / "loop_mod" / "module.json"
+        manifest = json.loads(pkg.read_text(encoding="utf-8"))
+        manifest["tasklist"]["Flow"] = "[Summarize] --> Echo\nSummarize --> Phantom"
+        pkg.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        assert client.post("/api/modules/loop_mod/decompile").status_code == 400
+
+    def test_drift_input_side_non_dict_400(self, client, base):
+        """spec_schema.input 为非 dict（外部手写）→ 400 非 500。"""
+        self._install_loop(client)
+        pkg = base / "home" / "modules" / "loop_mod" / "module.json"
+        manifest = json.loads(pkg.read_text(encoding="utf-8"))
+        manifest["spec_schema"]["input"] = ["raw_text"]
+        pkg.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        assert client.post("/api/modules/loop_mod/decompile").status_code == 400
+
+    def test_validation_failure_before_imports(self, client, base):
+        """草稿校验失败（非法 spec 字段名）→ 400 且组件库零导入（校验前置）。"""
+        self._install_loop(client)
+        for kind, name in [("harnesses", "summarize"), ("scripts", "echo"), ("guards", "has_issues")]:
+            assert client.delete(f"/api/library/{kind}/{name}").status_code == 200
+        pkg = base / "home" / "modules" / "loop_mod" / "module.json"
+        manifest = json.loads(pkg.read_text(encoding="utf-8"))
+        manifest["spec_schema"]["input"] = {"raw-text": "str"}  # field 非标识符 → _validate_draft 400
+        pkg.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        r = client.post("/api/modules/loop_mod/decompile")
+        assert r.status_code == 400
+        assert client.get("/api/library").json()["harnesses"] == []  # 未半入库
+
+    def test_submodule_unresolvable_warning(self, client, base):
+        """submodule 引用不可解析（store 副本已删）→ warnings 透出且草稿仍落盘。"""
+        seed_pack_module(base)
+        assert client.put("/api/library/submodules/sub_greet").status_code == 200
+        client.put("/api/library/scripts/greeter",
+                   content=b"def greeter(view):\n    return {'ok': True}\n")
+        draft = {
+            "meta": {"name": "with_sub", "version": "0.1.0", "description": ""},
+            "spec_schema": [], "default_spec": {},
+            "nodes": [
+                {"id": "g", "label": "Greeter", "type": "script", "script": "greeter",
+                 "is_start": True, "join": "AND", "position": {"x": 0, "y": 0}, "inputs": {}},
+                {"id": "s", "label": "Sub", "type": "submodule", "submodule": "sub_greet",
+                 "is_start": False, "join": "AND", "position": {"x": 0, "y": 0},
+                 "inputs": {"x": "Greeter"}},
+            ],
+            "edges": [{"id": "e1", "from": "g", "to": "s", "guard": None}],
+        }
+        client.put("/api/library/drafts/with_sub", json=draft)
+        assert client.post("/api/modules/packs", json={"draft": "with_sub"}).status_code == 200
+        # 删 store 视角的 sub_greet（父包内嵌 submodules/ 副本不受影响）——
+        # ModuleLoader 建图仍成功，仅 store.resolve_module（warnings 探测）扑空
+        shutil.rmtree(base / "home" / "modules" / "sub_greet")
+        (base / "home" / "manifests" / "sub_greet.json").unlink(missing_ok=True)
+        r = client.post("/api/modules/with_sub/decompile")
+        assert r.status_code == 200
+        report = r.json()["report"]
+        assert any("sub_greet" in w and "未安装" in w for w in report["warnings"])
+        new_draft = client.get("/api/library/drafts/with_sub").json()
+        sub = next(n for n in new_draft["nodes"] if n["label"] == "Sub")
+        assert sub["type"] == "submodule" and sub["submodule"] == "sub_greet"

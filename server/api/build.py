@@ -619,16 +619,30 @@ def decompile_module(name: str, search: list[Path] = Depends(get_search_paths)) 
     if not isinstance(tasklist, dict) or not isinstance(tasklist.get("Tasks"), dict):
         raise HTTPException(status_code=400, detail={
             "error": "manifest 缺少 tasklist.Tasks", "module": name})
+    # spec_schema.input 形状前置检查：真值非 dict（外部手写 list 等）会让
+    # 反转 .items() 抛 AttributeError → 500
+    schema = manifest.get("spec_schema") or {}
+    if not isinstance(schema.get("input") or {}, dict):
+        raise HTTPException(status_code=400, detail={
+            "error": "spec_schema.input 须为对象（{field: type}）", "module": name})
+    tasks: dict = tasklist["Tasks"]
     try:
         built = query.build_run_graph(name, tasklist=tasklist, src=resolved.source)
+        # tasklist 为 dict 时 build_run_graph 必返回 tuple（None 仅在无存档且未传 tasklist 的情况）
         g = query.graph_to_dict(*built)
-    except ValueError as e:
+    except (ValueError, KeyError) as e:
+        # KeyError：Tasks 有 Flow 无（外部 pack 漂移）→ graph_builder 裸 KeyError
         raise HTTPException(status_code=400, detail={
             "error": f"反解建图失败: {e}", "module": name})
+    # Flow 有 Tasks 无 → graph_to_dict 降级 type="unknown" 节点（读路径渲染容忍
+    # 漂移，写路径合成拒绝）：预检防边合成期 id_of KeyError
+    drift = sorted(n["id"] for n in g["nodes"] if n["id"] not in tasks)
+    if drift:
+        raise HTTPException(status_code=400, detail={
+            "error": f"Flow 引用了 Tasks 中不存在的节点: {drift}", "module": name})
 
     root = library_root()
     report: dict = {"imported": [], "existed": [], "conflicts": [], "warnings": []}
-    tasks: dict = tasklist["Tasks"]
     graph_nodes = {n["id"]: n for n in g["nodes"]}
     id_of: dict[str, str] = {}
     nodes: list[dict] = []
@@ -666,18 +680,12 @@ def decompile_module(name: str, search: list[Path] = Depends(get_search_paths)) 
             overrides = {k: v for k, v in t.items() if k not in ("type", ref_field, "inputs")}
             if overrides:
                 node["overrides"] = overrides
-            lib_kind = {"harness": "harnesses", "command": "commands", "script": "scripts"}[ntype]
-            _import_pack_component(root, pack, lib_kind, t.get(ref_field), report)
         nodes.append(node)
     edges = [
         {"id": _gen_id("e"), "from": id_of[e["from"]], "to": id_of[e["to"]],
          "guard": e.get("guard")}
         for e in g["edges"]
     ]
-    for e in g["edges"]:
-        if e.get("guard"):
-            _import_pack_component(root, pack, "guards", e["guard"], report)
-    schema = manifest.get("spec_schema") or {}
     draft: dict = {
         "meta": {"name": name, "version": manifest.get("version", "0.1.0"),
                  "description": manifest.get("description", "")},
@@ -689,5 +697,16 @@ def decompile_module(name: str, search: list[Path] = Depends(get_search_paths)) 
     }
     if schema.get("output"):
         draft["spec_schema_output"] = schema["output"]
+    # 校验前置——草稿先过 _validate_draft（纯检查），再动组件库：失败零导入
+    #（重试幂等，但不留困惑的半入库状态）
+    _validate_draft(draft, name)
+    for n in nodes:
+        if n["type"] == "submodule":
+            continue
+        lib_kind = {"harness": "harnesses", "command": "commands", "script": "scripts"}[n["type"]]
+        _import_pack_component(root, pack, lib_kind, n[_REF_FIELD[n["type"]]], report)
+    for e in edges:
+        if e.get("guard"):
+            _import_pack_component(root, pack, "guards", e["guard"], report)
     _save_draft(name, json.dumps(draft, ensure_ascii=False).encode("utf-8"))
     return {"draft": name, "report": report}
