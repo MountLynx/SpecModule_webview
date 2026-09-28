@@ -139,7 +139,7 @@ git commit -m "feat(build): 草稿 spec_schema_output 透传——外部 pack �
 - Modify: `server/api/build.py`（文件尾新增路由）
 - Test: `tests/test_build_api.py`
 
-- [ ] **Step 1: 写失败测试（文件尾新类）**
+- [x] **Step 1: 写失败测试（文件尾新类）**
 
 ```python
 class TestUpdatePack:
@@ -190,7 +190,7 @@ class TestUpdatePack:
 
 注意：`test_update_roundtrip` 直接修改 seed_builder 存的草稿——更新端点不依赖 Task 4 的反解端点，本任务独立可验。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 uv run pytest tests/test_build_api.py::TestUpdatePack -v
@@ -198,7 +198,7 @@ uv run pytest tests/test_build_api.py::TestUpdatePack -v
 
 Expected: 全部 FAIL（404 Not Found——路由不存在；TestClient 对未知路由返回 404，`test_update_not_installed_404` 可能「假通过」，以其余用例失败为准）。
 
-- [ ] **Step 3: 实现（`server/api/build.py` 文件尾追加）**
+- [x] **Step 3: 实现（`server/api/build.py` 文件尾追加）**
 
 ```python
 # ── 已装模块更新（同名覆盖）───────────────────────────────────────────
@@ -242,7 +242,7 @@ def update_pack_route(
     return store.detail_to_dict(updated)
 ```
 
-- [ ] **Step 4: 跑测试确认通过 + 回归**
+- [x] **Step 4: 跑测试确认通过 + 回归**
 
 ```bash
 uv run pytest tests/test_build_api.py -q
@@ -250,7 +250,7 @@ uv run pytest tests/test_build_api.py -q
 
 Expected: 全部 PASS（`test_update_roundtrip` 中的 decompile 行见 Step 1 注意）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/api/build.py tests/test_build_api.py

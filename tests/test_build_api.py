@@ -546,6 +546,9 @@ class TestUpdatePack:
         draft = client.get("/api/library/drafts/loop_mod").json()
         draft["meta"]["version"] = "0.3.0"
         draft["meta"]["description"] = "更新后的描述"
+        # 结构覆盖（apply_update 生态唯一测试网）：去 guard 回边——全目录替换
+        # 应同步收窄包内 Flow，而非只刷 meta
+        draft["edges"] = [e for e in draft["edges"] if not e.get("guard")]
         assert client.put("/api/library/drafts/loop_mod", json=draft).status_code == 200
         r = client.post("/api/modules/packs/update", json={"draft": "loop_mod"})
         assert r.status_code == 200
@@ -556,6 +559,7 @@ class TestUpdatePack:
         pkg = json.loads(
             (base / "home" / "modules" / "loop_mod" / "module.json").read_text(encoding="utf-8"))
         assert pkg["description"] == "更新后的描述"
+        assert "has_issues" not in pkg["tasklist"]["Flow"]
 
     def test_update_not_installed_404(self, client, base):
         seed_builder(client)  # 只存草稿，未安装
@@ -578,3 +582,13 @@ class TestUpdatePack:
         r = client.post("/api/modules/packs/update", json={"draft": "loop_mod"})
         assert r.status_code == 400
         assert pkg.read_bytes() == before
+
+    def test_update_corrupt_target_400(self, client, base):
+        """已装包损坏（module.json 可解析但缺 tasklist → ModuleLoader 拒载）→
+        resolve 期 ValueError → 400 而非 500。（注：manifest 整体损坏则库 listing
+        直接跳过该目录 → 走「未安装」404 分支，不进本防护。）"""
+        self._install_loop(client)
+        pkg = base / "home" / "modules" / "loop_mod" / "module.json"
+        pkg.write_text(json.dumps({"name": "loop_mod"}), encoding="utf-8")
+        r = client.post("/api/modules/packs/update", json={"draft": "loop_mod"})
+        assert r.status_code == 400 and "加载失败" in r.json()["error"]

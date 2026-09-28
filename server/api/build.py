@@ -502,11 +502,16 @@ def update_pack_route(
     apply_update（库语义：旧包移 .bak → 拷入 → 刷 manifest，失败自动回滚）。
 
     未安装 → 404（安装走 POST /api/modules/packs）；entry/pip 目标 → 400
-    （pip 同名体不覆盖——避免 store 副本遮蔽 pip 原体）。
+    （pip 同名体不覆盖——避免 store 副本遮蔽 pip 原体）；已装包损坏 → 400；
+    包文件被占用（Windows 运行中进程持锁）→ 400。
     """
     draft = _load_draft_for_assembly(body)
     name = draft["meta"]["name"]
-    resolved = store.resolve_module_full(name, search=search)
+    try:
+        resolved = store.resolve_module_full(name, search=search)
+    except ValueError as e:
+        # 已装包损坏（ModuleLoader 加载失败）→ 400 而非 500（manage.py 同款防护）
+        raise HTTPException(status_code=400, detail={"error": str(e), "module": name})
     if resolved is None:
         raise HTTPException(status_code=404, detail={
             "error": f"模块 '{name}' 未安装——全新安装走 POST /api/modules/packs",
@@ -520,6 +525,12 @@ def update_pack_route(
         pack = _assemble_pack(draft, search)
         store.validate_pack_dir(pack)
         store.apply_update(name, pack)
+    except OSError as e:
+        # Windows 现实场景：运行中子进程持有包文件——OSError 在 .bak 挪移即抛
+        # （早于任何 store 变更），映射 400 不丢数据
+        raise HTTPException(status_code=400, detail={
+            "error": f"更新失败：模块文件被占用（可能有运行中的进程正在使用）: {e}",
+            "module": name})
     except (ValueError, TypeError, KeyError) as e:
         raise HTTPException(status_code=400, detail={"error": str(e), "module": name})
     finally:
