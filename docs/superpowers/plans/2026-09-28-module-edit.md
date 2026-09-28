@@ -569,7 +569,7 @@ git commit -m "docs: api.md 补录 store.apply_update——webview 更新端点�
 **Files:**
 - Modify: `web/src/api.ts`（BuilderDraft 接口 + 文件尾端点区）
 
-- [ ] **Step 1: `BuilderDraft` 接口（约 402 行）加可选透传字段：**
+- [x] **Step 1: `BuilderDraft` 接口（约 402 行）加可选透传字段：**
 
 ```typescript
 export interface BuilderDraft {
@@ -584,7 +584,7 @@ export interface BuilderDraft {
 }
 ```
 
-- [ ] **Step 2: 文件尾（`genId` 之后）追加：**
+- [x] **Step 2: 文件尾（`genId` 之后）追加：**
 
 ```typescript
 // ── 已装模块编辑（反解 + 同名更新）──────────────────────────────────
@@ -604,7 +604,7 @@ export const updatePack = (draftName: string) =>
   postJson<ModuleDetail>("/api/modules/packs/update", { draft: draftName });
 ```
 
-- [ ] **Step 3: 门禁**
+- [x] **Step 3: 门禁**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview\web" && npm run build
@@ -612,7 +612,7 @@ cd "C:\Users\xingy\Desktop\开发\SpecModule_webview\web" && npm run build
 
 Expected: 构建成功。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"

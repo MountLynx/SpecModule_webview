@@ -403,6 +403,8 @@ export interface BuilderDraft {
   meta: BuilderMeta;
   spec_schema: SpecField[];
   default_spec: Record<string, unknown>;
+  /** output 侧 schema 透传（外部 pack 反解保全；UI 不编辑） */
+  spec_schema_output?: Record<string, string>;
   nodes: BuilderNode[];
   edges: BuilderEdge[];
   updated_at?: string;
@@ -443,3 +445,19 @@ export const NODE_REF_FIELD: Record<BuilderNodeType, keyof BuilderNode> = {
 /** 生成短随机 id（节点 n_xxx / 边 e_xxx） */
 export const genId = (prefix: string) =>
   `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
+
+// ── 已装模块编辑（反解 + 同名更新）──────────────────────────────────
+
+export interface DecompileReport {
+  imported: string[];  // 组件库新建（kind/name）
+  existed: string[];   // 库中已有且内容一致
+  conflicts: string[]; // 同名异内容——沿用库版本
+  warnings: string[];  // submodule 未安装等组装前须知
+}
+export interface DecompileResult { draft: string; report: DecompileReport }
+
+export const decompileModule = (name: string) =>
+  postJson<DecompileResult>(`/api/modules/${name}/decompile`, {});
+
+export const updatePack = (draftName: string) =>
+  postJson<ModuleDetail>("/api/modules/packs/update", { draft: draftName });
