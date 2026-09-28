@@ -1,4 +1,4 @@
-// 模块创建器主区：顶栏（元数据/Spec/添加节点/自动布局/校验/安装）+ 编辑画布 +
+// 模块创建器主区：顶栏（元数据/Spec/添加节点/自动布局/校验/安装·更新）+ 编辑画布 +
 // 右侧配置面板 + 底部 tasklist 预览（validate 返回的服务端生成结果）。
 // 草稿自动保存：变更置脏 → 800ms 防抖 PUT；校验/安装前先显式保存（saveNow）。
 // 保存失败捕获服务端 message（saveError）就地透出——用户能看到为什么失败。
@@ -6,13 +6,14 @@
 // 组件库清单监听变更事件自动刷新——侧栏新建 harness/command 后在开页签立即可选。
 // 元数据/Spec 对话框同 ComponentForms：遮罩不关闭 + 本地草稿（useFormDraft）。
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, GitMerge, LayoutGrid, ShieldCheck, Table2 } from "lucide-react";
+import { Download, GitMerge, LayoutGrid, RefreshCw, ShieldCheck, Table2 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { SpecForm } from "../SpecForm";
 import { errTextCls, fieldCls, labelCls, okTextCls, overlayCls, panelCls } from "../dialogTheme";
 import {
-  fetchDraft, fetchLibrary, genId, installPack, onLibraryChanged, putDraft, validatePack,
+  fetchDraft, fetchLibrary, fetchModules, genId, installPack, onLibraryChanged,
+  putDraft, updatePack, validatePack,
   type BuilderDraft, type BuilderNode, type LibraryIndex, type ModuleDetail,
   type SpecField, type SpecTypeName, type ValidatePackResult,
 } from "../../api";
@@ -47,7 +48,8 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
   const [metaOpen, setMetaOpen] = useState(false);
   const [specOpen, setSpecOpen] = useState(false);
   const [addType, setAddType] = useState<BuilderNode["type"] | null>(null);
-  const [installed, setInstalled] = useState<ModuleDetail | null>(null);
+  const [installed, setInstalled] =
+    useState<{ detail: ModuleDetail; mode: "install" | "update" } | null>(null);
   const saveTimer = useRef<number | null>(null);
   // 回调里读最新草稿（addNode/saveNow 不入依赖数组）
   const draftRef = useRef<BuilderDraft | null>(null);
@@ -56,7 +58,14 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
   const load = useCallback(() => {
     setLoadErr(null);
     fetchDraft(name)
-      .then(setDraft)
+      .then((d) => {
+        // 反解产物无布局（全零坐标）——载入即自动重排一次（随自动保存落盘）
+        setDraft(
+          d.nodes.length > 0 && d.nodes.every((n) => n.position.x === 0 && n.position.y === 0)
+            ? relayout(d)
+            : d,
+        );
+      })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
     fetchLibrary().then(setLibrary).catch(() => {}); // 库清单失败不阻塞——添加节点时提示
   }, [name]);
@@ -67,6 +76,15 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
   useEffect(() => onLibraryChanged(() => {
     fetchLibrary().then(setLibrary).catch(() => {});
   }), []);
+
+  // 已装模块清单（name→kind）：草稿名命中已装 packed 模块 → 显示「更新模块」
+  const [moduleKinds, setModuleKinds] = useState<Record<string, string>>({});
+  const refreshModuleKinds = useCallback(() => {
+    fetchModules()
+      .then((ms) => setModuleKinds(Object.fromEntries(ms.modules.map((m) => [m.name, m.kind]))))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { refreshModuleKinds(); }, [refreshModuleKinds]);
 
   const onChange = useCallback((fn: (d: BuilderDraft) => BuilderDraft) => {
     setDraft((prev) => prev && fn(prev));
@@ -119,25 +137,33 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
     }
   }, [markSaved]);
 
-  const runCheck = useCallback(async (install: boolean) => {
+  // 三态：validate / install / update——安装与更新都按草稿当前 meta.name（所见即所装；
+  // 旧实现用页签名 name，改名后会装到旧草稿文件的内容）
+  const runCheck = useCallback(async (mode: "validate" | "install" | "update") => {
     if (busy) return;
     setBusy(true);
     setCheckErrors(null);
     setCheckResult(null);
     try {
       await saveNow();
-      if (install) {
-        const detail = await installPack(name);
-        setInstalled(detail);
+      const dname = draftRef.current?.meta.name ?? name;
+      if (mode === "install") {
+        const detail = await installPack(dname);
+        setInstalled({ detail, mode: "install" });
+        refreshModuleKinds();
+      } else if (mode === "update") {
+        const detail = await updatePack(dname);
+        setInstalled({ detail, mode: "update" });
+        refreshModuleKinds();
       } else {
-        setCheckResult(await validatePack(name));
+        setCheckResult(await validatePack(dname));
       }
     } catch (e) {
       setCheckErrors([e instanceof Error ? e.message : String(e)]);
     } finally {
       setBusy(false);
     }
-  }, [busy, name, saveNow]);
+  }, [busy, name, saveNow, refreshModuleKinds]);
 
   // 打开添加对话框：顺带拉最新组件清单——侧栏刚建好的组件立即可选（事件刷新外的双保险）
   const openAdd = useCallback((type: BuilderNode["type"]) => {
@@ -175,6 +201,9 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
     return <div className="flex h-full items-center justify-center text-[13px] text-muted-foreground">加载草稿…</div>;
   }
 
+  // 草稿名命中已装 packed 模块 → 顶栏切「更新模块」（改名后自动切回安装 = 另存新模块）
+  const isInstalledPacked = moduleKinds[draft.meta.name] === "packed";
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* 顶栏 */}
@@ -204,12 +233,24 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
           <LayoutGrid className="h-3.5 w-3.5" />
         </Button>
         <div className="ml-auto flex items-center gap-1.5">
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => runCheck(false)}>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => runCheck("validate")}>
             <ShieldCheck className="h-3.5 w-3.5" />校验
           </Button>
-          <Button size="sm" disabled={busy} onClick={() => runCheck(true)}>
-            <Download className="h-3.5 w-3.5" />安装进 store
-          </Button>
+          {isInstalledPacked ? (
+            <Button size="sm" disabled={busy}
+                    title="以草稿内容覆盖更新已装模块（旧包自动备份，失败回滚）"
+                    onClick={() => {
+                      if (window.confirm(`更新已装模块「${draft.meta.name}」？store 内旧包将被替换。`)) {
+                        runCheck("update");
+                      }
+                    }}>
+              <RefreshCw className="h-3.5 w-3.5" />更新模块
+            </Button>
+          ) : (
+            <Button size="sm" disabled={busy} onClick={() => runCheck("install")}>
+              <Download className="h-3.5 w-3.5" />安装进 store
+            </Button>
+          )}
         </div>
       </header>
 
@@ -248,14 +289,17 @@ export function ModuleBuilder({ name, onInstalled }: Props) {
         <div className={overlayCls} onClick={() => setInstalled(null)}>
           <div className={panelCls} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-1.5 text-[13px] font-semibold">
-              <GitMerge className="h-4 w-4 text-emerald-500" />安装成功：{installed.name}
+              <GitMerge className="h-4 w-4 text-emerald-500" />
+              {installed.mode === "update" ? "更新成功" : "安装成功"}：{installed.detail.name}
             </div>
             <div className="text-[12px] text-muted-foreground">
-              已装入 store（{installed.kind}）。可在模块库发起运行。
+              {installed.mode === "update"
+                ? "已覆盖更新 store 内模块（旧包已备份替换）。可继续编辑或发起运行验证。"
+                : `已装入 store（${installed.detail.kind}）。可在模块库发起运行。`}
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setInstalled(null)}>留在创建器</Button>
-              <Button size="sm" onClick={() => onInstalled(installed.name)}>去模块库试运行</Button>
+              <Button size="sm" onClick={() => onInstalled(installed.detail.name)}>去模块库试运行</Button>
             </div>
           </div>
         </div>

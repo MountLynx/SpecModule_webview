@@ -759,7 +759,7 @@ git commit -m "feat(web): 模块详情编辑入口——反解报告面板（三
 **Files:**
 - Modify: `web/src/components/builder/ModuleBuilder.tsx`
 
-- [ ] **Step 1: import 区——lucide 加 `RefreshCw`，api 加 `fetchModules`、`updatePack`：**
+- [x] **Step 1: import 区——lucide 加 `RefreshCw`，api 加 `fetchModules`、`updatePack`：**
 
 ```tsx
 import { Download, GitMerge, LayoutGrid, RefreshCw, ShieldCheck, Table2 } from "lucide-react";
@@ -774,14 +774,14 @@ import {
 } from "../../api";
 ```
 
-- [ ] **Step 2: `installed` 状态改带 mode（约 50 行）：**
+- [x] **Step 2: `installed` 状态改带 mode（约 50 行）：**
 
 ```tsx
   const [installed, setInstalled] =
     useState<{ detail: ModuleDetail; mode: "install" | "update" } | null>(null);
 ```
 
-- [ ] **Step 3: `load` 改为反解产物自动布局（约 56 行）：**
+- [x] **Step 3: `load` 改为反解产物自动布局（约 56 行）：**
 
 ```tsx
   const load = useCallback(() => {
@@ -800,7 +800,7 @@ import {
   }, [name]);
 ```
 
-- [ ] **Step 4: 已装模块检测（`onLibraryChanged` effect 之后加）：**
+- [x] **Step 4: 已装模块检测（`onLibraryChanged` effect 之后加）：**
 
 ```tsx
   // 已装模块清单（name→kind）：草稿名命中已装 packed 模块 → 显示「更新模块」
@@ -813,7 +813,7 @@ import {
   useEffect(() => { refreshModuleKinds(); }, [refreshModuleKinds]);
 ```
 
-- [ ] **Step 5: `runCheck` 改三态 + 用草稿当前名（约 122 行）。改名后安装/更新都应作用于草稿当前 `meta.name`（所见即所装；旧实现用页签名，改名后会装到旧草稿文件的内容）：**
+- [x] **Step 5: `runCheck` 改三态 + 用草稿当前名（约 122 行）。改名后安装/更新都应作用于草稿当前 `meta.name`（所见即所装；旧实现用页签名，改名后会装到旧草稿文件的内容）：**
 
 ```tsx
   const runCheck = useCallback(async (mode: "validate" | "install" | "update") => {
@@ -843,7 +843,7 @@ import {
   }, [busy, name, saveNow, refreshModuleKinds]);
 ```
 
-- [ ] **Step 6: 顶栏按钮区（约 206 行 `ml-auto` div）改为——更新与安装互斥展示（已装同名 packed → 更新；改名后自动切回安装 = 另存新模块）：**
+- [x] **Step 6: 顶栏按钮区（约 206 行 `ml-auto` div）改为——更新与安装互斥展示（已装同名 packed → 更新；改名后自动切回安装 = 另存新模块）：**
 
 ```tsx
         <div className="ml-auto flex items-center gap-1.5">
@@ -868,13 +868,13 @@ import {
         </div>
 ```
 
-- [ ] **Step 7: 组件体内（`if (!draft)` 守卫之后、return 之前）计算命中：**
+- [x] **Step 7: 组件体内（`if (!draft)` 守卫之后、return 之前）计算命中：**
 
 ```tsx
   const isInstalledPacked = moduleKinds[draft.meta.name] === "packed";
 ```
 
-- [ ] **Step 8: 成功横幅（约 247 行 `installed &&` 块）按 mode 区分文案：**
+- [x] **Step 8: 成功横幅（约 247 行 `installed &&` 块）按 mode 区分文案：**
 
 ```tsx
       {installed && (
@@ -898,7 +898,7 @@ import {
       )}
 ```
 
-- [ ] **Step 9: 门禁**
+- [x] **Step 9: 门禁**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview\web" && npm run build
@@ -906,7 +906,7 @@ cd "C:\Users\xingy\Desktop\开发\SpecModule_webview\web" && npm run build
 
 Expected: 构建成功。
 
-- [ ] **Step 10: 提交**
+- [x] **Step 10: 提交**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"
