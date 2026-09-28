@@ -68,7 +68,7 @@ TreeChat 整合一/二/三期已落地（对话引擎已收编为本仓库 `tree
 - [x] 组件库 CRUD（harness/command 表单化、scripts/guards 上传、submodule 索引）
 - [x] 模块草稿 + 画布创建器（React Flow 编辑态：节点/边/guard/join/inputs 映射）
 - [x] 组装安装闭环（拷贝进包 → validate_pack_dir → install_pack → 试运行）
-- [ ] 后排：编辑/反解已安装模块、output 侧 spec_schema、库版本管理
+- [x] 后排：编辑/反解已安装模块（2026-09-28，反解回构建器 + apply_update 同名更新；output 侧仅透传保全，编辑 UI 与库版本管理仍后排）
 
 ### TreeChat 后续 —— ops agent（chat × module 打通）
 
@@ -87,6 +87,8 @@ GitHub issues 跟踪，不在此积压：
 - [#9 技术债：paused 判定一行式三处内联（待第三形态收编库 control.paused()）](https://github.com/MountLynx/SpecModule_webview/issues/9)
 - [#10 UI 小项：RunList 行内控制按钮无 busy 态](https://github.com/MountLynx/SpecModule_webview/issues/10)
 - [#12 refine_spec 只取模块级 spec_schema——per-template 覆盖的模块会拿到空 schema](https://github.com/MountLynx/SpecModule_webview/issues/12)
+- [#20 上游边缘：store.apply_update 对非 store-home 安装的 packed 模块会写 store 副本遮蔽原体；回滚窗口在备份清理后收窄（validate/哈希/manifest 写入失败不恢复旧版）](https://github.com/MountLynx/SpecModule_webview/issues/20)
+- [#21 技术债：update 端点 OSError 捕获粒度（TEMP 失败误报「文件被占用」）；反解 _validate_draft 400 缺 module 键；build.py packs 面拆分候选](https://github.com/MountLynx/SpecModule_webview/issues/21)
 
 ## 数据契约与错误处理
 

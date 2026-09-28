@@ -542,3 +542,12 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
   run_module 带 runId、run_status）→done 全部正确，mock run `academic_writer_dcbf1a` phase=done 且
   status 端点一致；control 步骤因 run 已在回合内终态按约跳过；会话/run 即席清理零残留；浏览器
   手工验收留用户）。计划：docs/superpowers/plans/2026-09-27-treechat-ops-agent.md。
+
+## 已安装模块编辑（反解 → 画布 → 装回）——2026-09-28
+
+- 设计定稿：`docs/superpowers/specs/2026-09-28-module-edit-design.md`；实施计划：`docs/superpowers/plans/2026-09-28-module-edit.md`（subagent-driven 执行，逐任务双审）。
+- `POST /api/modules/{name}/decompile`：packed 模块反解为构建器草稿（`build_run_graph` tasklist 直渲染通道 + `graph_to_dict`，Flow 零反解析；join 返回大写 AND/OR 与草稿模型一致）+ 包内组件导入组件库三态报告（imported/existed/conflicts，冲突沿用库版本）+ submodule 未安装 warnings + `spec_schema.output` 经草稿 `spec_schema_output` 透传保全；外部 pack 漂移（Tasks/Flow 不一致、input 侧非 dict）→ 400 兜底，草稿校验前置于组件导入（零半入库）。
+- `POST /api/modules/packs/update`：草稿同名覆盖更新已装模块（组装 → validate_pack_dir 显式先行 → 库 `apply_update`；未安装 404、entry/pip 400、损坏目标/文件占用 → 400）；roundtrip 测试断言落盘 manifest/包内容（apply_update 此前上游零测试覆盖）。
+- 前端：模块详情 packed 模块「编辑」按钮 + 反解报告面板（404 收窄防误覆盖）；构建器「更新模块」按钮（与安装互斥展示，按草稿当前 meta.name 作用——所见即所装）+ 反解草稿载入自动 dagre 布局。
+- 库侧零代码改动；api.md 补录 `apply_update`（含回滚窗口精确语义，库仓库独立 docs 提交）。
+- 遗留：上游 apply_update 遮蔽/回滚窗口边缘、OSError 粒度等 → GitHub issues（见 roadmap 索引）。
