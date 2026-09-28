@@ -2,10 +2,13 @@
 // 弹窗退役）。按 name 自取详情；发起成功经 onLaunched 上抛壳层（切运行页签开 run）。
 // 壳层契约：须以 key={name} 使用（切模块即重挂载，双保险防串态）。
 import { useEffect, useState } from "react";
-import { Play } from "lucide-react";
+import { Hammer, Play } from "lucide-react";
 import {
+  decompileModule,
+  fetchDraft,
   fetchModuleDetail,
   postLaunch,
+  type DecompileResult,
   type LaunchResult,
   type ModuleDetail as ModuleDetailData,
 } from "../api";
@@ -32,9 +35,11 @@ interface ModuleDetailProps {
   name: string;
   /** 启动成功（202）回调：壳层切「运行历史」页签并打开新 run */
   onLaunched: (result: LaunchResult) => void;
+  /** 编辑（反解完成、用户点「打开构建器」）回调：壳层开 build 页签 */
+  onEdit: (name: string) => void;
 }
 
-export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
+export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
   const [detail, setDetail] = useState<ModuleDetailData | null>(null);
   const [detailErr, setDetailErr] = useState<string | null>(null);
   // ── 发起表单状态（与原 RunDialog 相同）──
@@ -47,6 +52,10 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // ── 编辑（反解）状态：报告面板留在详情页，用户看完再进构建器 ──
+  const [decompiling, setDecompiling] = useState(false);
+  const [editErr, setEditErr] = useState<string | null>(null);
+  const [report, setReport] = useState<DecompileResult | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,6 +132,24 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
     }
   };
 
+  const runEdit = async (moduleName: string) => {
+    if (decompiling) return;
+    setDecompiling(true);
+    setEditErr(null);
+    try {
+      // 同名草稿已存在 → 反解会覆盖，显式确认（fetchDraft 失败视为不存在）
+      const existing = await fetchDraft(moduleName).catch(() => null);
+      if (existing && !window.confirm(`已存在同名草稿「${moduleName}」，重新反解将覆盖——继续？`)) {
+        return;
+      }
+      setReport(await decompileModule(moduleName));
+    } catch (e) {
+      setEditErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDecompiling(false);
+    }
+  };
+
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto p-5">
       <div className="max-w-[760px] text-[13px]">
@@ -139,6 +166,18 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
           {detail.version && (
             <span className="text-[12px] text-muted-foreground">v{detail.version}</span>
           )}
+          {detail.kind === "packed" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              disabled={decompiling}
+              onClick={() => runEdit(detail.name)}
+            >
+              <Hammer className="h-3.5 w-3.5" />
+              {decompiling ? "反解中…" : "编辑"}
+            </Button>
+          )}
         </div>
         {detail.description && (
           <div className="mt-1.5 text-muted-foreground">{detail.description}</div>
@@ -146,6 +185,26 @@ export function ModuleDetail({ name, onLaunched }: ModuleDetailProps) {
         <div className="mt-2 break-all font-mono text-[12px] text-muted-foreground">
           {detail.path}
         </div>
+        {editErr && <div className="mt-2 text-[12px] text-destructive">{editErr}</div>}
+        {report && (
+          <div className="mt-4 rounded-md border p-3 text-[12px]">
+            <div className="font-semibold">反解完成：草稿「{report.draft}」</div>
+            <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
+              {report.report.imported.map((x) => <li key={x}>＋ 导入组件库：{x}</li>)}
+              {report.report.existed.map((x) => <li key={x}>＝ 组件库已有（内容一致）：{x}</li>)}
+              {report.report.conflicts.map((x) => (
+                <li key={x} className="text-[var(--ph-truncated)]">⚠ 同名冲突——沿用组件库版本：{x}</li>
+              ))}
+              {report.report.warnings.map((x) => (
+                <li key={x} className="text-[var(--ph-truncated)]">⚠ {x}</li>
+              ))}
+            </ul>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setReport(null)}>关闭</Button>
+              <Button size="sm" onClick={() => onEdit(report.draft)}>打开构建器</Button>
+            </div>
+          </div>
+        )}
 
         {detail.submodules.length > 0 && (
           <div className="mt-4">

@@ -628,7 +628,7 @@ git commit -m "feat(web): api 封装——decompileModule/updatePack + 草稿 sp
 - Modify: `web/src/components/ModuleDetail.tsx`
 - Modify: `web/src/App.tsx:493`（ModuleDetail 渲染处）
 
-- [ ] **Step 1: ModuleDetail import 区改为（加 Hammer、fetchDraft、decompileModule、DecompileResult）：**
+- [x] **Step 1: ModuleDetail import 区改为（加 Hammer、fetchDraft、decompileModule、DecompileResult）：**
 
 ```tsx
 import { Hammer, Play } from "lucide-react";
@@ -643,7 +643,7 @@ import {
 } from "../api";
 ```
 
-- [ ] **Step 2: Props 接口（约 31 行）加 `onEdit`：**
+- [x] **Step 2: Props 接口（约 31 行）加 `onEdit`：**
 
 ```tsx
 interface ModuleDetailProps {
@@ -657,7 +657,7 @@ interface ModuleDetailProps {
 
 组件签名改为 `export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps)`。
 
-- [ ] **Step 3: 状态区（约 49 行 `const [err, ...]` 之后）加：**
+- [x] **Step 3: 状态区（约 49 行 `const [err, ...]` 之后）加：**
 
 ```tsx
   // ── 编辑（反解）状态：报告面板留在详情页，用户看完再进构建器 ──
@@ -666,7 +666,7 @@ interface ModuleDetailProps {
   const [report, setReport] = useState<DecompileResult | null>(null);
 ```
 
-- [ ] **Step 4: `submit` 函数之后加 runEdit：**
+- [x] **Step 4: `submit` 函数之后加 runEdit：**
 
 ```tsx
   const runEdit = async (moduleName: string) => {
@@ -688,7 +688,7 @@ interface ModuleDetailProps {
   };
 ```
 
-- [ ] **Step 5: 头部行（`detail.version` span 之后、约 141 行）加编辑按钮（仅 packed）：**
+- [x] **Step 5: 头部行（`detail.version` span 之后、约 141 行）加编辑按钮（仅 packed）：**
 
 ```tsx
           {detail.kind === "packed" && (
@@ -705,7 +705,7 @@ interface ModuleDetailProps {
           )}
 ```
 
-- [ ] **Step 6: 路径行（`detail.path` div 之后、约 148 行）加编辑错误与报告面板：**
+- [x] **Step 6: 路径行（`detail.path` div 之后、约 148 行）加编辑错误与报告面板：**
 
 ```tsx
         {editErr && <div className="mt-2 text-[12px] text-destructive">{editErr}</div>}
@@ -730,13 +730,13 @@ interface ModuleDetailProps {
         )}
 ```
 
-- [ ] **Step 7: App.tsx（约 493 行）接线：**
+- [x] **Step 7: App.tsx（约 493 行）接线：**
 
 ```tsx
 <ModuleDetail key={openModuleName} name={openModuleName} onLaunched={handleLaunched} onEdit={openBuilder} />
 ```
 
-- [ ] **Step 8: 门禁**
+- [x] **Step 8: 门禁**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview\web" && npm run build
@@ -744,7 +744,7 @@ cd "C:\Users\xingy\Desktop\开发\SpecModule_webview\web" && npm run build
 
 Expected: 构建成功。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"

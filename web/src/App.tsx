@@ -490,7 +490,7 @@ export default function App() {
         <div className="min-h-0 flex-1">
           {activeId === "modules" ? (
             openModuleName ? (
-              <ModuleDetail key={openModuleName} name={openModuleName} onLaunched={handleLaunched} />
+              <ModuleDetail key={openModuleName} name={openModuleName} onLaunched={handleLaunched} onEdit={openBuilder} />
             ) : (
               <EmptyState icon={<Boxes className="h-8 w-8 text-muted-foreground/40" />} title="未选择模块" hint="从左侧模块库选择，查看详情并发起运行" />
             )

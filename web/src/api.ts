@@ -457,7 +457,7 @@ export interface DecompileReport {
 export interface DecompileResult { draft: string; report: DecompileReport }
 
 export const decompileModule = (name: string) =>
-  postJson<DecompileResult>(`/api/modules/${name}/decompile`, {});
+  postJson<DecompileResult>(`/api/modules/${encodeURIComponent(name)}/decompile`, {});
 
 export const updatePack = (draftName: string) =>
   postJson<ModuleDetail>("/api/modules/packs/update", { draft: draftName });
