@@ -461,3 +461,13 @@ export const decompileModule = (name: string) =>
 
 export const updatePack = (draftName: string) =>
   postJson<ModuleDetail>("/api/modules/packs/update", { draft: draftName });
+
+// ── entry 模块转化（转 packed 后接入编辑闭环）────────────────────────
+
+export interface ConvertResult { module: ModuleDetail; warnings: string[] }
+
+export const convertModule = (name: string, template?: string) =>
+  postJson<ConvertResult>(
+    `/api/modules/${encodeURIComponent(name)}/convert`,
+    template ? { template } : {},
+  );

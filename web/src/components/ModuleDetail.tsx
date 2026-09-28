@@ -2,9 +2,10 @@
 // 弹窗退役）。按 name 自取详情；发起成功经 onLaunched 上抛壳层（切运行页签开 run）。
 // 壳层契约：须以 key={name} 使用（切模块即重挂载，双保险防串态）。
 import { useEffect, useState } from "react";
-import { Hammer, Play } from "lucide-react";
+import { Hammer, Package, Play } from "lucide-react";
 import {
   ApiError,
+  convertModule,
   decompileModule,
   fetchDraft,
   fetchModuleDetail,
@@ -58,6 +59,9 @@ export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
   const [decompiling, setDecompiling] = useState(false);
   const [editErr, setEditErr] = useState<string | null>(null);
   const [report, setReport] = useState<DecompileResult | null>(null);
+  // ── entry → packed 转化状态 ──
+  const [converting, setConverting] = useState(false);
+  const [convertWarns, setConvertWarns] = useState<string[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +72,8 @@ export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
     setEditErr(null);
     setReport(null);
     setDecompiling(false);
+    setConvertWarns(null);
+    setConverting(false);
     setMaxTicks(100);
     setMock(false);
     fetchModuleDetail(name)
@@ -162,6 +168,42 @@ export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
     }
   };
 
+  const runConvert = async (d: ModuleDetailData) => {
+    if (converting) return;
+    if (!window.confirm(
+      `把 entry 模块「${d.name}」转化为 packed？\n` +
+      "转化产物装进 store 并接管同名；原 entry 文件将重命名为 .bak 备用（可随时改回）。")) {
+      return;
+    }
+    // 多模板：packed 单流程只取一个——让用户指定（清空输入 = 默认模板）
+    let template: string | undefined;
+    if (d.templates.length > 1) {
+      const picked = window.prompt(
+        `该模块有 ${d.templates.length} 个模板，转化只取一个（其余丢弃）——输入模板名：\n` +
+        d.templates.map((t) => `${t.name}${t.name === d.default_template ? "（默认）" : ""}`).join("\n"),
+        d.default_template ?? d.templates[0]?.name ?? "",
+      );
+      if (picked === null) return;
+      template = picked.trim() || undefined;
+    }
+    setConverting(true);
+    setEditErr(null);
+    try {
+      const r = await convertModule(d.name, template);
+      setConvertWarns(r.warnings.length ? r.warnings : null);
+      // 详情翻转 packed：entry 时代的模板选择/spec 预填全部失效，重置
+      setDetail(r.module);
+      setTemplate(r.module.default_template ?? r.module.templates[0]?.name ?? "");
+      setSpec({});
+      setTouched(false);
+      await runEdit(r.module.name);   // 串联既有反解闭环（报告面板 → 打开构建器）
+    } catch (e) {
+      setEditErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConverting(false);
+    }
+  };
+
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto p-5">
       <div className="max-w-[760px] text-[13px]">
@@ -190,6 +232,18 @@ export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
               {decompiling ? "反解中…" : "编辑"}
             </Button>
           )}
+          {detail.kind === "entry" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              disabled={converting || decompiling}
+              onClick={() => runConvert(detail)}
+            >
+              <Package className="h-3.5 w-3.5" />
+              {converting ? "转化中…" : "转为 packed 编辑"}
+            </Button>
+          )}
         </div>
         {detail.description && (
           <div className="mt-1.5 text-muted-foreground">{detail.description}</div>
@@ -198,6 +252,16 @@ export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
           {detail.path}
         </div>
         {editErr && <div className="mt-2 text-[12px] text-destructive">{editErr}</div>}
+        {convertWarns && (
+          <div className="mt-4 rounded-md border p-3 text-[12px]">
+            <div className="font-semibold">转化完成（entry → packed）注意项</div>
+            <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
+              {convertWarns.map((x) => (
+                <li key={x} className="text-[var(--ph-truncated)]">⚠ {x}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         {report && (
           <div className="mt-4 rounded-md border p-3 text-[12px]">
             <div className="font-semibold">反解完成：草稿「{report.draft}」</div>

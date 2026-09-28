@@ -89,9 +89,9 @@
 |---|---|
 | `web/src/api.ts` | `convertModule(name, template?)` 封装 + `ConvertResult` 类型 |
 | `web/src/components/ModuleDetail.tsx` | entry 形态加「转为 packed 编辑」按钮：confirm 弹窗说明「entry 文件将重命名 .bak 退位、转化产物装进 store」；`templates.length > 1` 时弹模板选择（列出模板名，缺省 default_template）；warnings 在转化后报告区透出 |
-| `web/src/App.tsx` | `onConvert` 编排：POST convert → 详情刷新（kind 翻转为 packed）→ 直接串联既有 `decompileModule` 反解流程（报告面板 → 打开构建器），转化 warnings 合并进报告区展示 |
 
-转化与反解分两步调用、前端串联（端点保持单一职责）；反解报告面板复用现状。
+转化→反解串联在 ModuleDetail 内完成（既有 `runEdit` 本就地，转化成功后详情翻转
+packed → 重置模板/spec 表单状态 → 直接调 `runEdit`），**壳层 App.tsx 零改动**。
 
 ## 诚实缺口（warnings 透出，不静默）
 
