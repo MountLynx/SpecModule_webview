@@ -105,15 +105,21 @@ export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
   const activeSchema = selected?.spec_schema ?? detail.spec_schema;
   const activeSpec = selected?.default_spec ?? detail.default_spec;
   const specEmpty = spec == null || Object.keys(spec).length === 0;
+  // 模块声明零输入字段 → 空 spec 即合法输入（CLI --spec '{}' 放行；packed 形态
+  // default_spec 恒 None，不放行则无字段模块在 Web 侧永远发不起来）
+  const schemaEmpty = activeSchema != null && Object.keys(activeSchema).length === 0;
   const submitDisabled =
     busy ||
     spec == null || // JSON 非法（无效 spec 无从提交）
-    (specEmpty && activeSpec == null); // 空且无参考 → CLI 也无米下锅
+    (specEmpty && activeSpec == null && !schemaEmpty); // 空且无参考且声明有字段 → CLI 也无米下锅
+  const emptySpecOk = specEmpty && activeSpec == null && schemaEmpty;
   const hint =
     spec == null
       ? "spec JSON 非法——修正后才能启动"
       : specEmpty && activeSpec == null
-        ? "spec 为空且无参考 spec——请至少填写一个字段"
+        ? emptySpecOk
+          ? "该模块声明无输入字段——将以空 spec {} 发起"
+          : "spec 为空且无参考 spec——请至少填写一个字段"
         : null;
 
   const submit = async (specOverride?: Record<string, unknown>) => {
@@ -407,7 +413,13 @@ export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
               --mock（免 key 冒烟）
             </label>
           </div>
-          {hint && <div className="mt-2 text-[12px] text-[var(--ph-truncated)]">{hint}</div>}
+          {hint && (
+            <div
+              className={`mt-2 text-[12px] ${emptySpecOk ? "text-muted-foreground" : "text-[var(--ph-truncated)]"}`}
+            >
+              {hint}
+            </div>
+          )}
           {err && <div className="mt-2 text-[12px] text-destructive">{err}</div>}
           <div className="mt-4 flex items-center gap-3">
             <Button onClick={() => submit()} disabled={submitDisabled}>
