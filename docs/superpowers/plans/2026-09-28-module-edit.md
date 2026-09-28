@@ -540,7 +540,7 @@ git commit -m "feat(build): POST /api/modules/{name}/decompile——已装 packe
 **Files:**
 - Modify: `../SpecModule/docs/references/api.md`（store 章节，`install_pack` 行之后）
 
-- [ ] **Step 1: 确认未录**
+- [x] **Step 1: 确认未录**
 
 ```bash
 grep -n "apply_update" "C:\Users\xingy\Desktop\开发\SpecModule\docs\references\api.md"
@@ -548,13 +548,13 @@ grep -n "apply_update" "C:\Users\xingy\Desktop\开发\SpecModule\docs\references
 
 Expected: 无输出（未补录）。若已有则跳过本任务。
 
-- [ ] **Step 2: 在 `api.md` 的 store 章节表格 `install_pack` 行（约 97 行）之后追加一行（表格列结构对齐相邻行）：**
+- [x] **Step 2: 在 `api.md` 的 store 章节表格 `install_pack` 行（约 97 行）之后追加一行（表格列结构对齐相邻行）：**
 
 ```markdown
 | `apply_update` | `(name: str, src: Path) -> None` | 同名覆盖更新已装模块：旧包目录移 `.<名>.bak` → 来源整包 copytree（`.git` 不复制）→ 重写 `manifests/<名>.json`（`source` 保留旧值、version/哈希/installed_at 刷新）→ 清理备份；任一步失败回滚备份（零残留）。**只做"确认后"的执行**——差异检测用 `check_updates`，调用方负责先校验来源（webview 更新端点在调用前显式 `validate_pack_dir`）。无安装 manifest 的模块不设防（`load_manifest` 仅用于保留 source）；来源非法由 copytree 后的 validate 阶段抛错并回滚 |
 ```
 
-- [ ] **Step 3: 库仓库提交（遵循其 AGENTS.md，docs: 前缀）**
+- [x] **Step 3: 库仓库提交（遵循其 AGENTS.md，docs: 前缀）**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule"

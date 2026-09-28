@@ -8,6 +8,7 @@ import {
   decompileModule,
   fetchDraft,
   fetchModuleDetail,
+  notifyLibraryChanged,
   postLaunch,
   type DecompileResult,
   type LaunchResult,
@@ -152,6 +153,8 @@ export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
         return;
       }
       setReport(await decompileModule(moduleName));
+      // 反解写了草稿 + 可能导入组件——广播库变更，侧栏在开清单即时刷新
+      notifyLibraryChanged();
     } catch (e) {
       setEditErr(e instanceof Error ? e.message : String(e));
     } finally {
