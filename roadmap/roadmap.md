@@ -69,6 +69,7 @@ TreeChat 整合一/二/三期已落地（对话引擎已收编为本仓库 `tree
 - [x] 模块草稿 + 画布创建器（React Flow 编辑态：节点/边/guard/join/inputs 映射）
 - [x] 组装安装闭环（拷贝进包 → validate_pack_dir → install_pack → 试运行）
 - [x] 后排：编辑/反解已安装模块（2026-09-28，反解回构建器 + apply_update 同名更新；output 侧仅透传保全，编辑 UI 与库版本管理仍后排）
+- [x] 后排：entry 模块可编辑——转 packed 接入编辑闭环（2026-09-29，库收编 `entry_to_pack` 物化层 + CLI publish 复用；convert 端点安装+entry 文件 `.bak` 退位；设计定稿 [specs/2026-09-29-entry-to-packed-convert-design.md](../docs/superpowers/specs/2026-09-29-entry-to-packed-convert-design.md)）
 
 ### TreeChat 后续 —— ops agent（chat × module 打通）
 

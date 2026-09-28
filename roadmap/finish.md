@@ -551,3 +551,16 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 - 前端：模块详情 packed 模块「编辑」按钮 + 反解报告面板（404 收窄防误覆盖）；构建器「更新模块」按钮（与安装互斥展示，按草稿当前 meta.name 作用——所见即所装）+ 反解草稿载入自动 dagre 布局。
 - 库侧零代码改动；api.md 补录 `apply_update`（含回滚窗口精确语义，库仓库独立 docs 提交）。
 - 遗留：上游 apply_update 遮蔽/回滚窗口边缘、OSError 粒度等 → GitHub issues（见 roadmap 索引）。
+
+
+## entry 模块可编辑（转 packed 接入编辑闭环）——2026-09-29
+
+- 用户指令：**entry 也要可编辑——转化为 packed 来实现**。设计定稿：`docs/superpowers/specs/2026-09-29-entry-to-packed-convert-design.md`；实施计划：`docs/superpowers/plans/2026-09-29-entry-to-packed-convert.md`（inline 执行）。
+- **库侧**（SpecModule 仓库独立提交，api.md/cli-usage.md 已补录）：
+  - `module_harness/infra/entry_pack.py`：`entry_to_pack` 共享物化层（纯物化零副作用，不碰 store）——模板选择（缺省 default_template，其余进 dropped_templates）+ tasklist from_json→to_dict 规一化 + Mock client 建 registry 按 tasklist 引用提取组件（harness/command 配置 JSON、script/guard getsource 源码、submodule 类式 `SubModule.pack()` 整包）；提取失败硬 ValueError 不静默出坏包。诚实边界 warnings：动态翻译通道/闭包依赖/多模板丢弃/default_spec 不保留（01ad7a6）。
+  - CLI `publish` 单文件形态收编该函数（-83 行内联提取）；顺手修复两产物缺陷：guards 静默丢弃（`get_guard` 本可内省）、script 注册名 ≠ 函数名产物装载必炸（b9bc541）。
+  - 实施修正（真实模块冒烟抓出）：别名判定改按源码 AST def 名——`_make_loop_guards` 运行期改写 `__name__`（`clean.__name__ = "clean_1"`）形态下按 `__name__` 判定会漏写别名行、产物 loader 必炸；回归测试锁定（ae30642）。
+- **server**：`POST /api/modules/{name}/convert`（body `{template?}`）——resolve（kind 门控 + 损坏 400 防护）→ 同名其他来源 409（退位后须唯一命中）→ entry_to_pack → install_pack(source="webview-entry-convert") → entry 文件重命名 `.bak` 退位（discover 只 glob `*.py`，可逆；OSError 回滚卸载零半状态）→ 200 `{module, warnings}`（2551db0）。
+- **前端**：模块详情 entry 形态「转为 packed 编辑」按钮（confirm 说明退位 + 多模板 prompt 选模板）→ 转化成功翻转详情（重置模板/spec 表单状态）→ 串联既有反解闭环（报告面板 → 打开构建器），转化 warnings 独立面板透出；壳层 App.tsx 零改动（331f994）。
+- 验收：真实 `academic_writer` 双模板临时 store 冒烟（submodule 模式：3 harness + build_report script + fact_review_loop 整包；detailed 模式：5 scripts + 4 guards + 6 harnesses，loader 全部回读可解析）；pytest webview 386 绿 + 库基线 692 绿 + `npm run build` 过。计划勾选归档 docs/superpowers/plans/2026-09-29-entry-to-packed-convert.md。
+- 已知边界（warnings 透传，非缺陷）：动态翻译 script 的 entry 只保留模板静态 tasklist；引用模块级常量的闭包 body 物化后运行期才炸（转 packed 后即可在组件库编辑修复）；多模板 entry 每次只转一个。
