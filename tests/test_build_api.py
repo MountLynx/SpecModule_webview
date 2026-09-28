@@ -759,3 +759,108 @@ class TestDecompile:
         new_draft = client.get("/api/library/drafts/with_sub").json()
         sub = next(n for n in new_draft["nodes"] if n["label"] == "Sub")
         assert sub["type"] == "submodule" and sub["submodule"] == "sub_greet"
+
+
+# ── entry 模块转化（转 packed 后接入既有编辑闭环）──────────────────────
+
+ENTRY_PY = '''
+from module_harness.cli.entry import ModuleEntry
+from module_harness.core.config import HarnessConfig
+from module_harness.core.registry import HarnessRegistry
+from module_harness.infra.events import EventBus
+
+GREET = HarnessConfig.from_dict(
+    {"name": "greet_h", "prompt_core": "你好 {name}", "temperature": 0.1})
+
+
+def _registry(llm_client, template_name, event_bus):
+    reg = HarnessRegistry(llm_client=llm_client, event_bus=event_bus or EventBus.null())
+    reg.harness("greet_h", GREET)
+    reg.script("shout")(_shout_impl)
+    reg.guard("is_ok")(_is_ok_impl)
+    return reg
+
+
+def _shout_impl(view):
+    return {"text": str(view.field("text")).upper()}
+
+
+def _is_ok_impl(view):
+    return True
+
+
+TASKLIST = {
+    "Tasks": {
+        "Greet": {"type": "harness", "harness": "greet_h",
+                  "inputs": {"name": "{spec.name}"}},
+        "Shout": {"type": "script", "script": "shout", "inputs": {"text": "Greet"}},
+    },
+    "Flow": "[Greet] --|is_ok|--> Shout",
+}
+
+entry = ModuleEntry(
+    name="hello_entry",
+    description="测试 entry 模块",
+    templates={"hello_entry": {"name": "hello_entry", "tasklist": TASKLIST}},
+    build_registry=_registry,
+    default_template="hello_entry",
+    default_spec={"name": "world"},
+    spec_schema={"name": "str"},
+    review_harness=None,
+)
+'''
+
+
+def seed_entry_module(home: Path, name: str = "hello_entry") -> Path:
+    """隔离 store modules/ 下种 entry 单文件。"""
+    d = home / "modules"
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / f"{name}.py"
+    p.write_text(
+        ENTRY_PY.replace("hello_entry", name) if name != "hello_entry" else ENTRY_PY,
+        encoding="utf-8")
+    return p
+
+
+class TestEntryConvert:
+    def test_convert_success(self, client, base):
+        home = base / "home"
+        seed_entry_module(home)
+        r = client.post("/api/modules/hello_entry/convert", json={})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["module"]["kind"] == "packed"
+        assert data["warnings"]                      # default_spec 丢弃 → 有 warning
+        # entry 文件退位（.bak，可逆）
+        assert not (home / "modules" / "hello_entry.py").exists()
+        assert (home / "modules" / "hello_entry.py.bak").exists()
+        # 产物装载语义完整（别名行 script 可解析）
+        from module_harness.infra.store import validate_pack_dir
+        manifest = validate_pack_dir(home / "modules" / "hello_entry")
+        assert manifest["name"] == "hello_entry"
+        assert "shout = _shout_impl" in (
+            home / "modules" / "hello_entry" / "scripts" / "shout.py").read_text(encoding="utf-8")
+        assert (home / "modules" / "hello_entry" / "guards" / "is_ok.py").is_file()
+        # manifest 已写（同名更新闭环可用）
+        assert (home / "manifests" / "hello_entry.json").is_file()
+
+    def test_convert_non_entry_400(self, client, base):
+        seed_pack_module(base)
+        r = client.post("/api/modules/sub_greet/convert", json={})
+        assert r.status_code == 400
+
+    def test_convert_unknown_404(self, client, base):
+        r = client.post("/api/modules/nope/convert", json={})
+        assert r.status_code == 404
+
+    def test_convert_shadowed_409(self, client, base):
+        home = base / "home"
+        seed_entry_module(home)
+        seed_pack_module(base, name="hello_entry")   # 同名 packed 已存在
+        r = client.post("/api/modules/hello_entry/convert", json={})
+        assert r.status_code == 409
+
+    def test_convert_bad_template_400(self, client, base):
+        seed_entry_module(base / "home")
+        r = client.post("/api/modules/hello_entry/convert", json={"template": "nope"})
+        assert r.status_code == 400

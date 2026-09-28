@@ -20,6 +20,7 @@ from module_harness import query, store
 from module_harness.cli.command import CommandConfig
 from module_harness.cli.scaffold import validate_module_name
 from module_harness.core.config import HarnessConfig
+from module_harness.infra.entry_pack import entry_to_pack
 from server.deps import get_search_paths
 
 router = APIRouter(prefix="/api")
@@ -710,3 +711,69 @@ def decompile_module(name: str, search: list[Path] = Depends(get_search_paths)) 
             _import_pack_component(root, pack, "guards", e["guard"], report)
     _save_draft(name, json.dumps(draft, ensure_ascii=False).encode("utf-8"))
     return {"draft": name, "report": report}
+
+
+# ── entry 模块转化（转 packed 后接入既有编辑闭环）─────────────────────
+
+
+@router.post("/modules/{name}/convert")
+def convert_entry_route(
+    name: str,
+    body: dict | None = None,
+    search: list[Path] = Depends(get_search_paths),
+) -> dict:
+    """entry 模块 → packed：库 entry_to_pack 物化 → install_pack → entry 文件
+    退位（重命名 .bak，可逆；失败回滚卸载）。
+
+    body {template?}：多模板 entry 指定转化模板（缺省 default_template）。
+    非 entry 形态 → 400；同名其他来源（退位后须唯一命中）→ 409；模板非法/
+    提取失败 → 400（ValueError 消息透传）；store 同名已存在 → 409。
+    """
+    _check_name(name)
+    try:
+        resolved = store.resolve_module_full(name, search=search)
+    except ValueError as e:
+        # entry 加载失败（导入抛错）→ 400 而非 500（manage.py/update 同款防护）
+        raise HTTPException(status_code=400, detail={"error": str(e), "module": name})
+    if resolved is None:
+        raise HTTPException(status_code=404, detail={
+            "error": f"模块 '{name}' 未找到", "module": name})
+    if resolved.kind != "entry":
+        raise HTTPException(status_code=400, detail={
+            "error": f"模块 '{name}' 为 {resolved.kind} 形态，仅 entry 可转化",
+            "module": name})
+    # 防遮蔽：退位后名字必须唯一命中转化产物——同名其他来源先拒
+    others = [s for s in store.list_modules(search=search).get(name, [])
+              if s.path != resolved.source.path]
+    if others:
+        raise HTTPException(status_code=409, detail={
+            "error": f"模块 '{name}' 存在同名其他来源（"
+                     f"{', '.join(s.kind for s in others)}）——转化退位后会被遮蔽，"
+                     "先处理同名来源", "module": name})
+    if resolved.entry is None:
+        raise HTTPException(status_code=500, detail={
+            "error": "entry 解析异常", "module": name})
+    template = (body or {}).get("template")
+    tmp = Path(tempfile.mkdtemp(prefix="specmodule_convert_"))
+    try:
+        result = entry_to_pack(resolved.entry, template_name=template, out_dir=tmp / "pack")
+        store.install_pack(result.pack_dir, source="webview-entry-convert", name=name)
+    except (ValueError, TypeError, KeyError) as e:
+        status = 409 if "已存在" in str(e) else 400
+        raise HTTPException(status_code=status, detail={"error": str(e), "module": name})
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    # 退位：entry 文件重命名 .bak（discover 只 glob *.py）——失败回滚卸载，
+    # 不留「entry 退位但包没装上」的半状态
+    entry_file = Path(resolved.source.path)
+    try:
+        entry_file.rename(entry_file.with_name(entry_file.name + ".bak"))
+    except OSError as e:
+        store.uninstall_pack(name)
+        raise HTTPException(status_code=400, detail={
+            "error": f"entry 文件退位失败（已回滚安装）: {e}", "module": name})
+    detail = store.resolve_module_full(name, search=get_search_paths())
+    if detail is None:
+        raise HTTPException(status_code=500, detail={
+            "error": "转化后详情读取失败", "module": name})
+    return {"module": store.detail_to_dict(detail), "warnings": result.warnings}
