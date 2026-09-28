@@ -532,3 +532,49 @@ class TestSchemaOutputPassthrough:
         seed_builder(client)
         r = client.post("/api/modules/packs/validate", json={"draft": "loop_mod"})
         assert r.json()["manifest"]["spec_schema"] == {"input": {"raw_text": "str"}}
+
+
+class TestUpdatePack:
+    """同名覆盖更新：校验先行 + apply_update；未安装 404；entry 目标 400。"""
+
+    def _install_loop(self, client) -> None:
+        seed_builder(client)
+        assert client.post("/api/modules/packs", json={"draft": "loop_mod"}).status_code == 200
+
+    def test_update_roundtrip(self, client, base):
+        self._install_loop(client)
+        draft = client.get("/api/library/drafts/loop_mod").json()
+        draft["meta"]["version"] = "0.3.0"
+        draft["meta"]["description"] = "更新后的描述"
+        assert client.put("/api/library/drafts/loop_mod", json=draft).status_code == 200
+        r = client.post("/api/modules/packs/update", json={"draft": "loop_mod"})
+        assert r.status_code == 200
+        assert r.json()["version"] == "0.3.0"
+        manifest = json.loads(
+            (base / "home" / "manifests" / "loop_mod.json").read_text(encoding="utf-8"))
+        assert manifest["version"] == "0.3.0"
+        pkg = json.loads(
+            (base / "home" / "modules" / "loop_mod" / "module.json").read_text(encoding="utf-8"))
+        assert pkg["description"] == "更新后的描述"
+
+    def test_update_not_installed_404(self, client, base):
+        seed_builder(client)  # 只存草稿，未安装
+        r = client.post("/api/modules/packs/update", json={"draft": "loop_mod"})
+        assert r.status_code == 404 and "未安装" in r.json()["error"]
+
+    def test_update_entry_target_400(self, client, base):
+        # mini_graph（entry 形态，tests/modules 夹具）：造同名草稿命中 entry 解析
+        draft = draft_json("mini_graph")
+        client.put("/api/library/drafts/mini_graph", json=draft)
+        r = client.post("/api/modules/packs/update", json={"draft": "mini_graph"})
+        assert r.status_code == 400 and "entry" in r.json()["error"]
+
+    def test_update_validate_fail_store_intact(self, client, base):
+        """组装校验失败 → 400 且 store 包内容一个字节不动（校验先于任何写入）。"""
+        self._install_loop(client)
+        pkg = base / "home" / "modules" / "loop_mod" / "module.json"
+        before = pkg.read_bytes()
+        assert client.delete("/api/library/harnesses/summarize").status_code == 200
+        r = client.post("/api/modules/packs/update", json={"draft": "loop_mod"})
+        assert r.status_code == 400
+        assert pkg.read_bytes() == before

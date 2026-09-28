@@ -488,3 +488,44 @@ def install_pack_route(
     if resolved is None:
         raise HTTPException(status_code=500, detail={"error": "安装后详情读取失败", "module": name})
     return store.detail_to_dict(resolved)
+
+
+# ── 已装模块更新（同名覆盖）───────────────────────────────────────────
+
+
+@router.post("/modules/packs/update")
+def update_pack_route(
+    body: dict,
+    search: list[Path] = Depends(get_search_paths),
+) -> dict:
+    """同名覆盖更新已装 packed 模块：组装 → validate_pack_dir（先于任何写入）→
+    apply_update（库语义：旧包移 .bak → 拷入 → 刷 manifest，失败自动回滚）。
+
+    未安装 → 404（安装走 POST /api/modules/packs）；entry/pip 目标 → 400
+    （pip 同名体不覆盖——避免 store 副本遮蔽 pip 原体）。
+    """
+    draft = _load_draft_for_assembly(body)
+    name = draft["meta"]["name"]
+    resolved = store.resolve_module_full(name, search=search)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail={
+            "error": f"模块 '{name}' 未安装——全新安装走 POST /api/modules/packs",
+            "module": name})
+    if resolved.kind != "packed":
+        raise HTTPException(status_code=400, detail={
+            "error": f"更新目标 '{name}' 为 {resolved.kind} 形态，仅 packed 可更新",
+            "module": name})
+    pack = None
+    try:
+        pack = _assemble_pack(draft, search)
+        store.validate_pack_dir(pack)
+        store.apply_update(name, pack)
+    except (ValueError, TypeError, KeyError) as e:
+        raise HTTPException(status_code=400, detail={"error": str(e), "module": name})
+    finally:
+        if pack is not None:
+            shutil.rmtree(pack, ignore_errors=True)
+    updated = store.resolve_module_full(name, search=get_search_paths())
+    if updated is None:
+        raise HTTPException(status_code=500, detail={"error": "更新后详情读取失败", "module": name})
+    return store.detail_to_dict(updated)
