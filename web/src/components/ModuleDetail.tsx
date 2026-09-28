@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { Hammer, Play } from "lucide-react";
 import {
+  ApiError,
   decompileModule,
   fetchDraft,
   fetchModuleDetail,
@@ -63,6 +64,9 @@ export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
     setDetailErr(null);
     setErr(null);
     setBusy(false);
+    setEditErr(null);
+    setReport(null);
+    setDecompiling(false);
     setMaxTicks(100);
     setMock(false);
     fetchModuleDetail(name)
@@ -136,9 +140,14 @@ export function ModuleDetail({ name, onLaunched, onEdit }: ModuleDetailProps) {
     if (decompiling) return;
     setDecompiling(true);
     setEditErr(null);
+    setReport(null);
     try {
-      // 同名草稿已存在 → 反解会覆盖，显式确认（fetchDraft 失败视为不存在）
-      const existing = await fetchDraft(moduleName).catch(() => null);
+      // 同名草稿已存在 → 反解会覆盖，显式确认；仅 404 视为不存在（其他失败
+      // 走报错——静默跳过确认会在服务端故障时直接覆盖）
+      const existing = await fetchDraft(moduleName).catch((e) => {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      });
       if (existing && !window.confirm(`已存在同名草稿「${moduleName}」，重新反解将覆盖——继续？`)) {
         return;
       }
