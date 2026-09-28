@@ -267,7 +267,7 @@ git commit -m "feat(build): POST /api/modules/packs/update——草稿同名覆�
 - Modify: `server/api/build.py`（import 区 + 文件尾新增函数与路由）
 - Test: `tests/test_build_api.py`
 
-- [ ] **Step 1: 写失败测试（文件尾新类）**
+- [x] **Step 1: 写失败测试（文件尾新类）**
 
 ```python
 class TestDecompile:
@@ -356,7 +356,7 @@ class TestDecompile:
         assert r.status_code == 400 and "entry" in r.json()["error"]
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 uv run pytest tests/test_build_api.py::TestDecompile -v
@@ -364,13 +364,13 @@ uv run pytest tests/test_build_api.py::TestDecompile -v
 
 Expected: 全部 FAIL（路由不存在 → 404；`test_unknown_module_404` 可能假通过，以其余失败为准）。
 
-- [ ] **Step 3: 实现——import 区（`from module_harness import store` 行）改为：**
+- [x] **Step 3: 实现——import 区（`from module_harness import store` 行）改为：**
 
 ```python
 from module_harness import query, store
 ```
 
-- [ ] **Step 4: 实现——`server/api/build.py` 文件尾追加：**
+- [x] **Step 4: 实现——`server/api/build.py` 文件尾追加：**
 
 ```python
 # ── 已装模块反解（编辑闭环入口）───────────────────────────────────────
@@ -518,7 +518,7 @@ def decompile_module(name: str, search: list[Path] = Depends(get_search_paths)) 
     return {"draft": name, "report": report}
 ```
 
-- [ ] **Step 5: 跑测试确认通过 + 回归**
+- [x] **Step 5: 跑测试确认通过 + 回归**
 
 ```bash
 uv run pytest tests/test_build_api.py -q
@@ -526,7 +526,7 @@ uv run pytest tests/test_build_api.py -q
 
 Expected: 全部 PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add server/api/build.py tests/test_build_api.py

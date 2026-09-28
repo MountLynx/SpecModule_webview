@@ -592,3 +592,97 @@ class TestUpdatePack:
         pkg.write_text(json.dumps({"name": "loop_mod"}), encoding="utf-8")
         r = client.post("/api/modules/packs/update", json={"draft": "loop_mod"})
         assert r.status_code == 400 and "加载失败" in r.json()["error"]
+
+
+class TestDecompile:
+    """已装 packed 模块反解：图 round-trip + 组件导入三态报告 + output 侧保全。"""
+
+    def _install_loop(self, client) -> None:
+        seed_builder(client)
+        assert client.post("/api/modules/packs", json={"draft": "loop_mod"}).status_code == 200
+
+    def test_round_trip(self, client, base):
+        self._install_loop(client)
+        r = client.post("/api/modules/loop_mod/decompile")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["draft"] == "loop_mod"
+        # 包内组件与库逐字节同源（copy2 拷入）→ 全部 existed，无冲突无警告
+        assert sorted(d["report"]["existed"]) == [
+            "guards/has_issues", "harnesses/summarize", "scripts/echo"]
+        assert d["report"]["imported"] == [] and d["report"]["conflicts"] == []
+        assert d["report"]["warnings"] == []
+        draft = client.get("/api/library/drafts/loop_mod").json()
+        labels = {n["label"]: n for n in draft["nodes"]}
+        assert set(labels) == {"Summarize", "Echo"}
+        s = labels["Summarize"]
+        assert s["type"] == "harness" and s["harness"] == "summarize"
+        assert s["is_start"] is True and s["join"] == "AND"
+        assert s["inputs"] == {"text": "{spec.raw_text}"}
+        assert s["position"] == {"x": 0, "y": 0}
+        e = labels["Echo"]
+        assert e["type"] == "script" and e["script"] == "echo"
+        assert e["join"] == "OR" and e["is_start"] is False
+        assert "overrides" not in e  # 草稿无 overrides 声明 → 不出现该键
+        # 边：guard 保留、from/to 指向存在的节点 id
+        ids = {n["id"] for n in draft["nodes"]}
+        assert len(draft["edges"]) == 2
+        assert all(ed["from"] in ids and ed["to"] in ids for ed in draft["edges"])
+        assert sorted(ed["guard"] for ed in draft["edges"] if ed["guard"]) == ["has_issues"]
+        # spec_schema 反转 + meta 还原
+        assert draft["spec_schema"] == [{"field": "raw_text", "type": "str"}]
+        assert draft["meta"] == {"name": "loop_mod", "version": "0.2.0", "description": "循环测试"}
+        assert draft["default_spec"] == {}  # packed 模块无 default_spec 概念
+
+    def test_import_missing_components(self, client, base):
+        """装好后删库组件 → 反解把包内副本重新导入（imported）。"""
+        self._install_loop(client)
+        for kind, name in [("harnesses", "summarize"), ("scripts", "echo"), ("guards", "has_issues")]:
+            assert client.delete(f"/api/library/{kind}/{name}").status_code == 200
+        r = client.post("/api/modules/loop_mod/decompile")
+        assert r.status_code == 200
+        assert sorted(r.json()["report"]["imported"]) == [
+            "guards/has_issues", "harnesses/summarize", "scripts/echo"]
+        # 导入内容与包内副本一致（回读比对）
+        lib = client.get("/api/library/harnesses/summarize").json()
+        assert lib["name"] == "summarize"
+
+    def test_conflict_skip_and_report(self, client, base):
+        """同名异内容：跳过包内副本沿用库版本，conflicts 报告且库内容未被改写。"""
+        self._install_loop(client)
+        changed = {"name": "summarize", "prompt_core": "改过的提示词：{text}", "temperature": 0.9}
+        assert client.put("/api/library/harnesses/summarize", json=changed).status_code == 200
+        r = client.post("/api/modules/loop_mod/decompile")
+        assert r.status_code == 200
+        assert r.json()["report"]["conflicts"] == ["harnesses/summarize"]
+        assert client.get("/api/library/harnesses/summarize").json() == changed
+
+    def test_output_side_preserved(self, client, base):
+        """手改包 manifest 加 output 侧 → 反解透传 → 更新后新包仍有 output。"""
+        self._install_loop(client)
+        pkg = base / "home" / "modules" / "loop_mod" / "module.json"
+        manifest = json.loads(pkg.read_text(encoding="utf-8"))
+        manifest["spec_schema"]["output"] = {"summary": "str"}
+        pkg.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        assert client.post("/api/modules/loop_mod/decompile").status_code == 200
+        draft = client.get("/api/library/drafts/loop_mod").json()
+        assert draft["spec_schema_output"] == {"summary": "str"}
+        assert client.post("/api/modules/packs/update", json={"draft": "loop_mod"}).status_code == 200
+        new_manifest = json.loads(pkg.read_text(encoding="utf-8"))
+        assert new_manifest["spec_schema"]["output"] == {"summary": "str"}
+
+    def test_unknown_module_404(self, client, base):
+        r = client.post("/api/modules/ghost_mod/decompile")
+        assert r.status_code == 404
+
+    def test_entry_module_400(self, client, base):
+        r = client.post("/api/modules/mini_graph/decompile")
+        assert r.status_code == 400 and "entry" in r.json()["error"]
+
+    def test_decompile_corrupt_target_400(self, client, base):
+        """损坏已装包（可解析但缺 tasklist 的 manifest）→ 加载失败 ValueError → 400 非 500。"""
+        self._install_loop(client)
+        pkg = base / "home" / "modules" / "loop_mod" / "module.json"
+        pkg.write_text(json.dumps({"name": "loop_mod"}, ensure_ascii=False), encoding="utf-8")
+        r = client.post("/api/modules/loop_mod/decompile")
+        assert r.status_code == 400 and "加载失败" in r.json()["error"]

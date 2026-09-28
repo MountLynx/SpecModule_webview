@@ -16,7 +16,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from module_harness import store
+from module_harness import query, store
 from module_harness.cli.command import CommandConfig
 from module_harness.cli.scaffold import validate_module_name
 from module_harness.core.config import HarnessConfig
@@ -540,3 +540,154 @@ def update_pack_route(
     if updated is None:
         raise HTTPException(status_code=500, detail={"error": "更新后详情读取失败", "module": name})
     return store.detail_to_dict(updated)
+
+
+# ── 已装模块反解（编辑闭环入口）───────────────────────────────────────
+
+
+def _gen_id(prefix: str) -> str:
+    """节点/边短随机 id（与前端 genId 同形：前缀_6hex）。"""
+    import secrets
+    return f"{prefix}_{secrets.token_hex(3)}"
+
+
+def _component_content_eq(src: Path, dst: Path, kind: str) -> bool:
+    """组件内容等价：harness/command 按 JSON 语义比对（parse 后相等），
+    scripts/guards 按文本比对；任一侧损坏（非法 JSON/非 UTF-8）→ 不等价。"""
+    try:
+        if kind in _CFG_CLS:
+            return (json.loads(src.read_text(encoding="utf-8"))
+                    == json.loads(dst.read_text(encoding="utf-8")))
+        return src.read_text(encoding="utf-8") == dst.read_text(encoding="utf-8")
+    except (ValueError, UnicodeDecodeError, OSError):
+        return False
+
+
+def _import_pack_component(
+    root: Path, pack: Path, kind: str, name: str | None, report: dict,
+) -> None:
+    """包内组件 → 组件库：缺则写入（imported）；在则内容比对——一致 existed，
+    不一致 conflicts（沿用库版本，不覆盖共享资产）。包内缺失 → warnings。"""
+    if not name:
+        return
+    src = pack / kind / f"{name}{_EXT[kind]}"
+    if not src.is_file():
+        report["warnings"].append(f"包内组件缺失: {kind}/{name}")
+        return
+    dst = root / kind / f"{name}{_EXT[kind]}"
+    if dst.is_file():
+        (report["existed"] if _component_content_eq(src, dst, kind)
+         else report["conflicts"]).append(f"{kind}/{name}")
+        return
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    report["imported"].append(f"{kind}/{name}")
+
+
+@router.post("/modules/{name}/decompile")
+def decompile_module(name: str, search: list[Path] = Depends(get_search_paths)) -> dict:
+    """已装 packed 模块 → 构建器草稿（图结构走库直渲染通道，Flow 零反解析）。
+
+    节点 type/引用/inputs/overrides/outputs 取 manifest tasklist 原始声明，
+    is_start/join/边取 graph_to_dict；spec_schema.input 反转为草稿字段，
+    output 侧存 spec_schema_output 透传。组件导入三态报告；submodule 引用
+    不可解析 → warnings（更新组装时会失败，提前透出）。同名草稿覆盖
+    （UI 侧 confirm）。entry/pip 形态 → 400；未找到 → 404。
+    """
+    _check_name(name)
+    # 损坏已装包 → resolve_module_full 抛 ValueError（ModuleLoader 拒收），兜 400
+    # （manage.py module_detail 同款先例；update_pack_route 同）
+    try:
+        resolved = store.resolve_module_full(name, search=search)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={
+            "error": str(e), "module": name})
+    if resolved is None:
+        raise HTTPException(status_code=404, detail={
+            "error": f"模块 '{name}' 未找到", "module": name})
+    if resolved.kind != "packed":
+        raise HTTPException(status_code=400, detail={
+            "error": f"模块 '{name}' 为 {resolved.kind} 形态，仅 packed 可反解编辑",
+            "module": name})
+    pack = Path(resolved.source.path)
+    try:
+        manifest = json.loads((pack / "module.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError) as e:
+        raise HTTPException(status_code=400, detail={
+            "error": f"module.json 读取失败: {e}", "module": name})
+    tasklist = manifest.get("tasklist")
+    if not isinstance(tasklist, dict) or not isinstance(tasklist.get("Tasks"), dict):
+        raise HTTPException(status_code=400, detail={
+            "error": "manifest 缺少 tasklist.Tasks", "module": name})
+    try:
+        built = query.build_run_graph(name, tasklist=tasklist, src=resolved.source)
+        g = query.graph_to_dict(*built)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={
+            "error": f"反解建图失败: {e}", "module": name})
+
+    root = library_root()
+    report: dict = {"imported": [], "existed": [], "conflicts": [], "warnings": []}
+    tasks: dict = tasklist["Tasks"]
+    graph_nodes = {n["id"]: n for n in g["nodes"]}
+    id_of: dict[str, str] = {}
+    nodes: list[dict] = []
+    for label, t in tasks.items():
+        if label not in graph_nodes:
+            raise HTTPException(status_code=400, detail={
+                "error": f"task '{label}' 不在 Flow 图中（tasklist 与 Flow 不一致）",
+                "module": name})
+        gn = graph_nodes[label]
+        if gn["join"] not in ("AND", "OR"):
+            raise HTTPException(status_code=400, detail={
+                "error": f"节点 {label} 的 join {gn['join']!r} 超出草稿模型（AND/OR）",
+                "module": name})
+        ntype = t.get("type")
+        if ntype not in _NODE_TYPES:
+            raise HTTPException(status_code=400, detail={
+                "error": f"节点 {label} 类型非法: {ntype!r}", "module": name})
+        ref_field = _REF_FIELD[ntype]
+        nid = _gen_id("n")
+        id_of[label] = nid
+        node: dict = {
+            "id": nid, "label": label, "type": ntype, ref_field: t.get(ref_field),
+            "is_start": bool(gn["is_start"]), "join": gn["join"],
+            "position": {"x": 0, "y": 0},
+            "inputs": dict(t.get("inputs") or {}),
+        }
+        if ntype == "submodule":
+            if t.get("outputs"):
+                node["outputs"] = dict(t["outputs"])
+            src = store.resolve_module(t.get(ref_field), search=search)
+            if src is None:
+                report["warnings"].append(
+                    f"submodule '{t.get(ref_field)}' 未安装——更新组装前需先安装或替换引用")
+        else:
+            overrides = {k: v for k, v in t.items() if k not in ("type", ref_field, "inputs")}
+            if overrides:
+                node["overrides"] = overrides
+            lib_kind = {"harness": "harnesses", "command": "commands", "script": "scripts"}[ntype]
+            _import_pack_component(root, pack, lib_kind, t.get(ref_field), report)
+        nodes.append(node)
+    edges = [
+        {"id": _gen_id("e"), "from": id_of[e["from"]], "to": id_of[e["to"]],
+         "guard": e.get("guard")}
+        for e in g["edges"]
+    ]
+    for e in g["edges"]:
+        if e.get("guard"):
+            _import_pack_component(root, pack, "guards", e["guard"], report)
+    schema = manifest.get("spec_schema") or {}
+    draft: dict = {
+        "meta": {"name": name, "version": manifest.get("version", "0.1.0"),
+                 "description": manifest.get("description", "")},
+        "spec_schema": [{"field": f, "type": t}
+                        for f, t in (schema.get("input") or {}).items()],
+        "default_spec": {},
+        "nodes": nodes,
+        "edges": edges,
+    }
+    if schema.get("output"):
+        draft["spec_schema_output"] = schema["output"]
+    _save_draft(name, json.dumps(draft, ensure_ascii=False).encode("utf-8"))
+    return {"draft": name, "report": report}
