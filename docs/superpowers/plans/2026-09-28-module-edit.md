@@ -20,7 +20,7 @@
 - Modify: `web/src/api.ts`、`web/src/components/LibraryPanel.tsx`、`web/src/components/builder/ModuleBuilder.tsx`、`web/src/components/library/ComponentForms.tsx`
 - Create: `web/src/lib/formDraft.ts`
 
-- [ ] **Step 1: 确认改动范围与门禁**
+- [x] **Step 1: 确认改动范围与门禁**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"
@@ -28,7 +28,7 @@ git status --short   # 应只有下列 5 项，无其他意外文件
 cd web && npm run build   # 期望 tsc 无错 + vite 构建成功
 ```
 
-- [ ] **Step 2: 提交**
+- [x] **Step 2: 提交**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"
@@ -46,7 +46,7 @@ git commit -m "feat(web): 构建器添加节点对话框 + 表单在途草稿恢
 - Modify: `server/api/build.py:90-144`（`_validate_draft`）、`server/api/build.py:395-409`（`_assemble_pack` 的 manifest 构造）
 - Test: `tests/test_build_api.py`
 
-- [ ] **Step 1: 写失败测试（加在 `TestValidatePack` 类之后，文件尾部新类 `TestSchemaOutputPassthrough`）**
+- [x] **Step 1: 写失败测试（加在 `TestValidatePack` 类之后，文件尾部新类 `TestSchemaOutputPassthrough`）**
 
 ```python
 class TestSchemaOutputPassthrough:
@@ -75,7 +75,7 @@ class TestSchemaOutputPassthrough:
         assert r.json()["manifest"]["spec_schema"] == {"input": {"raw_text": "str"}}
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"
@@ -84,7 +84,7 @@ uv run pytest tests/test_build_api.py::TestSchemaOutputPassthrough -v
 
 Expected: `test_output_side_roundtrip_via_validate` FAIL（manifest 无 output 键）、`test_output_side_non_dict_400` FAIL（200 而非 400）、`test_no_output_side_unchanged` PASS（现状行为）。
 
-- [ ] **Step 3: 实现——`_validate_draft` 末尾（`return draft` 之前）加：**
+- [x] **Step 3: 实现——`_validate_draft` 末尾（`return draft` 之前）加：**
 
 ```python
     out = draft.get("spec_schema_output")
@@ -92,10 +92,13 @@ Expected: `test_output_side_roundtrip_via_validate` FAIL（manifest 无 output �
         raise _draft_err("spec_schema_output 须为对象（output 侧透传字段）")
 ```
 
-- [ ] **Step 4: 实现——`_assemble_pack` 中 schema/manifest 构造改为：**
+- [x] **Step 4: 实现——`_assemble_pack` 中 schema/manifest 构造改为（注意：`sub_names = sorted(...)` 行是既有代码，位于 schema 与 manifest 之间，替换时必须保留）：**
 
 ```python
+        meta = draft["meta"]
         schema = {f["field"]: f["type"] for f in draft.get("spec_schema", [])}
+        sub_names = sorted(  # ← 既有行，勿丢
+            {n["submodule"] for n in draft["nodes"] if n["type"] == "submodule"})
         spec_schema: dict = {"input": schema}
         if draft.get("spec_schema_output"):
             spec_schema["output"] = draft["spec_schema_output"]
@@ -111,7 +114,7 @@ Expected: `test_output_side_roundtrip_via_validate` FAIL（manifest 无 output �
         }
 ```
 
-- [ ] **Step 5: 跑测试确认通过 + 回归**
+- [x] **Step 5: 跑测试确认通过 + 回归**
 
 ```bash
 uv run pytest tests/test_build_api.py -q
@@ -119,7 +122,7 @@ uv run pytest tests/test_build_api.py -q
 
 Expected: 全部 PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add server/api/build.py tests/test_build_api.py
