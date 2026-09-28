@@ -141,6 +141,11 @@ def _validate_draft(draft, name: str) -> dict:
         for f in schema
     ):
         raise _draft_err(f"spec_schema 须为 [{{field,type}}]，type ∈ {'/'.join(_SCHEMA_TYPES)}")
+    # Fix D：spec_schema.output 透传——外部 pack 的 output 侧经草稿往返不丢
+    #（形状检查非业务校验；None/缺省 = 无透传，组装侧不写 output 键）
+    out = draft.get("spec_schema_output")
+    if out is not None and not isinstance(out, dict):
+        raise _draft_err("spec_schema_output 须为对象（output 侧透传字段）")
     return draft
 
 
@@ -395,12 +400,17 @@ def _assemble_pack(draft: dict, search: list[Path]) -> Path:
         schema = {f["field"]: f["type"] for f in draft.get("spec_schema", [])}
         sub_names = sorted(
             {n["submodule"] for n in draft["nodes"] if n["type"] == "submodule"})
+        # spec_schema.output 透传：草稿带 spec_schema_output 时原样写回 manifest
+        #（外部 pack 的 output 侧经反解→更新往返不静默丢失；缺省形状不变）
+        spec_schema: dict = {"input": schema}
+        if draft.get("spec_schema_output"):
+            spec_schema["output"] = draft["spec_schema_output"]
         manifest = {
             "name": meta["name"],
             "version": meta.get("version", "0.1.0"),
             "description": meta.get("description", ""),
             "submodule": False,
-            "spec_schema": {"input": schema},
+            "spec_schema": spec_schema,
             "requires": [],
             "modules": sub_names,
             "tasklist": draft_to_tasklist(draft),

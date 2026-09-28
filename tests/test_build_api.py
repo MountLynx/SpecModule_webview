@@ -506,3 +506,29 @@ class TestInstallPack:
         client.put("/api/library/drafts/orphan", json=draft)
         r = client.post("/api/modules/packs", json={"draft": "orphan"})
         assert r.status_code == 400 and "doomed" in r.json()["error"]
+
+
+class TestSchemaOutputPassthrough:
+    """spec_schema.output 透传：外部 pack 的 output 侧经草稿往返不丢。"""
+
+    def test_output_side_roundtrip_via_validate(self, client, base):
+        seed_builder(client)
+        draft = client.get("/api/library/drafts/loop_mod").json()
+        draft["spec_schema_output"] = {"summary": "str"}
+        assert client.put("/api/library/drafts/loop_mod", json=draft).status_code == 200
+        r = client.post("/api/modules/packs/validate", json={"draft": "loop_mod"})
+        assert r.status_code == 200
+        assert r.json()["manifest"]["spec_schema"]["output"] == {"summary": "str"}
+
+    def test_output_side_non_dict_400(self, client, base):
+        seed_builder(client)
+        draft = client.get("/api/library/drafts/loop_mod").json()
+        draft["spec_schema_output"] = "oops"
+        r = client.put("/api/library/drafts/loop_mod", json=draft)
+        assert r.status_code == 400 and "spec_schema_output" in r.json()["error"]
+
+    def test_no_output_side_unchanged(self, client, base):
+        """无透传字段的草稿 manifest 形状不变（向后兼容）。"""
+        seed_builder(client)
+        r = client.post("/api/modules/packs/validate", json={"draft": "loop_mod"})
+        assert r.json()["manifest"]["spec_schema"] == {"input": {"raw_text": "str"}}
