@@ -918,7 +918,7 @@ git commit -m "feat(web): 构建器更新模块按钮（同名覆盖）+ 反解�
 
 ### Task 9: 全量验收 + 归档
 
-- [ ] **Step 1: 后端全量（含 treechat）**
+- [x] **Step 1: 后端全量（含 treechat）**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"
@@ -927,7 +927,7 @@ uv run pytest tests/ -q
 
 Expected: 全部 PASS（基线 148 + treechat 133 + 本轮新增约 14 例）。
 
-- [ ] **Step 2: 库基线回归（零上游改动，确认无涟漪）**
+- [x] **Step 2: 库基线回归（零上游改动，确认无涟漪）**
 
 ```bash
 uv run pytest ../SpecModule/module_harness/tests/ -q -m "not smoke"
@@ -935,7 +935,7 @@ uv run pytest ../SpecModule/module_harness/tests/ -q -m "not smoke"
 
 Expected: 全部 PASS。
 
-- [ ] **Step 3: 前端门禁**
+- [x] **Step 3: 前端门禁**
 
 ```bash
 cd web && npm run build
@@ -947,13 +947,13 @@ Expected: 构建成功。
 
 启动后端 + 前端，验证闭环：模块库选一个 packed 模块 → 「编辑」→ 看反解报告 → 「打开构建器」→ 画布自动布局 → 改节点/版本 → 「更新模块」→ 模块库详情 version 已变 → 发起 mock 运行验证新逻辑生效。
 
-- [ ] **Step 5: 归档——`roadmap/roadmap.md` 模块构建器节的后排行（约 71 行）改为：**
+- [x] **Step 5: 归档——`roadmap/roadmap.md` 模块构建器节的后排行（约 71 行）改为：**
 
 ```markdown
 - [x] 后排：编辑/反解已安装模块（2026-09-28，反解回构建器 + apply_update 同名更新；output 侧仅透传保全，编辑 UI 与库版本管理仍后排）
 ```
 
-- [ ] **Step 6: 归档——`roadmap/finish.md` 按其既有条目格式追加一段（落地内容/关键决策/新端点/设计定稿与计划指引）：**
+- [x] **Step 6: 归档——`roadmap/finish.md` 按其既有条目格式追加一段（落地内容/关键决策/新端点/设计定稿与计划指引）：**
 
 ```markdown
 ## 已安装模块编辑（反解 → 画布 → 装回）——2026-09-28
@@ -965,7 +965,7 @@ Expected: 构建成功。
 - 库侧零代码改动；api.md 补录 `apply_update`（库仓库独立 docs 提交）。
 ```
 
-- [ ] **Step 7: 提交归档**
+- [x] **Step 7: 提交归档**
 
 ```bash
 cd "C:\Users\xingy\Desktop\开发\SpecModule_webview"
