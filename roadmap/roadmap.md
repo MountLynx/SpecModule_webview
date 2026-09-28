@@ -90,6 +90,7 @@ GitHub issues 跟踪，不在此积压：
 - [#12 refine_spec 只取模块级 spec_schema——per-template 覆盖的模块会拿到空 schema](https://github.com/MountLynx/SpecModule_webview/issues/12)
 - [#20 上游边缘：store.apply_update 对非 store-home 安装的 packed 模块会写 store 副本遮蔽原体；回滚窗口在备份清理后收窄（validate/哈希/manifest 写入失败不恢复旧版）](https://github.com/MountLynx/SpecModule_webview/issues/20)
 - [#21 技术债：update 端点 OSError 捕获粒度（TEMP 失败误报「文件被占用」）；反解 _validate_draft 400 缺 module 键；build.py packs 面拆分候选](https://github.com/MountLynx/SpecModule_webview/issues/21)
+- [#22 UI 谎言：创建器 SpecDialog 的 default_spec 编辑区不落盘（组装 manifest 无此键，库 packed 形态无 default_spec 契约）](https://github.com/MountLynx/SpecModule_webview/issues/22)
 
 ## 数据契约与错误处理
 
