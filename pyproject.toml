@@ -8,7 +8,8 @@ requires-python = ">=3.10"
 # openai：llm/client.py 懒导入的 LLM SDK（config.json 的 provider 均 openai 兼容）——
 # uv sync 按锁文件修剪手工 pip 安装的包，不声明则 spawn 子进程 LLM 调用全挂
 # python-pptx：ppt_master 导出节点 svg_to_pptx 的底层库
-dependencies = ["specmodule", "fastapi>=0.110", "uvicorn[standard]>=0.29", "pillow>=10", "openai>=1", "python-pptx>=1"]
+# filelock：treechat 会话 JSONL 跨进程锁（CLI 与 webapp 同会话互踩收口，issue #16）
+dependencies = ["specmodule", "fastapi>=0.110", "uvicorn[standard]>=0.29", "pillow>=10", "openai>=1", "python-pptx>=1", "filelock>=3.13"]
 
 [dependency-groups]
 dev = [
