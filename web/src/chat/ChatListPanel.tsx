@@ -1,6 +1,6 @@
 import { Archive, FolderOpen, MessageSquare, MoreHorizontal, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { Mode, SessionSummary } from "./types";
+import type { SessionSummary } from "./types";
 import { cn, relativeTime } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Input, Textarea } from "../components/ui/input";
@@ -25,11 +25,10 @@ import {
 interface Props {
   serviceAvailable: boolean;
   sessions: SessionSummary[];
-  /** 模式枚举（创建对话的分类选择器；服务未启用时空数组回落「直答」） */
-  modes: Mode[];
   activeSid: string | null;
   onOpen: (sid: string) => void;
-  onCreate: (name: string, system: string, category: string) => Promise<void>;
+  /** 创建一律以直答开头（category 空）；模式经斜杠/chip 在对话内切换 */
+  onCreate: (name: string, system: string) => Promise<void>;
   onRename: (sid: string, name: string) => Promise<void>;
   onCategory: (sid: string, category: string) => Promise<void>;
   onArchive: (sid: string, archived: boolean) => Promise<void>;
@@ -173,7 +172,7 @@ function ChatListPanelInner(p: Props) {
       {/* 创建 / 重命名 / 分类 对话框 */}
       <Dialog open={dialog !== null} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent>
-          {dialog?.kind === "create" && <CreateForm onDone={setDialog} onCreate={p.onCreate} modes={p.modes} />}
+          {dialog?.kind === "create" && <CreateForm onDone={setDialog} onCreate={p.onCreate} />}
           {dialog?.kind === "rename" && (
             <TextForm
               title="重命名对话"
@@ -228,29 +227,18 @@ function ChatListPanelInner(p: Props) {
 
 function CreateForm(p: {
   onDone: (d: DialogState) => void;
-  onCreate: (name: string, system: string, category: string) => Promise<void>;
-  modes: Mode[];
+  onCreate: (name: string, system: string) => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [system, setSystem] = useState("");
-  const [category, setCategory] = useState("");
   const [busy, setBusy] = useState(false);
   return (
     <>
       <DialogTitle>新对话</DialogTitle>
-      <DialogDescription>创建一个对话树会话。</DialogDescription>
+      <DialogDescription>创建一个对话树会话，以直答开头——模式可随时在对话内切换。</DialogDescription>
       <div className="grid gap-2.5">
         <Input autoFocus placeholder="对话名称" value={name} maxLength={80}
                onChange={(e) => setName(e.target.value)} />
-        <select value={category} onChange={(e) => setCategory(e.target.value)}
-                className="h-9 rounded-control border border-border bg-background px-2 text-[13px]">
-          {p.modes.length === 0 && <option value="">直答</option>}
-          {p.modes.map((m) => (
-            <option key={m.key} value={m.key === "direct" ? "" : m.key}>
-              {m.displayName}
-            </option>
-          ))}
-        </select>
         <Textarea placeholder="会话级 system 指令（可选）" value={system}
                   onChange={(e) => setSystem(e.target.value)} />
       </div>
@@ -260,7 +248,7 @@ function CreateForm(p: {
                 onClick={async () => {
                   setBusy(true);
                   try {
-                    await p.onCreate(name.trim(), system, category);
+                    await p.onCreate(name.trim(), system);
                     p.onDone(null);
                   } finally {
                     setBusy(false);

@@ -222,8 +222,8 @@ export default function App() {
 
   // ── 对话操作（对齐 TreeChat webui App 接线，状态升级为按 sid）──
 
-  const createSession = async (name: string, system: string, category: string) => {
-    await chatApi.createSession(name, system, category);
+  const createSession = async (name: string, system: string) => {
+    await chatApi.createSession(name, system); // category 缺省空 = 直答开头
     refreshSessions();
     openChat(name); // sid = 创建名（rename 只改显示名）
   };
@@ -428,7 +428,6 @@ export default function App() {
           <ChatListPanel
             serviceAvailable={chatServiceUp !== false}
             sessions={sessions}
-            modes={modes}
             activeSid={activeChatSid}
             onOpen={openChat}
             onCreate={createSession}
