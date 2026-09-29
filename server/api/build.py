@@ -632,6 +632,13 @@ def decompile_module(name: str, search: list[Path] = Depends(get_search_paths)) 
     if not isinstance(schema.get("input") or {}, dict):
         raise HTTPException(status_code=400, detail={
             "error": "spec_schema.input 须为对象（{field: type}）", "module": name})
+    # default_spec 形状前置检查：须为对象（参考 spec）。库 loader 装载期已拒收
+    # 非 dict（resolve_module_full 先于此读 manifest 即抛），此处守 HTTP 层形状
+    # 契约、错误信息本地化——双保险不依赖加载时序
+    default_spec = manifest.get("default_spec")
+    if default_spec is not None and not isinstance(default_spec, dict):
+        raise HTTPException(status_code=400, detail={
+            "error": "default_spec 须为对象（参考 spec）", "module": name})
     tasks: dict = tasklist["Tasks"]
     try:
         built = query.build_run_graph(name, tasklist=tasklist, src=resolved.source)
@@ -698,7 +705,7 @@ def decompile_module(name: str, search: list[Path] = Depends(get_search_paths)) 
                  "description": manifest.get("description", "")},
         "spec_schema": [{"field": f, "type": t}
                         for f, t in (schema.get("input") or {}).items()],
-        "default_spec": {},
+        "default_spec": dict(default_spec or {}),
         "nodes": nodes,
         "edges": edges,
     }

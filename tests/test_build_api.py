@@ -469,6 +469,8 @@ class TestInstallPack:
         assert r.status_code == 200
         d = r.json()
         assert d["name"] == "loop_mod" and d["kind"] == "packed"
+        # 安装详情透出参考 spec（库 ResolvedModule packed 分支 + 组装写键的端到端）
+        assert d["default_spec"] == {"raw_text": "demo"}
         # 安装后模块库可见（store/modules 在搜索路径内）
         names = [m["name"] for m in client.get("/api/modules").json()["modules"]]
         assert "loop_mod" in names
@@ -647,7 +649,7 @@ class TestDecompile:
         # spec_schema 反转 + meta 还原
         assert draft["spec_schema"] == [{"field": "raw_text", "type": "str"}]
         assert draft["meta"] == {"name": "loop_mod", "version": "0.2.0", "description": "循环测试"}
-        assert draft["default_spec"] == {}  # packed 模块无 default_spec 概念
+        assert draft["default_spec"] == {"raw_text": "demo"}  # 反解回读参考 spec
 
     def test_import_missing_components(self, client, base):
         """装好后删库组件 → 反解把包内副本重新导入（imported）。"""
@@ -728,6 +730,16 @@ class TestDecompile:
         manifest["spec_schema"]["input"] = ["raw_text"]
         pkg.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
         assert client.post("/api/modules/loop_mod/decompile").status_code == 400
+
+    def test_decompile_non_dict_default_spec_400(self, client, base):
+        """外部手写 pack 的 default_spec 形状逃逸 → 400 不 500。"""
+        p = seed_pack_module(base, name="bad_ds")
+        mp = p / "module.json"
+        manifest = json.loads(mp.read_text(encoding="utf-8"))
+        manifest["default_spec"] = ["oops"]
+        mp.write_text(json.dumps(manifest), encoding="utf-8")
+        r = client.post("/api/modules/bad_ds/decompile")
+        assert r.status_code == 400 and "default_spec" in r.json()["error"]
 
     def test_validation_failure_before_imports(self, client, base):
         """草稿校验失败（非法 spec 字段名）→ 400 且组件库零导入（校验前置）。"""
