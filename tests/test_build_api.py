@@ -890,3 +890,103 @@ class TestEntryConvert:
         seed_entry_module(base / "home")
         r = client.post("/api/modules/hello_entry/convert", json={"template": "nope"})
         assert r.status_code == 400
+
+
+# 含 submodule 的 entry（convert 登记 store——编辑闭环补链）
+ENTRY_SUB_PY = '''
+from module_harness.cli.entry import ModuleEntry
+from module_harness.core.registry import HarnessRegistry
+from module_harness.infra.events import EventBus
+from module_harness.model.spec import SpecSchema, TaskDefinition, Tasklist
+from module_harness.model.submodule import SubModule, script
+
+
+class EchoSub(SubModule):
+    name = "echo_sub"
+    description = "回声子模块"
+    spec_schema = SpecSchema(input={"x": "str"})
+    tasklist = Tasklist(
+        tasks={"E": TaskDefinition(type="script", script="echo_fn")},
+        flow="[E]",
+    )
+
+    @script("echo_fn")
+    def echo_fn(view):
+        return {"echo": "ok"}
+
+
+def _registry(llm_client, template_name, event_bus):
+    return HarnessRegistry(llm_client=llm_client, event_bus=event_bus or EventBus.null())
+
+
+entry = ModuleEntry(
+    name="hello_sub",
+    description="含 submodule 的 entry",
+    templates={"hello_sub": {"name": "hello_sub", "tasklist": {
+        "Tasks": {"Echo": {"type": "submodule", "submodule": "echo_sub"}},
+        "Flow": "[Echo]",
+    }}},
+    build_registry=_registry,
+    default_template="hello_sub",
+    submodules={"echo_sub": EchoSub},
+    review_harness=None,
+)
+'''
+
+
+def seed_entry_sub_module(home: Path) -> Path:
+    d = home / "modules"
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / "hello_sub.py"
+    p.write_text(ENTRY_SUB_PY, encoding="utf-8")
+    return p
+
+
+class TestEntryConvertSubmodules:
+    """convert 对含 submodule 的 entry：包内 submodule 递归登记进 store。
+
+    背景：自包含 pack 的 submodule 运行期零依赖，但反解/更新组装按名从
+    store 解析 submodule 源包——缺失即闭环断裂（decompile warning +
+    update 400）。库侧 install_submodules（convert/publish 共享）补链。
+    """
+
+    def test_convert_registers_submodules_into_store(self, client, base):
+        home = base / "home"
+        seed_entry_sub_module(home)
+        r = client.post("/api/modules/hello_sub/convert", json={})
+        assert r.status_code == 200
+        # submodule 以独立 packed 模块入库（可按名解析）
+        assert (home / "modules" / "echo_sub" / "module.json").is_file()
+        assert (home / "manifests" / "echo_sub.json").is_file()
+        from module_harness import store
+        hit = store.resolve_module(
+            "echo_sub", search=[home / "modules"])
+        assert hit is not None and hit.kind == "packed"
+
+    def test_convert_submodule_already_installed_warns(self, client, base):
+        home = base / "home"
+        seed_entry_sub_module(home)
+        seed_pack_module(base, name="echo_sub")   # store 已有同名
+        r = client.post("/api/modules/hello_sub/convert", json={})
+        assert r.status_code == 200
+        assert any(
+            "echo_sub" in w and "已存在" in w for w in r.json()["warnings"])
+        # 不覆盖：夹具内容原样
+        manifest = json.loads(
+            (home / "modules" / "echo_sub" / "module.json").read_text(encoding="utf-8"))
+        assert manifest["description"] == "子模块夹具"
+
+    def test_convert_decompile_update_loop_closes(self, client, base):
+        """全闭环：convert → decompile 无 submodule 警告 → 更新组装成功
+        （修复前 decompile 报「未安装」、update 400 组装失败）。"""
+        home = base / "home"
+        seed_entry_sub_module(home)
+        assert client.post("/api/modules/hello_sub/convert", json={}).status_code == 200
+        r = client.post("/api/modules/hello_sub/decompile")
+        assert r.status_code == 200
+        assert not any("未安装" in w for w in r.json()["report"]["warnings"])
+        d = client.get("/api/library/drafts/hello_sub").json()
+        assert any(n["type"] == "submodule" for n in d["nodes"])
+        r = client.post("/api/modules/packs/update", json={"draft": "hello_sub"})
+        assert r.status_code == 200
+        assert "echo_sub" in r.json()["submodules"]

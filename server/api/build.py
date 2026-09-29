@@ -771,11 +771,23 @@ def convert_entry_route(
     try:
         result = entry_to_pack(resolved.entry, template_name=template, out_dir=tmp / "pack")
         store.install_pack(result.pack_dir, source="webview-entry-convert", name=name)
+        # 包内 submodule 递归登记进 store（编辑闭环按名解析的前提）——失败
+        # 回滚卸载父包（entry 未退位，可重试），不留「父包装上但闭环仍断」
+        # 的半状态；skipped 交 warnings 诚实透出（已存在防遮蔽/键名不一致）
+        try:
+            sub = store.install_submodules(
+                result.pack_dir, source="webview-entry-convert", search=search)
+        except (ValueError, TypeError, KeyError, OSError):
+            store.uninstall_pack(name)
+            raise
     except (ValueError, TypeError, KeyError) as e:
         status = 409 if "已存在" in str(e) else 400
         raise HTTPException(status_code=status, detail={"error": str(e), "module": name})
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    warnings = list(result.warnings)
+    warnings += (
+        f"submodule '{s['name']}' 跳过登记: {s['reason']}" for s in sub["skipped"])
     # 退位：entry 文件重命名 .bak（discover 只 glob *.py）——失败回滚卸载，
     # 不留「entry 退位但包没装上」的半状态
     entry_file = Path(resolved.source.path)
@@ -789,4 +801,4 @@ def convert_entry_route(
     if detail is None:
         raise HTTPException(status_code=500, detail={
             "error": "转化后详情读取失败", "module": name})
-    return {"module": store.detail_to_dict(detail), "warnings": result.warnings}
+    return {"module": store.detail_to_dict(detail), "warnings": warnings}
