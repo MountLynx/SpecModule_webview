@@ -132,6 +132,20 @@ export interface RunsPayload {
   total: number;
 }
 
+export interface RunArtifact {
+  index: number;
+  name: string;
+  kind: "deliverable" | "intermediate";
+  path: string;
+  size: number;
+  modified: string;
+}
+
+export interface RunArtifactsPayload {
+  run_id: string;
+  artifacts: RunArtifact[];
+}
+
 export const fetchRuns = () => getJson<RunsPayload>("/api/runs");
 
 export const fetchStatus = (runId: string) =>
@@ -471,3 +485,9 @@ export const convertModule = (name: string, template?: string) =>
     `/api/modules/${encodeURIComponent(name)}/convert`,
     template ? { template } : {},
   );
+
+export async function fetchRunArtifacts(
+  runId: string,
+): Promise<RunArtifactsPayload> {
+  return getJson(`/api/runs/${encodeURIComponent(runId)}/artifacts`);
+}
