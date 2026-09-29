@@ -2,6 +2,7 @@
 // 下载 chips——本地/云端同一 HTTP 下载交互；清单为空不渲染。
 import { FileDown } from "lucide-react";
 import type { RunArtifact } from "../api";
+import { Pill } from "./ui/pill";
 
 function fmtSize(n: number): string {
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
@@ -34,9 +35,9 @@ export function ArtifactsStrip({
           </span>
           <span className="text-muted-foreground">{fmtSize(a.size)}</span>
           {a.kind === "deliverable" && (
-            <span className="rounded bg-[var(--ph-done-bg)] px-1 text-[10px] text-[var(--ph-done-text)]">
+            <Pill variant="done" className="rounded px-1 text-[11px]">
               交付物
-            </span>
+            </Pill>
           )}
         </a>
       ))}

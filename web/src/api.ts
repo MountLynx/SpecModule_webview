@@ -489,5 +489,7 @@ export const convertModule = (name: string, template?: string) =>
 export async function fetchRunArtifacts(
   runId: string,
 ): Promise<RunArtifactsPayload> {
-  return getJson(`/api/runs/${encodeURIComponent(runId)}/artifacts`);
+  return getJson<RunArtifactsPayload>(
+    `/api/runs/${encodeURIComponent(runId)}/artifacts`,
+  );
 }
