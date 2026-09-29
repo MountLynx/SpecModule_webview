@@ -62,14 +62,15 @@
 ├── secret_key                          # 网关签名密钥（部署时生成，gitignore）
 ├── shared/
 │   ├── modules/                        # 共享演示模块（只读；部署者预装）
-│   └── components/                     # 共享组件种子（建户时拷入用户 store library/）
+│   └── library/                        # 共享组件种子（建户时拷入用户 store library/；
+│                                       #   对齐 store 语义——SPECMODULE_HOME=<root>/shared 安装时组件落 library/）
 └── users/
     └── <dir>/                          # dir = sha256(规范化名)[:16]——中文名路径安全
         ├── backend.log                 # 该用户后端进程日志
         ├── .specmodule/
         │   ├── runs/                   # 该用户的 runs（隔离）
         │   ├── modules/                # 该用户 store（SPECMODULE_HOME）——自建模块落此（隔离）
-        │   └── library/                # 该用户组件库（建户时从 shared/components 播种）
+        │   └── library/                # 该用户组件库（建户时从 shared/library 播种）
         └── .treechat/                  # 该用户会话（隔离）
 ```
 

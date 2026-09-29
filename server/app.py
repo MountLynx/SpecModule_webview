@@ -31,6 +31,12 @@ def flatten_http_exception(request: Request, exc: HTTPException) -> JSONResponse
     return JSONResponse(status_code=exc.status_code, content=exc.detail)
 
 
+@app.get("/healthz")
+def healthz() -> dict:
+    """就绪探针：网关每用户后端 spawn 后轮询此端点等就绪。"""
+    return {"ok": True}
+
+
 app.include_router(runs.router)
 app.include_router(manage.router)
 app.include_router(build.router)
