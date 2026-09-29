@@ -110,6 +110,10 @@ uv run python -m module_harness.cli review --run-id <id>
 
 Python ≥3.10 (library dev'd on 3.13). No lint/format/type tooling in this ecosystem — don't introduce any.
 
+## Git & Branches
+
+- **双线同步纪律**：`feat/multiuser-gateway` 是与 main 同步演进的带用户隔离功能（多用户网关）的长期分支——**改动的提交需分别在 main 和 feat/multiuser-gateway 上落地**，不允许只落单线。惯例：main 上提交 → 切分支 `git merge main` 并入（提交信息 `merge: main 并入 feat/multiuser-gateway——<主题> 同步`，见既有 merge 链）；推送时两线各自 `git push`。
+
 ## Code Conventions & Common Patterns
 
 - **Thin mapping**: one endpoint = one library call + shape conversion. No validation beyond what the library raises, no caching, no parallel state — the library's run state is the single source of truth.
