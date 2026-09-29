@@ -564,3 +564,11 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 - **前端**：模块详情 entry 形态「转为 packed 编辑」按钮（confirm 说明退位 + 多模板 prompt 选模板）→ 转化成功翻转详情（重置模板/spec 表单状态）→ 串联既有反解闭环（报告面板 → 打开构建器），转化 warnings 独立面板透出；壳层 App.tsx 零改动（331f994）。
 - 验收：真实 `academic_writer` 双模板临时 store 冒烟（submodule 模式：3 harness + build_report script + fact_review_loop 整包；detailed 模式：5 scripts + 4 guards + 6 harnesses，loader 全部回读可解析）；pytest webview 386 绿 + 库基线 692 绿 + `npm run build` 过。计划勾选归档 docs/superpowers/plans/2026-09-29-entry-to-packed-convert.md。
 - 已知边界（warnings 透传，非缺陷）：动态翻译 script 的 entry 只保留模板静态 tasklist；引用模块级常量的闭包 body 物化后运行期才炸（转 packed 后即可在组件库编辑修复）；多模板 entry 每次只转一个。
+
+
+## packed 模块 default_spec 契约补齐——2026-09-29
+
+- 设计定稿 `docs/superpowers/specs/2026-09-29-packed-default-spec-design.md`，计划 `docs/superpowers/plans/2026-09-29-packed-default-spec.md`。
+- **库侧**（SpecModule 仓库独立提交）：`SubModule.default_spec` 类属性 + `pack()` 导出（9bd8cca）；loader 读 manifest `default_spec` 键、非对象拒收（54ceef9）；`ResolvedModule.default_spec`/`spec_for` packed 分支透出（f6c9978）；`entry_to_pack` 保留 entry 级 `default_spec`，撤销「不保留」诚实警告（430e157）；api.md 补录（ad39de5）。CLI run/resume 零改动自动获得 `--spec > --spec-file > default_spec` 回落（回归钉子 cba0403）。
+- **webview**：组装 manifest 写 `default_spec` 契约键（空 {} 省略——manifest 缺键 = 无参考）+ 草稿/反解形状前置检查（400 不 500）+ 反解回读往返保真（9d0b25f、26508e1）。
+- 创建器 SpecDialog 参考值编辑区激活（关闭 #22），发起页「spec 参考」对 packed 生效。验收：pytest webview 389 绿 + 库基线 699 绿（-m "not smoke"）。
