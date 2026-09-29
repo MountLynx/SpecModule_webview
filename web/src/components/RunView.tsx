@@ -15,16 +15,19 @@ import {
   fetchInputs,
   fetchModules,
   fetchProcess,
+  fetchRunArtifacts,
   fetchStatus,
   postTerminate,
   TERMINAL_PHASES,
   type GraphPayload,
   type ModuleInfo,
+  type RunArtifact,
   type StatusCore,
   type StatusResp,
 } from "../api";
 import { resolveInputSource, type TraceState } from "../lib/inputSource";
 import { useRunStream } from "../ws";
+import { ArtifactsStrip } from "./ArtifactsStrip";
 import { GraphView } from "./GraphView";
 import { NodePanel } from "./NodePanel";
 import { RunControls } from "./RunControls";
@@ -328,7 +331,28 @@ export function RunView({
 
   const clearTrace = useCallback(() => setTrace(null), []);
 
+  // 产物清单：终态（done/aborted/cancelled/truncated）拉取——终态翻转与
+  // 终态 run 首载都经 phase 变化触发；非终态清空（resume 重跑后旧清单失效）
+  const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
+
   const statusView: StatusCore | null = stream ?? initialStatus;
+
+  const runPhase = statusView?.phase ?? payload?.phase ?? null;
+  useEffect(() => {
+    if (runPhase == null || !TERMINAL_PHASES.has(runPhase)) {
+      setArtifacts([]);
+      return;
+    }
+    let cancelled = false;
+    fetchRunArtifacts(runId)
+      .then((d) => {
+        if (!cancelled) setArtifacts(d.artifacts);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, runPhase]);
 
   // 停滞检测：running 且未暂停时，距最后一条 WS 消息超过 120s → 引导强制恢复。
   // 阈值取宽：单 tick 含多次 LLM 调用，5-10 分钟 tick 间隔属常态，提示是引导信号。
@@ -463,6 +487,7 @@ export function RunView({
           onTerminate={terminateProc}
         />
       </header>
+      <ArtifactsStrip runId={runId} artifacts={artifacts} />
       {stalled && (
         <div className="flex items-center gap-2.5 bg-[color-mix(in_srgb,var(--ph-truncated)_14%,transparent)] px-3.5 py-1.5 text-[12px] text-[var(--ph-truncated)]">
           <span>

@@ -26,6 +26,7 @@ class SessionStore:
         self._lock = FileLock(str(self.path) + ".lock")
         self._last_seq = 0
         self._loaded = False
+        self._last_size = 0  # 本实例最后一次确认的文件字节数（append 真值守卫）
 
     def load(self) -> list[tuple[int, object]]:
         """加载并返回全部 (seq, event)。空/缺失文件返回 []。"""
@@ -60,13 +61,22 @@ class SessionStore:
                     raise EventFormatError(f"第 {lineno} 行 seq 不连续：得到 {seq}，期望 {expected}")
                 events.append((seq, event))
             self._last_seq = events[-1][0] if events else 0
+            self._last_size = self.path.stat().st_size if self.path.exists() else 0
             self._loaded = True
             return events
 
     def append(self, event: object) -> int:
-        """追加事件（fsync 持久化），返回分配的 seq。父目录不存在则自动创建。"""
+        """追加事件（fsync 持久化），返回分配的 seq。父目录不存在则自动创建。
+
+        seq 以文件为唯一真值：锁内 stat 文件大小，与本实例上次确认不一致
+        （他者插手过——issue #16 长活实例被 CLI/另一进程并发追加）即整载
+        回读再派生；一致才走内存快路径（单写者 O(1)，仅多一次 stat）。
+        只靠锁串行化不够——锁保证单次写原子，不保证长活写手进程内缓存的
+        _last_seq 期间没被他者甩开。
+        """
         with self._lock:  # load-if-needed 同实例嵌套加锁——filelock 可重入，安全
-            if not self._loaded:
+            size = self.path.stat().st_size if self.path.exists() else 0
+            if not self._loaded or size != self._last_size:
                 self.load()
             seq = self._last_seq + 1
             line = json.dumps(event_to_dict(seq, event), ensure_ascii=False)
@@ -76,6 +86,7 @@ class SessionStore:
                 f.flush()
                 os.fsync(f.fileno())
             self._last_seq = seq
+            self._last_size = self.path.stat().st_size
             return seq
 
 
