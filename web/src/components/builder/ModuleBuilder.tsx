@@ -400,40 +400,50 @@ function SpecDialog({ name, draft, onClose, onSave }: {
   const discard = () => { clearDraft(); onClose(); };
   const schemaObj = Object.fromEntries(schema.map((f) => [f.field, f.type]));
   const addField = () => setSchema((s) => [...s, { field: `field_${s.length + 1}`, type: "str" }]);
+  // 布局契约：标题/底栏常驻，两个子区各自封顶内滚（max-h + 边框 pane）——字段再多
+  // 也不把 default_spec/保存按钮挤出视口。SpecForm 不按 schema 内容重挂载（无 key）：
+  // schema 编辑经 props 响应式反映，JSON 模式下点「添加字段」/改字段名不再丢失
+  // 正在编辑的 JSON 与模式状态。
   return (
     <div className={overlayCls}>
-      <div className={panelCls} onClick={(e) => e.stopPropagation()}>
-        <div className="text-[13px] font-semibold">spec_schema 与参考 spec</div>
+      <div className="flex max-h-[86vh] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-lg bg-card text-[13px] text-card-foreground shadow-xl">
+        <div className="shrink-0 border-b px-4 py-2.5 font-semibold">spec_schema 与参考 spec</div>
         {restored && (
-          <div className="text-[11px] text-muted-foreground">已恢复上次未保存的编辑（「取消」将丢弃）</div>
+          <div className="shrink-0 px-4 pt-2 text-[11px] text-muted-foreground">已恢复上次未保存的编辑（「取消」将丢弃）</div>
         )}
-        <div>
-          <div className={labelCls}>输入字段（{`type ∈ ${SPEC_TYPES.join("/")}`}）</div>
-          <div className="flex flex-col gap-1">
-            {schema.map((f, i) => (
-              <div key={i} className="flex items-center gap-1">
-                <Input value={f.field} className="w-40 font-mono text-[12px]"
-                       onChange={(e) => setSchema((s) => s.map((x, j) => (j === i ? { ...x, field: e.target.value.replace(/\s/g, "_") } : x)))} />
-                <select className={fieldCls} value={f.type}
-                        onChange={(e) => setSchema((s) => s.map((x, j) => (j === i ? { ...x, type: e.target.value as SpecTypeName } : x)))}>
-                  {SPEC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-                <Button variant="ghost" size="icon" onClick={() => setSchema((s) => s.filter((_, j) => j !== i))}>×</Button>
-              </div>
-            ))}
-            <Button variant="outline" size="sm" className="self-start" onClick={addField}>添加字段</Button>
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
+          <div>
+            <div className={labelCls}>输入字段（{`type ∈ ${SPEC_TYPES.join("/")}`}）</div>
+            <div className="flex max-h-[30vh] flex-col gap-1 overflow-y-auto rounded-control border border-input p-1">
+              {schema.map((f, i) => (
+                <div key={i} className="flex items-center gap-1">
+                  <Input value={f.field} className="w-40 font-mono text-[12px]"
+                         onChange={(e) => setSchema((s) => s.map((x, j) => (j === i ? { ...x, field: e.target.value.replace(/\s/g, "_") } : x)))} />
+                  <select className={fieldCls} value={f.type}
+                          onChange={(e) => setSchema((s) => s.map((x, j) => (j === i ? { ...x, type: e.target.value as SpecTypeName } : x)))}>
+                    {SPEC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <Button variant="ghost" size="icon" onClick={() => setSchema((s) => s.filter((_, j) => j !== i))}>×</Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" className="m-1 self-start" onClick={addField}>添加字段</Button>
+            </div>
+          </div>
+          <div>
+            <div className={labelCls}>default_spec（参考值；inputs 里用 {"{spec.字段}"} 引用）</div>
+            <div className="mb-1 text-[11px] text-muted-foreground">
+              保存并「安装/更新模块」后，模块库发起页的「spec 参考」将预填这份值
+            </div>
+            <div className="max-h-[34vh] overflow-y-auto rounded-control border border-input p-2">
+              <SpecForm
+                schema={schemaObj}
+                defaultSpec={defaultSpec}
+                onChange={(spec) => setDefaultSpec(spec ?? {})}
+              />
+            </div>
           </div>
         </div>
-        <div>
-          <div className={labelCls}>default_spec（参考值；inputs 里用 {"{spec.字段}"} 引用）</div>
-          <SpecForm
-            key={`builder-spec:${schema.map((f) => `${f.field}:${f.type}`).join(",")}`}
-            schema={schemaObj}
-            defaultSpec={defaultSpec}
-            onChange={(spec) => setDefaultSpec(spec ?? {})}
-          />
-        </div>
-        <div className="flex justify-end gap-2">
+        <div className="flex shrink-0 justify-end gap-2 border-t px-4 py-2.5">
           <Button variant="outline" size="sm" onClick={discard}>取消</Button>
           <Button size="sm" onClick={() => { onSave(schema, defaultSpec); clearDraft(); }}>保存</Button>
         </div>
