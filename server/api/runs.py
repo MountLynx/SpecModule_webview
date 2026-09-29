@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from module_harness.infra import control, query
@@ -142,3 +143,42 @@ def run_feed(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
         "timeline": query.timeline_to_dict(tl) if tl else None,
         "checkpoints": query.checkpoints_to_dict(cl) if cl else None,
     }
+
+
+@router.get("/{run_id}/artifacts")
+def run_artifacts(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
+    """run 产物清单：query.read_artifacts（声明制，终态收集 artifacts.json）。"""
+    validate_run_id(run_id)
+    data = query.read_artifacts(run_id, base_dir=base_dir)
+    if data is None:
+        raise not_found(run_id)
+    return data
+
+
+@router.get("/{run_id}/artifacts/{index}")
+def run_artifact_download(
+    run_id: str, index: int, base_dir: Path = Depends(get_base_dir)
+) -> FileResponse:
+    """产物下载：客户端只给 index，路径按清单自查（无遍历面）。
+
+    index 是清单数组序——清单由库终态收集落盘，路径永不为客户端输入；
+    Starlette 对非 ASCII 文件名自动补 filename* UTF-8（中文名安全）。
+    """
+    validate_run_id(run_id)
+    data = query.read_artifacts(run_id, base_dir=base_dir)
+    if data is None:
+        raise not_found(run_id)
+    arts = data["artifacts"]
+    if index < 0 or index >= len(arts):
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "产物序号不存在", "run_id": run_id, "index": index},
+        )
+    entry = arts[index]
+    p = Path(entry["path"])
+    if not p.is_file():
+        raise HTTPException(
+            status_code=410,
+            detail={"error": "产物文件已不存在", "run_id": run_id, "path": entry["path"]},
+        )
+    return FileResponse(p, filename=p.name, content_disposition_type="attachment")

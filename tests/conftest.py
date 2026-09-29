@@ -31,6 +31,7 @@ def seed_run(
     snapshots: dict[int, dict] | None = None,
     status: dict | None = None,
     inputs: dict | None = None,
+    artifacts: list[dict] | None = None,
 ) -> Path:
     """造最小 fixture run：run.sqlite（firings/snapshots/module_inputs）+ status.json。"""
     from module_harness.infra.checkpoint import ModuleInputStore
@@ -52,6 +53,12 @@ def seed_run(
     if status is not None:
         (run_dir / "status.json").write_text(
             json.dumps(status, ensure_ascii=False), encoding="utf-8"
+        )
+    if artifacts is not None:
+        (run_dir / "artifacts.json").write_text(
+            json.dumps({"run_id": run_id, "artifacts": artifacts},
+                       ensure_ascii=False),
+            encoding="utf-8",
         )
     return run_dir
 

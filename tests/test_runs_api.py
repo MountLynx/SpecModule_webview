@@ -238,3 +238,70 @@ def test_list_runs_paused_flag(base, client):
     d = client.get("/api/runs").json()
     row = next(r for r in d["runs"] if r["run_id"] == "p_run")
     assert row["paused"] is False  # 挂起的 cancel 请求不等于暂停
+
+
+class TestRunArtifacts:
+    @staticmethod
+    def _manifest(run_id, path="x/deck.pptx"):
+        return [{"name": "deck", "kind": "deliverable", "path": path,
+                 "size": 4, "modified": "2026-09-29T10:00:00"}]
+
+    def test_list_shape(self, base, client):
+        seed_run(base, "r_art", artifacts=self._manifest("r_art"))
+        r = client.get("/api/runs/r_art/artifacts")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["run_id"] == "r_art"
+        a = body["artifacts"][0]
+        assert set(a) == {"index", "name", "kind", "path", "size", "modified"}
+        assert a["index"] == 0 and a["name"] == "deck"
+
+    def test_list_unknown_run_404(self, client):
+        r = client.get("/api/runs/ghost/artifacts")
+        assert r.status_code == 404
+        # app 层 flatten_http_exception：dict detail 展平为顶层错误体
+        assert r.json()["error"] == "无运行记录"
+
+    def test_list_no_manifest_empty(self, base, client):
+        seed_run(base, "r_empty", status={"module_id": "r_empty", "phase": "done"})
+        r = client.get("/api/runs/r_empty/artifacts")
+        assert r.status_code == 200
+        assert r.json() == {"run_id": "r_empty", "artifacts": []}
+
+    def test_list_corrupt_manifest_empty(self, base, client):
+        run_dir = seed_run(base, "r_bad")
+        (run_dir / "artifacts.json").write_text("{broken", encoding="utf-8")
+        r = client.get("/api/runs/r_bad/artifacts")
+        assert r.status_code == 200
+        assert r.json()["artifacts"] == []
+
+    def test_download_streams_file(self, base, client):
+        run_dir = seed_run(base, "r_dl")
+        f = base / "out" / "deck.pptx"
+        f.parent.mkdir(parents=True)
+        f.write_bytes(b"PKPK")
+        (run_dir / "artifacts.json").write_text(json.dumps({
+            "run_id": "r_dl", "artifacts": self._manifest("r_dl", str(f)),
+        }, ensure_ascii=False), encoding="utf-8")
+        r = client.get("/api/runs/r_dl/artifacts/0")
+        assert r.status_code == 200
+        assert r.content == b"PKPK"
+        assert r.headers["content-disposition"].startswith("attachment")
+        assert "deck.pptx" in r.headers["content-disposition"]
+
+    def test_download_index_out_of_range_404(self, base, client):
+        seed_run(base, "r_oob", artifacts=self._manifest("r_oob"))
+        assert client.get("/api/runs/r_oob/artifacts/5").status_code == 404
+        assert client.get("/api/runs/r_oob/artifacts/-1").status_code == 404
+
+    def test_download_file_deleted_410(self, base, client):
+        seed_run(base, "r_gone", artifacts=self._manifest("r_gone"))
+        r = client.get("/api/runs/r_gone/artifacts/0")
+        assert r.status_code == 410
+
+    def test_download_unknown_run_404(self, client):
+        assert client.get("/api/runs/ghost/artifacts/0").status_code == 404
+
+    def test_download_non_integer_index_422(self, base, client):
+        seed_run(base, "r_nan", artifacts=self._manifest("r_nan"))
+        assert client.get("/api/runs/r_nan/artifacts/xyz").status_code == 422
