@@ -305,3 +305,17 @@ class TestRunArtifacts:
     def test_download_non_integer_index_422(self, base, client):
         seed_run(base, "r_nan", artifacts=self._manifest("r_nan"))
         assert client.get("/api/runs/r_nan/artifacts/xyz").status_code == 422
+
+    def test_download_non_ascii_filename_header(self, base, client):
+        run_dir = seed_run(base, "r_cn")
+        f = base / "out" / "深水 图示.pptx"
+        f.parent.mkdir(parents=True)
+        f.write_bytes(b"PK")
+        (run_dir / "artifacts.json").write_text(json.dumps({
+            "run_id": "r_cn", "artifacts": [{"name": "深水", "kind": "deliverable",
+                                             "path": str(f), "size": 2,
+                                             "modified": "2026-09-29T10:00:00"}],
+        }, ensure_ascii=False), encoding="utf-8")
+        r = client.get("/api/runs/r_cn/artifacts/0")
+        assert r.status_code == 200
+        assert "filename*=utf-8''" in r.headers["content-disposition"].lower()
