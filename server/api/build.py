@@ -147,6 +147,10 @@ def _validate_draft(draft, name: str) -> dict:
     out = draft.get("spec_schema_output")
     if out is not None and not isinstance(out, dict):
         raise _draft_err("spec_schema_output 须为对象（output 侧透传字段）")
+    # default_spec 形状检查：须为对象（缺省/空 = 无参考；组装侧真值才写 manifest）
+    ds = draft.get("default_spec")
+    if ds is not None and not isinstance(ds, dict):
+        raise _draft_err("default_spec 须为对象（{字段: 参考值}）")
     return draft
 
 
@@ -416,6 +420,8 @@ def _assemble_pack(draft: dict, search: list[Path]) -> Path:
             "modules": sub_names,
             "tasklist": draft_to_tasklist(draft),
         }
+        if draft.get("default_spec"):
+            manifest["default_spec"] = dict(draft["default_spec"])
         (pack / "module.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 

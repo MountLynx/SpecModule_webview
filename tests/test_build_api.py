@@ -271,6 +271,11 @@ class TestDrafts:
         r = client.put("/api/library/drafts/my_mod", json=sub)
         assert r.status_code == 400 and "outputs" in r.json()["error"]
 
+    def test_default_spec_shape_400(self, client, base):
+        r = client.put("/api/library/drafts/bad_spec",
+                       json=draft_json("bad_spec", default_spec=["oops"]))
+        assert r.status_code == 400 and "default_spec" in r.json()["error"]
+
 
 class TestDraftToTasklist:
     def test_flow_dsl_generation(self):
@@ -371,6 +376,7 @@ class TestValidatePack:
         d = r.json()
         assert d["ok"] is True
         assert d["manifest"]["name"] == "loop_mod"
+        assert d["manifest"]["default_spec"] == {"raw_text": "demo"}
         # 回边 e2 是 b→a（Echo→Summarize）；Echo.join: OR 追加在尾
         assert d["tasklist"]["Flow"] == (
             "[Summarize] --> Echo\nEcho --|has_issues|--> Summarize\nEcho.join: OR")
@@ -446,6 +452,14 @@ class TestValidatePack:
         assert d["tasklist"]["Flow"] == "[Sub]"
         # dry-run 不落 store
         assert "with_sub" not in [m["name"] for m in client.get("/api/modules").json()["modules"]]
+
+    def test_validate_empty_default_spec_omitted(self, client, base):
+        """default_spec 空 {} 视同无参考——manifest 不写键（缺键 = 无参考）。"""
+        client.put("/api/library/scripts/echo", content=SCRIPT.encode("utf-8"))
+        client.put("/api/library/drafts/plain", json=draft_json("plain"))
+        r = client.post("/api/modules/packs/validate", json={"draft": "plain"})
+        assert r.status_code == 200
+        assert "default_spec" not in r.json()["manifest"]
 
 
 class TestInstallPack:
