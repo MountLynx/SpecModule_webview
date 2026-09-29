@@ -89,3 +89,22 @@ def test_read_session_meta_rejects_non_meta_first_line(tmp_path):
 
 def test_load_empty_and_missing_file(tmp_path):
     assert SessionStore(tmp_path / "nope.jsonl").load() == []
+
+
+def test_interleaved_instances_keep_seq_continuous(tmp_path):
+    """两个长活实例交错追加：seq 全局连续。
+
+    issue #16 的真实形态：webapp 长持 SessionStore 期间 CLI 追加同一会话。
+    append 的 seq 必须以文件为唯一真值——进程内 _last_seq 缓存只在本实例
+    写后未被他者插手时可信，否则两实例各自派生必产重复 seq（跨进程子进程
+    形态由 test_store_cross_process 钉死；此处确定性复现同一根因）。
+    """
+    p = tmp_path / "s.jsonl"
+    a, b = SessionStore(p), SessionStore(p)
+    seqs: list[int] = []
+    for i in range(20):
+        seqs.append(a.append(UserMsg(parent=None, text=f"a-{i}")))
+        seqs.append(b.append(UserMsg(parent=None, text=f"b-{i}")))
+    assert seqs == list(range(1, 41))
+    events = SessionStore(p).load()
+    assert [seq for seq, _ in events] == list(range(1, 41))
