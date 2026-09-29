@@ -226,6 +226,7 @@ def create_app(config: TreeChatConfig | None = None, *,
                 registry.drop(sid)
                 raise HTTPException(404, f"会话不存在: {sid}")
             path.unlink()
+            Path(str(path) + ".lock").unlink(missing_ok=True)  # SessionStore 锁文件随会话清理
             registry.drop(sid)
         return Response(status_code=204)
 
