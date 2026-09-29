@@ -581,3 +581,11 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 - **webview**：`GET /api/runs/{id}/artifacts`（清单透传）+ `GET /api/runs/{id}/artifacts/{index}`（FileResponse 流式下载；越界 404 / 文件已删 410；index 唯一输入无遍历面，中文名 filename* UTF-8 钉死）（8571991、460d278）；RunView 终态产物条 ArtifactsStrip——chips 下载 + deliverable「交付物」徽标（82ac54e、1dfd7d8 Pill 统一胶囊）；AGENTS.md 映射表补录（87bf293）。
 - 验收：库基线 732 绿 + webview 400 绿 + `npm run build` 过（最终全链路审查：声明→收集→读端→端点→前端十环契约逐一对齐）。
 - 遗留：ppt_master 声明落地（与在途 WIP 同文件搁置，SpecModule#3）；云端部署备忘——PyPI 0.4.0 未发布、webview 依赖需钉下限（#23）；端点小韧性收口（#24）。
+
+
+## 含 submodule 的 entry 转化后编辑闭环补链（install_submodules）——2026-09-29
+
+- 缺陷报告：**含 submodule 的 entry 转成 packed 后，submodule 可能不在库中**。根因：convert 产物自包含（submodule 经 `SubModule.pack()` 在包内 `submodules/` 目录，运行期零依赖），但 submodule 从未以独立模块身份进 store——反解（`decompile` warnings「submodule 未安装」）与更新组装（`_assemble_pack` resolve 落空 → 400）按名解析即断，编辑闭环对这类 entry 不可达；CLI publish 单文件路径同缺口。
+- **库侧**（SpecModule 仓库独立提交，api.md 已补录）：`store.install_submodules(pack_dir, *, source, search=None)` 共享函数——`submodules/**`（含嵌套）收集 → 最深层优先全量校验（坏 submodule 整体中止零安装）→ 键=manifest name 者逐个 `install_pack`；跳过两类诚实透出（名字已可解析——不覆盖防遮蔽；目录键≠manifest name——装了也按引用键解析不到），返回 `{installed, skipped}`（960a0f8）；CLI publish 单文件路径接线、登记/跳过逐行透出（同提交）；api.md 补录（d887900）。
+- **webview**：`convert_entry_route` 在 install_pack 后接线 `install_submodules`（失败回滚卸载父包——entry 未退位可重试，零半状态）；skipped 交 warnings 透传（已存在防遮蔽/键名不一致），前端 warnings 面板零改动自动透出。
+- 验收：webview 新增 3 例（登记入库/已装跳过 warning/convert→decompile 无 submodule 警告→update 组装成功全闭环）+ 库侧 7 例（嵌套安装/幂等 noop/store 命中跳过/显式搜索路径/键名不一致/损坏零安装/publish 登记）；pytest webview 402 绿 + 库基线 739 绿（-m "not smoke"）。前端零改动（未跑 build 门，web/src 未动）。
