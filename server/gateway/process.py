@@ -39,9 +39,9 @@ def backend_env(root: Path, user_dir: Path) -> dict:
 
 
 def _probe(port: int) -> bool:
-    """就绪探针：GET /healthz。"""
+    """就绪探针：GET /healthz。trust_env=False——loopback 探测不走系统/环境代理。"""
     try:
-        r = httpx.get(f"http://127.0.0.1:{port}/healthz", timeout=1.0)
+        r = httpx.get(f"http://127.0.0.1:{port}/healthz", timeout=1.0, trust_env=False)
         return r.status_code == 200 and r.json() == {"ok": True}
     except httpx.HTTPError:
         return False

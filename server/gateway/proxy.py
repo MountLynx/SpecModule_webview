@@ -34,6 +34,7 @@ class BackendProxy:
         self._client = client or httpx.AsyncClient(
             base_url=f"http://127.0.0.1:{port}",
             timeout=httpx.Timeout(connect=5.0, read=None, write=30.0, pool=30.0),
+            trust_env=False,  # loopback 反代不走系统/环境代理（Windows 注册表代理也不碰）
         )
 
     async def forward(self, request, port: int = 0) -> Response:
