@@ -69,7 +69,7 @@ const tabId = (t: DynTab) => `${t.kind}:${t.key}`;
 
 export default function App() {
   // ── 壳层 ──
-  const [sidebarTab, setSidebarTab] = useState<Tab>("runs");
+  const [sidebarTab, setSidebarTab] = useState<Tab>("modules");
   const [dynTabs, setDynTabs] = useState<DynTab[]>([]);
   const [activeId, setActiveId] = useState<string>("modules");
   const [openModuleName, setOpenModuleName] = useState<string | null>(null);
