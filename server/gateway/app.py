@@ -7,10 +7,12 @@ websocket），自行读 Cookie 鉴权。
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hmac
 import os
 import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -91,7 +93,13 @@ def _load_or_create_secret(root: Path) -> str:
     key_path = root / "secret_key"
     if not key_path.exists():
         key_path.parent.mkdir(parents=True, exist_ok=True)
-        key_path.write_text(secrets.token_hex(32), encoding="utf-8")
+        try:
+            fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(secrets.token_hex(32))
     return key_path.read_text(encoding="utf-8").strip()
 
 
@@ -140,9 +148,19 @@ class GatewayState:
 
 def build_gateway_app(root: Path, static_dir: Path | None = None,
                       port_base: int = 8101) -> FastAPI:
+    state_holder: dict[str, GatewayState] = {}
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        yield
+        # 关闭语义（spec）：网关退出 → 逐后端进程组终止（后端 + 其 run 子进程一起走）；
+        # kill -9 等钩子不跑的场景见 deploy/README.md 孤儿处理
+        state_holder["gateway"].manager.shutdown_all()
+
     app = FastAPI(title="SpecModule Gateway", docs_url=None, redoc_url=None,
-                  openapi_url=None)
+                  openapi_url=None, lifespan=lifespan)
     state = GatewayState(root, static_dir, port_base)
+    state_holder["gateway"] = state
     app.state.gateway = state
 
     @app.middleware("http")
@@ -174,7 +192,10 @@ def build_gateway_app(root: Path, static_dir: Path | None = None,
 
     @app.post("/claim")
     async def claim(request: Request) -> JSONResponse:
-        body = await request.json()
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "请求体需为 JSON"}, status_code=400)
         if state.passcode and not hmac.compare_digest(
                 str(body.get("passcode", "")), state.passcode):
             return JSONResponse({"error": "访问口令不正确"}, status_code=401)
@@ -193,18 +214,20 @@ def build_gateway_app(root: Path, static_dir: Path | None = None,
                         path="/")
         return resp
 
-    @app.post("/logout")
-    def logout() -> JSONResponse:
-        resp = JSONResponse({"ok": True})
-        resp.delete_cookie(COOKIE_NAME, path="/")
-        return resp
+    # 登出端点刻意不设：认领页 JS 会用 localStorage 令牌自动重认领，登出形同虚设；
+    # 换用户 = 换名字（新空间）或部署者 cli remove
 
     async def _forward(request: Request):
         entry: UserEntry = request.state.entry
         try:
-            state.manager.ensure_running(entry, state.registry.user_dir(entry))
+            # to_thread：spawn + 就绪探测最长 15s，不能冻结事件循环
+            # （比赛开局多评委同时首启，SSE/WS 泵必须继续流动）
+            await asyncio.to_thread(state.manager.ensure_running,
+                                    entry, state.registry.user_dir(entry))
         except BackendStartupError as exc:
             return JSONResponse({"error": str(exc)}, status_code=502)
+        except OSError as exc:  # 日志/spawn 层失败同样按网关侧 502 语义
+            return JSONResponse({"error": f"后端启动失败: {exc}"}, status_code=502)
         return await state.proxy_for(entry).forward(request)
 
     @app.api_route("/api/{rest:path}", methods=_API_METHODS)
@@ -222,11 +245,12 @@ def build_gateway_app(root: Path, static_dir: Path | None = None,
             await websocket.close(code=4401)
             return
         try:
-            port = state.manager.ensure_running(entry, state.registry.user_dir(entry))
-        except BackendStartupError:
+            await asyncio.to_thread(state.manager.ensure_running,
+                                    entry, state.registry.user_dir(entry))
+        except (BackendStartupError, OSError):
             await websocket.close(code=1011)
             return
-        await state.proxy_for(entry).bridge_ws(websocket, port)
+        await state.proxy_for(entry).bridge_ws(websocket, entry.port)
 
     if static_dir is not None and Path(static_dir).is_dir():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="spa")

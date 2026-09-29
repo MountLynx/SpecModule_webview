@@ -69,12 +69,16 @@ TLS 部署时 systemd 里加 `Environment=GATEWAY_SECURE_COOKIES=on`。
 - **单 worker 约束**：每用户后端 `--workers 1` 由网关硬编码，勿改——进程内注册表/锁
   语义依赖单进程。
 - **网关/后端重启**：在跑的 run 进程随组终止，status 残留 `running` → UI 停滞提示 →
-  强制恢复；产物全落盘，重启不丢数据。
+  强制恢复；产物全落盘，重启不丢数据。systemd 正常重启会触发网关 shutdown 钩子
+  （逐后端组终止）；**`kill -9` / 断电不跑钩子** → 后端孤儿存活并占住端口，此时
+  `fuser -k 8101/*`（或按 `users/<dir>/backend.log` 里的 pid）清理孤儿后再起网关。
 - **后端崩溃**：下次请求自动拉起（就绪探测 15s），评委 F5 一次即恢复。
 - **用户管理**：`uv run python -m server.gateway.cli --root <root> list` /
-  `remove <名> [--purge]`（无发放——登记由认领动态生长）。
+  `remove <名> [--purge]`（无发放——登记由认领动态生长）；`--purge` 前先停网关，
+  否则运行中的后端可能正写该目录。
 - **令牌不可找回**：评委清 localStorage 且 Cookie 过期 → 该空间失联，换名字重开
   （月级场景可接受）。
-- **内存**：每用户后端约 150-250MB，10 评委满载 ≈ 2.5GB。
+- **内存**：每用户后端约 150-250MB，10 评委满载 ≈ 2.5GB；`users/<dir>/backend.log`
+  持续追加（每次启动续写），月级赛期一般无需轮转，介意则部署 cron 截尾。
 - **dev 不受影响**：本地开发仍走 `npm run dev`（vite :5173 → :8000 直连后端），
   网关只在部署时使用（`--static` 目录缺席时网关不挂静态）。

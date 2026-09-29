@@ -11,6 +11,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -53,22 +54,33 @@ class BackendManager:
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
         self._procs: dict[str, subprocess.Popen] = {}
+        self._mu = threading.Lock()  # 只护 _locks 字典本身
+        self._locks: dict[str, threading.Lock] = {}
+
+    def _user_lock(self, name: str) -> threading.Lock:
+        """每用户一把串行锁：check-and-spawn 原子（同用户并发首启只 spawn 一次，
+        不会双 spawn 撞端口）；跨用户互不阻塞（to_thread 下并行启动）。"""
+        with self._mu:
+            if name not in self._locks:
+                self._locks[name] = threading.Lock()
+            return self._locks[name]
 
     def ensure_running(self, entry: UserEntry, user_dir: Path) -> int:
         """活着直接返回端口；死了/未启 → spawn + 就绪探测（崩溃自愈的实体）。"""
-        proc = self._procs.get(entry.name)
-        if proc is not None and proc.poll() is None:
+        with self._user_lock(entry.name):
+            proc = self._procs.get(entry.name)
+            if proc is not None and proc.poll() is None:
+                return entry.port
+            log_path = user_dir / "backend.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_fh = log_path.open("ab")
+            try:
+                popen = self._spawn(entry, user_dir, log_fh)
+            finally:
+                log_fh.close()  # 子进程持继承句柄继续写，父进程这份即关
+            self._procs[entry.name] = popen
+            self._wait_ready(entry.port)
             return entry.port
-        log_path = user_dir / "backend.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_fh = log_path.open("ab")
-        try:
-            popen = self._spawn(entry, user_dir, log_fh)
-        finally:
-            log_fh.close()  # 子进程持继承句柄继续写，父进程这份即关
-        self._procs[entry.name] = popen
-        self._wait_ready(entry.port)
-        return entry.port
 
     def _spawn(self, entry: UserEntry, user_dir: Path, log_fh) -> subprocess.Popen:
         """spawn 每用户后端（测试 monkeypatch 点）。进程组化便于组终止。"""

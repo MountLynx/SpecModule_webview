@@ -118,12 +118,11 @@ class TestAuthGate:
         assert r.json() == {"runs": [], "total": 0, "path": "/api/runs"}
         assert fake.calls == ["tester"]  # ensure_running 被走过
 
-    def test_logout_clears(self, gateway):
+    def test_claim_bad_json_400(self, gateway):
         app, _, _ = gateway
-        c = _client(app)
-        c.post("/claim", json={"name": "tester"})
-        c.post("/logout")
-        assert _client(app).get("/api/runs").status_code == 401  # 新会话无凭据
+        r = _client(app).post("/claim", content=b"not-json",
+                              headers={"Content-Type": "application/json"})
+        assert r.status_code == 400
 
 
 class TestStatic:

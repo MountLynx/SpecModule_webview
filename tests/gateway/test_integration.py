@@ -39,3 +39,38 @@ def test_ws_streams_backend_error_frame(live):
     with live.websocket_connect("/api/runs/nope/stream") as ws:
         frame = ws.receive_json()
         assert frame["type"] == "error"
+
+
+def test_backend_self_heal_after_kill(live):
+    """真后端被杀 → 下次请求自动重拉成功（崩溃自愈 e2e）。"""
+    import socket
+    import time
+
+    r = live.post("/claim", json={"name": "tester"})
+    assert r.status_code == 200
+    assert live.get("/api/runs").status_code == 200
+
+    state = live.app.state.gateway
+    entry = state.registry.get("tester")
+    proc = state.manager._procs["tester"]
+    assert proc.poll() is None
+    proc.terminate()
+    proc.wait(timeout=10)
+
+    def _port_free(port: int) -> bool:
+        s = socket.socket()
+        try:
+            s.connect(("127.0.0.1", port))
+            return False
+        except OSError:
+            return True
+        finally:
+            s.close()
+
+    deadline = time.time() + 10
+    while time.time() < deadline and not _port_free(entry.port):
+        time.sleep(0.2)
+
+    r = live.get("/api/runs")
+    assert r.status_code == 200  # ensure_running 发现死进程 → 重 spawn → 反代成功
+    assert r.json() == {"runs": [], "total": 0}

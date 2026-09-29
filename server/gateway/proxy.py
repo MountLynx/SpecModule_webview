@@ -23,8 +23,10 @@ def _forward_headers(headers) -> dict:
             if k.lower() not in _HOP_BY_HOP and k.lower() not in ("cookie", "host")}
 
 
-def _response_headers(headers) -> dict:
-    return {k: v for k, v in headers.items() if k.lower() not in _HOP_BY_HOP}
+def _response_headers(headers) -> list[tuple[str, str]]:
+    """多值保留（Set-Cookie 等不折叠）；hop-by-hop 滤除。"""
+    return [(k, v) for k, v in headers.multi_items()
+            if k.lower() not in _HOP_BY_HOP]
 
 
 class BackendProxy:
@@ -51,15 +53,29 @@ class BackendProxy:
             resp = await self._client.send(upstream_req, stream=True)
         except httpx.HTTPError:
             return JSONResponse({"error": "后端进程不可达"}, status_code=502)
-        return StreamingResponse(
+        # 多值响应头（如多 Set-Cookie）先折叠成 dict 供构造，再逐条补回原始重复项
+        resp_headers = _response_headers(resp.headers)
+        headers_dict: dict[str, str] = {}
+        duplicates: list[tuple[str, str]] = []
+        for k, v in resp_headers:
+            if k in headers_dict:
+                duplicates.append((k, v))
+            else:
+                headers_dict[k] = v
+        response = StreamingResponse(
             resp.aiter_raw(),
             status_code=resp.status_code,
-            headers=_response_headers(resp.headers),
+            headers=headers_dict,
             background=BackgroundTask(resp.aclose),
         )
+        for k, v in duplicates:
+            response.raw_headers.append(
+                (k.lower().encode("latin-1"), v.encode("latin-1")))
+        return response
 
     async def bridge_ws(self, websocket: WebSocket, port: int) -> None:
-        """WS 双向泵：客户端 ↔ 后端；任一侧断开即收束。"""
+        """WS 双向泵：客户端 ↔ 后端。任一方向结束即收束整体并关闭客户端
+        （后端崩溃/终态关闭 → 客户端收到 close → 前端重连触发自愈）。"""
         await websocket.accept()
         url = f"ws://127.0.0.1:{port}{websocket.url.path}"
 
@@ -73,8 +89,8 @@ class BackendProxy:
                     if data is None:
                         continue
                     await upstream.send(data)
-            except WebSocketDisconnect:
-                return
+            except (WebSocketDisconnect, websockets.ConnectionClosed):
+                return  # 客户端断开 / upstream 已死后再收到消息
 
         async def _pump_backend_to_client(upstream) -> None:
             try:
@@ -88,9 +104,19 @@ class BackendProxy:
 
         try:
             async with websockets.asyncio.client.connect(url) as upstream:
-                await asyncio.gather(_pump_client_to_backend(upstream),
-                                     _pump_backend_to_client(upstream))
-        except (websockets.InvalidURI, websockets.InvalidHandshake, OSError):
+                tasks = [asyncio.create_task(_pump_client_to_backend(upstream)),
+                         asyncio.create_task(_pump_backend_to_client(upstream))]
+                done, pending = await asyncio.wait(tasks,
+                                                   return_when=asyncio.FIRST_COMPLETED)
+                for t in pending:
+                    t.cancel()
+                for t in done:
+                    try:
+                        t.result()
+                    except Exception:
+                        pass
+        except (websockets.InvalidURI, websockets.InvalidHandshake,
+                websockets.ConnectionClosed, OSError):
             pass
         finally:
             try:
