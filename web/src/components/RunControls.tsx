@@ -29,6 +29,8 @@ interface RunControlsProps {
   /** 本 server 拉起的恢复子进程在跑（/process 轮询） */
   procRunning: boolean;
   onTerminate: () => void;
+  /** 终止失败信息（terminate POST 409 等；与 act 错误共用右侧错误位，act 有错时优先） */
+  terminateError?: string | null;
   /** 恢复对话框成功拉起新进程（202）——RunView 据此退出已终止态 */
   onResumeStarted?: () => void;
 }
@@ -45,6 +47,7 @@ export function RunControls({
   onResumeRequestConsumed,
   procRunning,
   onTerminate,
+  terminateError,
   onResumeStarted,
 }: RunControlsProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -155,7 +158,9 @@ export function RunControls({
           <RotateCcw className="h-3.5 w-3.5" />恢复 / 回退…
         </Button>
       )}
-      {err && <span className={errTextCls}>{err}</span>}
+      {(err ?? terminateError) && (
+        <span className={errTextCls}>{err ?? terminateError}</span>
+      )}
       {dialogOpen && (
         <ResumeDialog
           runId={runId}

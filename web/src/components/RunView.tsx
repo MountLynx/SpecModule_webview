@@ -86,6 +86,8 @@ export function RunView({
   const [terminated, setTerminated] = useState(false);
   // control.json 有未消费的 cancel 请求（等 tick 边界）——初值取自 control 读取，控制动作后重取
   const [cancelRequested, setCancelRequested] = useState(false);
+  // 终止失败信息（409：server 重启清过注册表 / 进程已自然退出）——此前静默吞掉，用户零感知
+  const [terminateErr, setTerminateErr] = useState<string | null>(null);
   // 图加载失败区的 process.log 尾（CLI 启动期失败界面可见）
   const [procLog, setProcLog] = useState<string | null>(null);
   // 溯源状态（图上值卡 + 数据流虚线的唯一事实源）：null = 无
@@ -125,6 +127,7 @@ export function RunView({
     setMaterialTimeout(false);
     setTerminated(false);
     setCancelRequested(false);
+    setTerminateErr(null);
     appliedTickRef.current = null;
     retriedPhaseRef.current = null;
     lastMsgAtRef.current = Date.now();
@@ -361,6 +364,7 @@ export function RunView({
     if (runPhase !== "running") {
       setTerminated(false);
       setCancelRequested(false);
+      setTerminateErr(null);
     }
   }, [runPhase]);
   useEffect(() => {
@@ -458,12 +462,15 @@ export function RunView({
   const terminateProc = useCallback(async () => {
     // 容忍窗自点击起算：盖住 terminate POST 完成前后仍在飞的 /process 轮询陈旧样本
     terminateAtRef.current = Date.now();
+    setTerminateErr(null);
     try {
       await postTerminate(runId);
       // 终止成功：进程已死而 status 残留 running——立即进入已终止态，不等 120s 停滞检测
       setTerminated(true);
-    } catch {
-      // 409（进程已退/注册表清空）等：静默，下一次 poll 自然纠正
+    } catch (e) {
+      // 409（server 重启清过注册表 / 进程已自然退出）不再静默——透出控制条错误位，
+      // 否则按钮看似没按，用户只能等 120s 停滞检测
+      setTerminateErr(`终止失败：${e instanceof Error ? e.message : String(e)}`);
     }
     onRefreshRuns();
   }, [runId, onRefreshRuns]);
@@ -546,6 +553,7 @@ export function RunView({
           onResumeRequestConsumed={onResumeRequestConsumed}
           procRunning={procRunning}
           onTerminate={terminateProc}
+          terminateError={terminateErr}
           onResumeStarted={() => setTerminated(false)}
         />
       </header>
