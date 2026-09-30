@@ -1,5 +1,7 @@
-// 运行视图容器：图视图 + 头部控制条 + 停滞黄条 + 右侧节点面板（图竖向 TB 分层，
+// 运行视图容器：图视图 + 头部控制条 + 停滞黄条/已终止引导条 + 右侧节点面板（图竖向 TB 分层，
 // 连线自上节点底部连至下节点顶部，节点详情以全高侧栏并排于图区右侧）。
+// 已终止引导条：终止进程成功 → status 残留 running 是设计后果，控制通道已死——立即隐藏
+// 暂停/取消并给出强制恢复入口，不等 120s 停滞检测；拉起新恢复进程或终态落盘即退出。
 //
 // 落盘等待门（materialized）：发起运行 202 → 子进程写出 status.json 有 ~1s
 // 窗口，期间 run 目录尚不存在——立即拉图会 404 黏住（无重试）、连 WS 会被
@@ -77,6 +79,10 @@ export function RunView({
   const [paused, setPaused] = useState(false);
   const [stalled, setStalled] = useState(false);
   const [procRunning, setProcRunning] = useState(false);
+  // 终止成功且 status 残留 running（本地瞬态；拉起新进程或 phase 离开 running 即退出）
+  const [terminated, setTerminated] = useState(false);
+  // control.json 有未消费的 cancel 请求（等 tick 边界）——初值取自 control 读取，控制动作后重取
+  const [cancelRequested, setCancelRequested] = useState(false);
   // 图加载失败区的 process.log 尾（CLI 启动期失败界面可见）
   const [procLog, setProcLog] = useState<string | null>(null);
   // 溯源状态（图上值卡 + 数据流虚线的唯一事实源）：null = 无
@@ -111,6 +117,8 @@ export function RunView({
     setProcLog(null);
     setMaterialized(false);
     setMaterialTimeout(false);
+    setTerminated(false);
+    setCancelRequested(false);
     appliedTickRef.current = null;
     retriedPhaseRef.current = null;
     lastMsgAtRef.current = Date.now();
@@ -145,13 +153,17 @@ export function RunView({
     };
   }, [runId, materialized]);
 
-  // 暂停状态初值（control.json；此后由 WS paused 增量驱动）——同样以落盘为门
+  // 暂停状态初值（control.json；此后由 WS paused 增量驱动）——同样以落盘为门；
+  // 同一次读取顺带取未消费的 cancel 请求（页面载入即有待消费取消的场景）
   useEffect(() => {
     if (!materialized) return;
     let cancelled = false;
     fetchControl(runId)
       .then((c) => {
-        if (!cancelled) setPaused(c.paused);
+        if (!cancelled) {
+          setPaused(c.paused);
+          setCancelRequested(c.control?.action === "cancel");
+        }
       })
       .catch(() => {});
     return () => {
@@ -338,6 +350,13 @@ export function RunView({
   const statusView: StatusCore | null = stream ?? initialStatus;
 
   const runPhase = statusView?.phase ?? payload?.phase ?? null;
+  // phase 离开 running（终态落盘/载入非 running run）→ 已终止态与取消待定态一并退场
+  useEffect(() => {
+    if (runPhase !== "running") {
+      setTerminated(false);
+      setCancelRequested(false);
+    }
+  }, [runPhase]);
   useEffect(() => {
     if (runPhase == null || !TERMINAL_PHASES.has(runPhase)) {
       setArtifacts([]);
@@ -379,7 +398,10 @@ export function RunView({
     const poll = () =>
       fetchProcess(runId)
         .then((p) => {
-          if (!cancelled) setProcRunning(p.running);
+          if (!cancelled) {
+            setProcRunning(p.running);
+            if (p.running) setTerminated(false); // 强制恢复已拉起新进程——退出已终止态
+          }
         })
         .catch(() => {});
     poll();
@@ -415,10 +437,24 @@ export function RunView({
   const terminateProc = useCallback(async () => {
     try {
       await postTerminate(runId);
+      // 终止成功：进程已死而 status 残留 running——立即进入已终止态，不等 120s 停滞检测
+      setTerminated(true);
     } catch {
       // 409（进程已退/注册表清空）等：静默，下一次 poll 自然纠正
     }
     onRefreshRuns();
+  }, [runId, onRefreshRuns]);
+
+  // 控制条动作成功：刷新列表 + 重读 control.json，让取消待定态跟着服务端真相走
+  //（暂停会覆盖待消费的 cancel 请求，靠重读修正而非本地推演）
+  const handleControlsAction = useCallback(() => {
+    onRefreshRuns();
+    fetchControl(runId)
+      .then((c) => {
+        setPaused(c.paused);
+        setCancelRequested(c.control?.action === "cancel");
+      })
+      .catch(() => {});
   }, [runId, onRefreshRuns]);
 
   const selectedNode = payload?.graph.nodes.find((n) => n.id === selected) ?? null;
@@ -476,19 +512,30 @@ export function RunView({
           runId={runId}
           phase={statusView?.phase ?? payload?.phase ?? null}
           paused={paused}
+          cancelRequested={cancelRequested}
+          terminated={terminated}
           // 恢复对话框模块名预填：优先图载荷的已解析模块名（status.json 溯源 >
           // run_id 启发式的服务端解析结果），图未加载时退回模块选择器覆盖值——
           // 不能直接用 runId 预填，否则预检必然 module_unresolved
           moduleHint={payload?.module ?? moduleOverride}
-          onAction={onRefreshRuns}
+          onAction={handleControlsAction}
           resumeRequest={resumeRequest}
           onResumeRequestConsumed={onResumeRequestConsumed}
           procRunning={procRunning}
           onTerminate={terminateProc}
+          onResumeStarted={() => setTerminated(false)}
         />
       </header>
       <ArtifactsStrip runId={runId} artifacts={artifacts} />
-      {stalled && (
+      {terminated && runPhase === "running" && (
+        <div className="flex items-center gap-2.5 bg-[color-mix(in_srgb,var(--ph-truncated)_14%,transparent)] px-3.5 py-1.5 text-[12px] text-[var(--ph-truncated)]">
+          <span>进程已终止，status 残留 running——可强制恢复。</span>
+          <Button variant="outline" size="sm" onClick={() => onRequestResume(runId)}>
+            打开恢复/回退…
+          </Button>
+        </div>
+      )}
+      {stalled && !terminated && (
         <div className="flex items-center gap-2.5 bg-[color-mix(in_srgb,var(--ph-truncated)_14%,transparent)] px-3.5 py-1.5 text-[12px] text-[var(--ph-truncated)]">
           <span>
             进程长时间无输出——可能已失联/崩溃。若确认进程已退出，可强制恢复。
