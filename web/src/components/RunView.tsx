@@ -45,6 +45,9 @@ export interface ResumeRequestMsg {
 /** 落盘等待上限：超过则示错（轮询不停止，落盘即自愈）。 */
 const MATERIALIZE_TIMEOUT_MS = 120_000;
 
+/** 终止后 /process 轮询报告 running=true 的容忍窗：盖住与 terminate POST 在飞竞态的陈旧样本。 */
+const TERMINATE_GRACE_MS = 5_000;
+
 /** phase → 胶囊变体（未知 phase 走 default 中性） */
 const PHASE_PILL: Record<string, PillVariant> = {
   running: "running",
@@ -95,6 +98,9 @@ export function RunView({
   const [materialTimeout, setMaterialTimeout] = useState(false);
   const lastMsgAtRef = useRef<number>(Date.now());
   const liveRef = useRef(false);
+  // 终止点击时刻（竞态容忍窗基准）：terminate POST 与 3s 轮询在飞交错时，
+  // 轮询可能带回 terminate 前采样的 running=true，把刚置位的已终止态立刻清掉
+  const terminateAtRef = useRef<number>(0);
   // 落盘后才连 WS（run 不存在时服务端拒连 + 前端永久停连，不可逆）；
   // 终态回调刷新侧栏列表（列表不做周期轮询，事件钩子驱动）
   const streamState = useRunStream(materialized ? runId : null, onRefreshRuns);
@@ -388,22 +394,37 @@ export function RunView({
     return () => clearInterval(t);
   }, []);
 
-  // ⑤ terminate 按钮：running 期间轮询 /process（只对本 server 拉起的恢复子进程可见）
+  // ⑤ terminate 按钮：running 期间轮询 /process（只对本 server 拉起的恢复子进程可见），
+  // 同节奏顺带重读 control.json 做控制面调和（侧栏发起的取消不经控制条，靠此收敛）
   useEffect(() => {
     if (statusView?.phase !== "running") {
       setProcRunning(false);
       return;
     }
     let cancelled = false;
-    const poll = () =>
+    const poll = () => {
       fetchProcess(runId)
         .then((p) => {
           if (!cancelled) {
             setProcRunning(p.running);
-            if (p.running) setTerminated(false); // 强制恢复已拉起新进程——退出已终止态
+            // 强制恢复已拉起新进程——退出已终止态；容忍窗内 ignore（与 terminate POST 在飞的陈旧样本）
+            if (p.running && Date.now() - terminateAtRef.current > TERMINATE_GRACE_MS) {
+              setTerminated(false);
+            }
           }
         })
         .catch(() => {});
+      // 控制面调和：取消也能从侧栏行内发起（不经控制条），轮询重读 control.json
+      // 让取消待定态对一切写入方收敛（暂停覆盖 cancel 同样由此修正）
+      fetchControl(runId)
+        .then((c) => {
+          if (!cancelled) {
+            setPaused(c.paused);
+            setCancelRequested(c.control?.action === "cancel");
+          }
+        })
+        .catch(() => {});
+    };
     poll();
     const t = setInterval(poll, 3_000);
     return () => {
@@ -435,6 +456,8 @@ export function RunView({
   }, [runId, showProcLog]);
 
   const terminateProc = useCallback(async () => {
+    // 容忍窗自点击起算：盖住 terminate POST 完成前后仍在飞的 /process 轮询陈旧样本
+    terminateAtRef.current = Date.now();
     try {
       await postTerminate(runId);
       // 终止成功：进程已死而 status 残留 running——立即进入已终止态，不等 120s 停滞检测
