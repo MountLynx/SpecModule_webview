@@ -62,18 +62,16 @@ def run_graph(
     graph, tasklist = res
     graph_dict = query.graph_to_dict(graph, tasklist)
 
-    tl = query.build_timeline(run_id, base_dir=base_dir)
-    by_node: dict[str, list] = {}
-    for e in tl.entries if tl else []:
-        by_node.setdefault(e.node, []).append(e)
+    # 按节点累计摘要走库共享层（与 WS status 推送同一组合）；未执行节点按
+    # 全节点集叠加 0/None，running 覆盖 = phase=running 且在最新快照 fireable 集合
+    summary = query.node_run_summary(run_id, base_dir=base_dir) or {}
     node_states = {}
     for n in graph_dict["nodes"]:
-        entries = by_node.get(n["id"], [])
-        last = entries[-1] if entries else None
+        s = summary.get(n["id"])
         node_states[n["id"]] = {
-            "fired_count": len(entries),
-            "last_status": last.status if last else None,
-            "last_tick": last.tick if last else None,
+            "fired_count": s["fired_count"] if s else 0,
+            "last_status": s["last_status"] if s else None,
+            "last_tick": s["last_tick"] if s else None,
             "running": bool(
                 st is not None
                 and st.phase == "running"

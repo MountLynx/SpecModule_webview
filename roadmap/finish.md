@@ -577,10 +577,10 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 ## run 产物清单 + 下载——2026-09-29
 
 - 用户指令：**ppt 这类 module 产出文件，云端没有下载手段**。方案 A：产出语义收编上游——库侧声明制产物清单（模块作者经 tasklist 顶层 `Artifacts` 显式声明，库不做任何启发式识别）+ webview 下载端点，本地/云端同一 HTTP 交互（`file://` 方案废弃）。设计定稿 `docs/superpowers/specs/2026-09-29-run-artifacts-download-design.md`；计划 `docs/superpowers/plans/2026-09-29-run-artifacts-download.md`（subagent-driven 执行，逐任务双审 + 两次修复回路：终态门控 C1、read_artifacts 容错）。
-- **库侧**（SpecModule 独立提交 ×7）：`ArtifactDecl`/`Tasklist.Artifacts` 声明模型（793e399）；`infra/artifacts.py` 收集器 + `artifacts.json` 原子落盘（1636c24，glob/pick=latest 应对 pptx 时间戳命名积累）；Module 终态挂点（0d4c3fc）+ 引擎级终态门控——`_finalize_phase` 返回 phase、仅 done/truncated 收集（ff6c3f0，质量审查抓出引擎级 cancel/abort 经正常返回通道误写清单的缺陷并钉死回归）；`query.read_artifacts` 共享读端 + CLI `artifacts` 子命令（81a5973）+ 非 dict 条目容错（8751b08）；api.md 补录 + 0.4.0（d4ad092）。
+- **库侧**（SpecModule 独立提交 ×8）：`ArtifactDecl`/`Tasklist.Artifacts` 声明模型（793e399）；`infra/artifacts.py` 收集器 + `artifacts.json` 原子落盘（1636c24，glob/pick=latest 应对 pptx 时间戳命名积累）；Module 终态挂点（0d4c3fc）+ 引擎级终态门控——`_finalize_phase` 返回 phase、仅 done/truncated 收集（ff6c3f0，质量审查抓出引擎级 cancel/abort 经正常返回通道误写清单的缺陷并钉死回归）；`query.read_artifacts` 共享读端 + CLI `artifacts` 子命令（81a5973）+ 非 dict 条目容错（8751b08）；api.md 补录 + 0.4.0（d4ad092）；模板翻译通道透传声明——`Translator` 手工拼装曾丢弃包装格式的 `Artifacts` 键，首个真实消费方 ppt_master 踩中（ec168d2）。
 - **webview**：`GET /api/runs/{id}/artifacts`（清单透传）+ `GET /api/runs/{id}/artifacts/{index}`（FileResponse 流式下载；越界 404 / 文件已删 410；index 唯一输入无遍历面，中文名 filename* UTF-8 钉死）（8571991、460d278）；RunView 终态产物条 ArtifactsStrip——chips 下载 + deliverable「交付物」徽标（82ac54e、1dfd7d8 Pill 统一胶囊）；AGENTS.md 映射表补录（87bf293）。
-- 验收：库基线 732 绿 + webview 400 绿 + `npm run build` 过（最终全链路审查：声明→收集→读端→端点→前端十环契约逐一对齐）。
-- 遗留：ppt_master 声明落地（与在途 WIP 同文件搁置，SpecModule#3）；云端部署备忘——PyPI 0.4.0 未发布、webview 依赖需钉下限（#23）；端点小韧性收口（#24）。
+- 验收：库基线 739 绿 + webview 400 绿 + `npm run build` 过（最终全链路审查：声明→收集→读端→端点→前端十环契约逐一对齐；模板通道贯通以安装副本 ppt_master 走真实 `Translator.translate` 实证）。
+- 遗留：ppt_master 声明已装入安装副本（`~/.specmodule/modules`，即时生效）与仓库副本工作区（未提交，随 WIP 入库——SpecModule#3，余真跑冒烟闭环）；云端部署备忘——PyPI 0.4.0 未发布、webview 依赖需钉下限（#23）；端点小韧性收口（#24）。
 
 
 ## 含 submodule 的 entry 转化后编辑闭环补链（install_submodules）——2026-09-29

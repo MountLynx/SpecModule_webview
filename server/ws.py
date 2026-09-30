@@ -8,7 +8,7 @@ import os
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from module_harness.infra import control
+from module_harness.infra import control, query
 from module_harness.infra.query import read_stream
 from module_harness.infra.status import query_run_status
 from module_harness.infra.stream import stream_log_path
@@ -29,7 +29,8 @@ def _stream_mtime(base_dir, run_id: str) -> float | None:
 
 @router.websocket("/api/runs/{run_id}/stream")
 async def run_stream(websocket: WebSocket, run_id: str) -> None:
-    """变化才推：status 按 sig=(phase, tick, updated_at, paused)；stream.log
+    """变化才推：status 按 sig=(phase, tick, updated_at, paused)，推送携带按节点
+    累计 node_states（node_run_summary——客户端纯覆盖、免逐 tick 记账）；stream.log
     追尾锚定最后一条 run_start（含，前端以此为清缓冲信号），新记录批量推。
     推送顺序 stream 先于 status；终态（含 truncated）补发最后一批流后
     close(1000)。查询为同步短读（SQLite WAL 跨进程读 + 文件增量读，毫秒级），
@@ -94,6 +95,10 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
                 sig = (st.phase, st.tick, st.updated_at, paused)
                 if sig != last_sig:
                     last_sig = sig
+                    # 按节点累计摘要随推送下发：客户端纯覆盖，无需逐 tick 增量
+                    # 记账（轮询跳拍/断线重连不丢完成态）；仅推送时计算（firings
+                    # 全量读，WAL 毫秒级，tick 节奏下无压力）
+                    node_states = query.node_run_summary(run_id, base_dir=base_dir) or {}
                     try:
                         await websocket.send_json({
                             "type": "status",
@@ -103,6 +108,7 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
                             "fireable": st.fireable,
                             "fired": st.fired,
                             "outputs": st.outputs,
+                            "node_states": node_states,
                             "error": st.error,
                             "updated_at": st.updated_at,
                             "paused": paused,

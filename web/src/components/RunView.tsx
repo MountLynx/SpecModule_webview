@@ -93,8 +93,6 @@ export function RunView({
   // 终态回调刷新侧栏列表（列表不做周期轮询，事件钩子驱动）
   const streamState = useRunStream(materialized ? runId : null, onRefreshRuns);
   const stream = streamState?.msg ?? null;
-  // 已应用到 node_states 的 tick 基线（首条 WS 消息重放的是 /graph 初始载荷已计入的状态）
-  const appliedTickRef = useRef<number | null>(null);
   // 图失败自愈去抖：已重拉过的 phase（同一 phase 只重拉一次）
   const retriedPhaseRef = useRef<string | null>(null);
 
@@ -111,7 +109,6 @@ export function RunView({
     setProcLog(null);
     setMaterialized(false);
     setMaterialTimeout(false);
-    appliedTickRef.current = null;
     retriedPhaseRef.current = null;
     lastMsgAtRef.current = Date.now();
     setStalled(false);
@@ -224,39 +221,23 @@ export function RunView({
     };
   }, [runId, moduleOverride, materialized]);
 
-  // WS 增量：tick 前进即本地累加 fired_count/last_tick（last_status 留待终态权威重取）；
-  // phase 到终态时重拉 /graph（快照/失败状态以库侧为准）
+  // WS 累计覆盖：每条 status 携带按节点累计 node_states（服务端按 firings 表
+  // 全量重建，轮询跳拍/断线重连不丢完成态）——纯覆盖到 payload；
+  // phase 到终态时仍重拉 /graph（快照/失败状态以库侧为准）
   useEffect(() => {
-    // 陈旧流守卫：切 run 瞬间旧 run 的最后一条消息可能仍在 state（setState 批处理），
-    // 不校验会把基线初始化到旧 run 的 tick，压制新 run 的本地增量
+    // 陈旧流守卫：切 run 瞬间旧 run 的最后一条消息可能仍在 state（setState 批处理）
     if (!streamState || streamState.runId !== runId) return;
     const stream = streamState.msg;
     let cancelled = false;
-    if (stream.tick != null) {
-      if (appliedTickRef.current == null) {
-        // 首条消息重放当前状态——已含在 /graph 初始载荷里，只记基线不重复计数
-        appliedTickRef.current = stream.tick;
-      } else if (stream.tick > appliedTickRef.current) {
-        const tick = stream.tick;
-        const fired = stream.fired;
-        appliedTickRef.current = tick;
-        setPayload(
-          (prev) =>
-            prev && {
-              ...prev,
-              node_states: {
-                ...prev.node_states,
-                ...Object.fromEntries(
-                  Object.entries(prev.node_states).map(([id, ns]) =>
-                    fired.includes(id)
-                      ? [id, { ...ns, fired_count: ns.fired_count + 1, last_tick: tick }]
-                      : [id, ns],
-                  ),
-                ),
-              },
-            },
-        );
-      }
+    const ns = stream.node_states;
+    if (ns) {
+      setPayload(
+        (prev) =>
+          prev && {
+            ...prev,
+            node_states: { ...prev.node_states, ...ns },
+          },
+      );
     }
     if (stream.paused != null) setPaused(stream.paused);
     if (TERMINAL_PHASES.has(stream.phase)) {

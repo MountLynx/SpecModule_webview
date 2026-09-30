@@ -34,7 +34,8 @@ export interface NodeState {
   fired_count: number;
   last_status: "ok" | "failed" | "aborted" | null;
   last_tick: number | null;
-  running: boolean;
+  /** 运行中覆盖（在最新快照 fireable 集合）——仅 graph 载荷携带，WS 累计推送无此键 */
+  running?: boolean;
 }
 
 export interface GraphPayload {
@@ -60,8 +61,11 @@ export interface StatusCore {
 export interface StatusMsg extends StatusCore {
   type: "status";
   paused?: boolean;
-  /** stream.log 最后修改时间（LLM 流式心跳辅助；无 stream.log 为 null）。
-   *  仅 WS 推送携带——HTTP status 端点无此字段，故挂在 StatusMsg 而非 StatusCore。 */
+  /** 按节点累计运行摘要（{fired_count, last_status, last_tick}，无 running 键）。
+   *  仅 WS 推送携带——服务端按 firings 表全量重建，客户端纯覆盖（跳拍/重连不丢）。 */
+  node_states?: Record<string, NodeState>;
+  /**
+   * 仅 WS 推送携带——HTTP status 端点无此字段，故挂在 StatusMsg 而非 StatusCore。 */
   stream_mtime: number | null;
 }
 

@@ -20,6 +20,43 @@ class TestStream:
             assert msg["phase"] == "running"
             assert msg["outputs"] == {}
 
+    def test_status_push_carries_cumulative_node_states(self, base, client):
+        """status 推送携带按节点累计 node_states——客户端纯覆盖、免逐 tick 记账。
+
+        回归：图上 done 绿标不实时出现。旧协议按相邻推送的 tick 差值 + fired
+        名单本地累加，轮询跳拍（两次推送间跨多个 tick）即永久漏计；累计结构
+        对跳拍/断线重连免疫。快照 fired 只带最后一拍（tickflow：快照 tick N
+        携带 tick N-1 的 firing），恰是旧协议会丢的部分。
+        """
+        run_id = "ws_nodes"
+        seed_run(
+            base, run_id,
+            firings=[
+                {"tick": 1, "node": "A"},
+                {"tick": 2, "node": "B"},
+                {"tick": 3, "node": "C"},
+            ],
+            snapshots={4: {"tick": 4, "status": "running", "fired": ["C"], "fireable": ["C"]}},
+            status={"module_id": run_id, "phase": "running", "updated_at": 1.0},
+        )
+        with client.websocket_connect(f"/api/runs/{run_id}/stream") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "status"
+            assert msg["tick"] == 4
+            assert msg["fired"] == ["C"]   # 逐 tick 名单保留（兼容字段）
+            assert msg["node_states"] == {
+                "A": {"fired_count": 1, "last_status": "ok", "last_tick": 1},
+                "B": {"fired_count": 1, "last_status": "ok", "last_tick": 2},
+                "C": {"fired_count": 1, "last_status": "ok", "last_tick": 3},
+            }
+
+    def test_node_states_absent_without_db(self, base, client):
+        """无 run.sqlite（status-only fixture）→ node_states 为空 dict（不缺席键）。"""
+        seed_run(base, "ws_nodb", status={"module_id": "ws_nodb", "phase": "running", "updated_at": 1.0})
+        with client.websocket_connect("/api/runs/ws_nodb/stream") as ws:
+            msg = ws.receive_json()
+            assert msg["node_states"] == {}
+
     def test_terminal_close(self, base, client):
         seed_run(base, "ws_done", status={"module_id": "ws_done", "phase": "done", "updated_at": 1.0})
         with client.websocket_connect("/api/runs/ws_done/stream") as ws:
