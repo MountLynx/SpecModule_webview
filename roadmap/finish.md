@@ -589,3 +589,11 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 - **库侧**（SpecModule 仓库独立提交，api.md 已补录）：`store.install_submodules(pack_dir, *, source, search=None)` 共享函数——`submodules/**`（含嵌套）收集 → 最深层优先全量校验（坏 submodule 整体中止零安装）→ 键=manifest name 者逐个 `install_pack`；跳过两类诚实透出（名字已可解析——不覆盖防遮蔽；目录键≠manifest name——装了也按引用键解析不到），返回 `{installed, skipped}`（960a0f8）；CLI publish 单文件路径接线、登记/跳过逐行透出（同提交）；api.md 补录（d887900）。
 - **webview**：`convert_entry_route` 在 install_pack 后接线 `install_submodules`（失败回滚卸载父包——entry 未退位可重试，零半状态）；skipped 交 warnings 透传（已存在防遮蔽/键名不一致），前端 warnings 面板零改动自动透出。
 - 验收：webview 新增 3 例（登记入库/已装跳过 warning/convert→decompile 无 submodule 警告→update 组装成功全闭环）+ 库侧 7 例（嵌套安装/幂等 noop/store 命中跳过/显式搜索路径/键名不一致/损坏零安装/publish 登记）；pytest webview 402 绿 + 库基线 739 绿（-m "not smoke"）。前端零改动（未跑 build 门，web/src 未动）。
+
+
+## 上游 SpecModule 0.5.0 同步适配——2026-10-01
+
+- 上游发布 0.5.0（0.4.1 未发布跳过；tickflow-py>=0.3.0 随同上 PyPI，#23 部署钉下限的基线随之更新）。本仓库 editable 锚定 `uv sync` 重锁：specmodule 0.4.0→0.5.0、tickflow-py 0.2.0→0.3.0（itsdangerous 随上游依赖收紧移除）。
+- 上游增量均为兼容性变更，零冲突：① tickflow 0.3 FAILED 饿死终态——引擎判 FAILED 后映射进既有 `aborted` phase（error 文案改 `starved: … unfired: …`），**无新 phase 值**，WS 终态关流/前端 phase 面/产物收集（aborted 不收集）零改动自动覆盖；② `validate_retries`（校验失败带反馈重试，缺省 0 行为不变）——server 库 CRUD 经 `HarnessConfig.from_dict` 验形自动透传，服务端零改动。
+- 适配增量：harness 表单暴露 `validate_retries`（整数 ≥0、image 模式须 0 的就地示错镜像库校验；空/0 省略载荷）。task 级 override（TaskDefinition.validate_retries）未进创建器 NodePanel，待消费需求再暴露。
+- 验收：pytest webview 406 绿 + 库基线 770 绿（-m "not smoke"）+ `npm run build` 过。
