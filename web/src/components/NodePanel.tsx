@@ -1,9 +1,10 @@
 // 节点面板（右侧边栏，V2）：粘性状态头部（状态图标+节点名+状态·次数胶囊）+
 // 输入标签胶囊（可定位引用可点溯源，hover 看完整 JSON）+ 共享思考块 + 状态色输出卡（运行中占位/
-// 流式/终态三态 + 复制）+ 时间线式运行记录。与图区并排的全高侧栏。
+// 流式/终态三态 + 复制）+ 时间线式运行记录 + LLM 调用链（可变状态审计：prompt/原始输出/
+// 用量/校验重试/多调用轨迹，终态回看）。与图区并排的全高侧栏。
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Circle, Copy, X } from "lucide-react";
-import { fetchNodeTimeline, type GraphNode, type TimelineEntry } from "../api";
+import { fetchNodeState, fetchNodeTimeline, type GraphNode, type NodeStatePayload, type TimelineEntry } from "../api";
 import { resolveInputSource, type TraceState } from "../lib/inputSource";
 import { cn } from "../lib/utils";
 import { ResizeHandle, useResizableWidth } from "./ResizeHandle";
@@ -14,6 +15,163 @@ import { Spinner } from "./ui/spinner";
 function pretty(v: unknown): string {
   if (v === undefined) return "（尚无输出）";
   return typeof v === "string" ? v : JSON.stringify(v, null, 2);
+}
+
+/** usage dict → 单行摘要（"input_tokens 12 · total_tokens 34"）；空/非 dict → null。 */
+function usageText(u: unknown): string | null {
+  if (u == null || typeof u !== "object") return null;
+  const parts = Object.entries(u as Record<string, unknown>).map(
+    ([k, n]) => `${k} ${String(n)}`,
+  );
+  return parts.length ? parts.join(" · ") : null;
+}
+
+/** 审计长文本块（prompt/原始输出/校验轨迹全文）：折叠头 + 复制 + mono pre。 */
+function ChainPre({
+  label,
+  text,
+}: {
+  label: string;
+  text: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      if (timer.current) window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // 剪贴板不可用（非安全上下文等）：静默
+    }
+  };
+  return (
+    <div className="mt-1.5">
+      <div className="flex items-center justify-between">
+        <button
+          aria-expanded={open}
+          className="flex items-center gap-1 text-left text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={() => setOpen(!open)}
+        >
+          {open ? (
+            <ChevronDown className="h-3 w-3 shrink-0" />
+          ) : (
+            <ChevronRight className="h-3 w-3 shrink-0" />
+          )}
+          {label}
+        </button>
+        <button
+          onClick={copy}
+          title={`复制${label}`}
+          className="flex items-center text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        </button>
+      </div>
+      {open && (
+        <pre className="mb-0 mt-1 max-h-[240px] overflow-y-auto whitespace-pre-wrap break-all rounded-md border bg-card p-2 font-mono text-[11px]">
+          {text}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/** 「LLM 调用链」小节：多调用节点（repair/image）渲染 _llm_calls 条目列表，
+ *  单调用渲染标准键（标准键是 last-call-wins，多调用时与条目重复故不重复渲染）。
+ *  无任何审计键（非 LLM 节点的空状态）→ 整节不渲染。 */
+function ChainSection({
+  tick,
+  value,
+}: {
+  tick: number | null;
+  value: Record<string, unknown>;
+}) {
+  const calls = Array.isArray(value._llm_calls)
+    ? (value._llm_calls as Record<string, unknown>[])
+    : [];
+  const err = typeof value._llm_error === "string" ? value._llm_error : null;
+  const usage = usageText(value._usage);
+  const hasStandardKeys =
+    err != null ||
+    usage != null ||
+    typeof value._prompt === "string" ||
+    typeof value._llm_raw === "string" ||
+    typeof value._image_path === "string" ||
+    value._validation_attempts != null ||
+    value._validation_retry_errors != null;
+  if (calls.length === 0 && !hasStandardKeys) return null;
+  return (
+    <section className="mt-4">
+      <h4 className="mb-1.5 text-[12px] font-semibold">
+        LLM 调用链
+        {tick != null && (
+          <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
+            tick {tick}
+          </span>
+        )}
+      </h4>
+      {calls.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          {calls.map((c, i) => {
+            const u = usageText(c.usage);
+            const cerr = typeof c.error === "string" ? c.error : null;
+            const hasBody =
+              typeof c.prompt === "string" ||
+              typeof c.raw === "string" ||
+              typeof c.image_path === "string";
+            return (
+              <div key={i} className="overflow-hidden rounded-control border border-border">
+                <div className="flex items-center justify-between gap-2 border-b bg-secondary px-2.5 py-1 text-[11px]">
+                  <span className="shrink-0 font-medium">调用 {i + 1}</span>
+                  {cerr ? (
+                    <span className="truncate text-[var(--ph-aborted)]">{cerr}</span>
+                  ) : u ? (
+                    <span className="truncate text-muted-foreground">{u}</span>
+                  ) : null}
+                </div>
+                <div className="px-2.5 py-1">
+                  {typeof c.image_path === "string" && (
+                    <div className="mb-0.5 break-all font-mono text-[11px] text-muted-foreground">
+                      图像 {c.image_path}
+                    </div>
+                  )}
+                  {typeof c.prompt === "string" && <ChainPre label="Prompt" text={c.prompt} />}
+                  {typeof c.raw === "string" && <ChainPre label="原始输出" text={c.raw} />}
+                  {!hasBody && (
+                    <div className="py-0.5 text-[11px] text-muted-foreground">（无审计数据）</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <>
+          {err && <div className="mt-1 text-[11px] text-[var(--ph-aborted)]">{err}</div>}
+          {typeof value._prompt === "string" && <ChainPre label="Prompt" text={value._prompt} />}
+          {typeof value._llm_raw === "string" && (
+            <ChainPre label="原始输出" text={value._llm_raw} />
+          )}
+          {usage && <div className="mt-1.5 text-[11px] text-muted-foreground">{usage}</div>}
+          {value._validation_attempts != null && (
+            <ChainPre label="校验尝试" text={pretty(value._validation_attempts)} />
+          )}
+          {value._validation_retry_errors != null && (
+            <ChainPre label="校验重试错误" text={pretty(value._validation_retry_errors)} />
+          )}
+          {typeof value._image_path === "string" && (
+            <div className="mt-1.5 break-all font-mono text-[11px] text-muted-foreground">
+              图像 {value._image_path}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
 }
 
 /** 面板级状态：running（live）> 最新 firing 失败 > 有输出 done > idle */
@@ -88,6 +246,19 @@ export function NodePanel({
     let cancelled = false;
     fetchNodeTimeline(runId, node.id)
       .then((t) => { if (!cancelled) setEntries(t.entries); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [runId, node.id, live]);
+
+  // LLM 链拉取：同 timeline 时点（挂载/节点切换/live 翻转），不轮询——直播由
+  // 流式缓冲承担，本节定位终态回看（运行中取到当次调用中间态，照实渲染）。
+  // 拉取前先清：节点切换瞬间不能残留上一节点的链（混串是误导，不同于 timeline）
+  const [chain, setChain] = useState<NodeStatePayload | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setChain(null);
+    fetchNodeState(runId, node.id)
+      .then((c) => { if (!cancelled) setChain(c); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [runId, node.id, live]);
@@ -311,6 +482,11 @@ export function NodePanel({
               <div className="text-[11px] text-muted-foreground">尚无执行记录</div>
             )}
           </section>
+
+          {/* LLM 调用链：有可变状态数据才渲染（非 LLM 节点零噪音） */}
+          {chain?.found && chain.value && (
+            <ChainSection tick={chain.tick} value={chain.value} />
+          )}
         </div>
       </aside>
     </>

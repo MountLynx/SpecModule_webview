@@ -67,6 +67,11 @@ export function useRunStream(
               } else if (r.type === "token" && r.node) {
                 text[r.node] = (text[r.node] ?? "") + (r.chunk ?? "");
                 seq += 1;
+              } else if (r.type === "call_start" && r.node && text[r.node]) {
+                // 多调用节点（repair/image）同节点连续多次 LLM 调用：插入分隔
+                // 避免相邻调用输出连写（首次调用缓冲为空不加）
+                text[r.node] += "\n\n── 新一次调用 ──\n\n";
+                seq += 1;
               } else if (r.type === "thinking" && r.node) {
                 thinking[r.node] = (thinking[r.node] ?? "") + (r.chunk ?? "");
                 seq += 1;

@@ -597,3 +597,11 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 - 上游增量均为兼容性变更，零冲突：① tickflow 0.3 FAILED 饿死终态——引擎判 FAILED 后映射进既有 `aborted` phase（error 文案改 `starved: … unfired: …`），**无新 phase 值**，WS 终态关流/前端 phase 面/产物收集（aborted 不收集）零改动自动覆盖；② `validate_retries`（校验失败带反馈重试，缺省 0 行为不变）——server 库 CRUD 经 `HarnessConfig.from_dict` 验形自动透传，服务端零改动。
 - 适配增量：harness 表单暴露 `validate_retries`（整数 ≥0、image 模式须 0 的就地示错镜像库校验；空/0 省略载荷）。task 级 override（TaskDefinition.validate_retries）未进创建器 NodePanel，待消费需求再暴露。
 - 验收：pytest webview 406 绿 + 库基线 770 绿（-m "not smoke"）+ `npm run build` 过。
+
+
+## 节点面板 LLM 调用链——in-node 审计数据消费落地——2026-10-01
+
+- 上游 in-node 透传设计（SpecModule `docs/dev/superpowers/specs/2026-10-01-harness-innode-audit-design.md`）§6 第二档：库侧已先行实现并提交（`call_harness` `view=` 混合视图 + 六工厂透传 + 多调用 `_llm_calls`，本次基线核验 773 绿），本条目只记 webview 消费面。
+- **server**：`GET /api/runs/{id}/nodes/{name}/state`——`query.query_value` 的 `state.<node>` 寻址 1:1 薄映射（按节点单取可变状态，避开整包 /status 载荷随全文膨胀）；节点未执行是常态非错误（200 `found=false` + `available` 节点清单），run 不存在才 404，无 sqlite 的失败 run 走 status.json 容忍不 raise。
+- **web 前端**：NodePanel「LLM 调用链」小节（拉取时点同 timeline：挂载/节点切换/live 翻转，不轮询）——多调用节点渲染 `_llm_calls` 条目列表（prompt/原始输出可折叠 + 复制、error 红标、usage 摘要、image_path），单调用渲染标准键（_prompt/_llm_raw/_usage/_llm_error/_validation_*/_image_path）；无审计键整节不渲染（空状态零噪音）；`ws.ts` `call_start` 插流分隔——repair/image 同节点连续 LLM 调用直播输出不再连写。
+- 验收：pytest webview 411 绿（新增 5 例：found 逐键/节点 miss available/无 sqlite 容忍/未知 run 404/非法 run_id 400）+ 库基线 773 绿（-m "not smoke"）+ `npm run build` 过 + 浏览器冒烟实证（种子 run 三态：多调用链渲染含错误标与用量、空状态与未执行节点零渲染、Prompt 折叠展开）。

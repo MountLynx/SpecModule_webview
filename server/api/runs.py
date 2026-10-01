@@ -122,6 +122,32 @@ def run_snapshot(
     return snap
 
 
+@router.get("/{run_id}/nodes/{node_name}/state")
+def run_node_state(
+    run_id: str, node_name: str, base_dir: Path = Depends(get_base_dir)
+) -> dict:
+    """单节点可变状态：query.query_value 的 state.<node> 寻址（1:1 薄映射）。
+
+    LLM 链审计消费面——_prompt/_llm_raw/_usage/_llm_calls 按节点单取，
+    避免整包 /status 载荷随全部节点全文膨胀。节点未执行/无状态数据是常态
+    而非错误（available = 可用节点清单随 200 返回）；run 不存在才 404。
+    """
+    validate_run_id(run_id)
+    path = f"state.{node_name}"
+    res = query.query_value(run_id, path, base_dir=base_dir)
+    if res is None:
+        raise not_found(run_id)
+    return {
+        "run_id": run_id,
+        "node": node_name,
+        "path": path,
+        "tick": res.tick,
+        "found": res.found,
+        "value": res.value,
+        "available": res.available,
+    }
+
+
 @router.get("/{run_id}/feed")
 def run_feed(run_id: str, base_dir: Path = Depends(get_base_dir)) -> dict:
     """feed.py 兼容组合端点（v1 前端契约：status/timeline/checkpoints 字段名不变）。"""

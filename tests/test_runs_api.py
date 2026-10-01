@@ -319,3 +319,75 @@ class TestRunArtifacts:
         r = client.get("/api/runs/r_cn/artifacts/0")
         assert r.status_code == 200
         assert "filename*=utf-8''" in r.headers["content-disposition"].lower()
+
+
+class TestNodeState:
+    """GET /nodes/{name}/state：query_value state.<node> 寻址薄映射（LLM 链审计消费面）。"""
+
+    def test_found(self, base, client):
+        seed_run(
+            base, "r_ns",
+            firings=[{"tick": 3, "node": "P01", "output": {"status": "ok"},
+                      "mutable_state": {
+                          "_prompt": "PROMPT", "_llm_raw": "<svg/>",
+                          "_usage": {"total_tokens": 42},
+                          "_llm_calls": [{"prompt": "PROMPT", "raw": "<svg/>",
+                                          "usage": {"total_tokens": 42}}],
+                      }}],
+            snapshots={3: {"tick": 3, "status": "idle", "fireable": [], "fired": ["P01"]}},
+            status={"module_id": "r_ns", "phase": "done", "updated_at": 1.0},
+        )
+        r = client.get("/api/runs/r_ns/nodes/P01/state")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["run_id"] == "r_ns"
+        assert body["node"] == "P01"
+        assert body["path"] == "state.P01"
+        assert body["tick"] == 3
+        assert body["found"] is True
+        assert body["value"]["_prompt"] == "PROMPT"
+        assert body["value"]["_llm_raw"] == "<svg/>"
+        assert body["value"]["_llm_calls"][0]["usage"] == {"total_tokens": 42}
+        assert body["available"] is None
+
+    def test_node_miss_returns_available(self, base, client):
+        """未执行节点是常态而非错误：200 found=false + available 节点清单。"""
+        seed_run(
+            base, "r_miss",
+            firings=[{"tick": 1, "node": "Plan", "output": "ok", "mutable_state": {}}],
+            snapshots={1: {"tick": 1, "status": "running", "fireable": ["Ghost"], "fired": ["Plan"]}},
+            status={"module_id": "r_miss", "phase": "running", "updated_at": 1.0},
+        )
+        r = client.get("/api/runs/r_miss/nodes/Ghost/state")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["found"] is False
+        assert body["value"] is None
+        assert body["available"] == ["Plan"]
+
+    def test_bare_status_run_found_false(self, base, client):
+        """无 run.sqlite 的失败 run：容忍契约——200 found=false（不 404 不 raise）。"""
+        run_dir = base / ".specmodule" / "runs" / "r_bare_ns"
+        run_dir.mkdir(parents=True)
+        (run_dir / "status.json").write_text(
+            json.dumps({"module_id": "r_bare_ns", "phase": "aborted",
+                        "error": "boom", "updated_at": 1.0}),
+            encoding="utf-8",
+        )
+        r = client.get("/api/runs/r_bare_ns/nodes/P01/state")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["found"] is False
+        assert body["available"] == []
+
+    def test_unknown_run_404(self, client):
+        r = client.get("/api/runs/ghost/nodes/P01/state")
+        assert r.status_code == 404
+        # app 级异常处理器把 detail dict 平铺为顶层错误契约
+        assert r.json()["error"] == "无运行记录"
+        assert r.json()["run_id"] == "ghost"
+
+    def test_bad_run_id_400(self, client):
+        # 与 /status 同一 deps 校验：非法字符 / 含 .. → 严格 400
+        assert client.get("/api/runs/bad%20id/nodes/P01/state").status_code == 400
+        assert client.get("/api/runs/a..b/nodes/P01/state").status_code == 400
