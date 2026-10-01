@@ -96,14 +96,14 @@ function KvRows({ value, onChange }: { value: Record<string, string>; onChange: 
 interface HarnessForm {
   name: string;
   prompt_core: string; model: string; temperature: string; think: string; api_params: string;
-  mode: string; image_size: string; image_dir: string;
+  mode: string; image_size: string; image_dir: string; validate_retries: string;
   out_type: string; out_schema: string; out_instruction: string;
   promptModes: Record<string, string>; notdo: string;
 }
 
 const HARNESS_EMPTY: HarnessForm = {
   name: "", prompt_core: "", model: "", temperature: "", think: "", api_params: "",
-  mode: "text", image_size: "", image_dir: "images",
+  mode: "text", image_size: "", image_dir: "images", validate_retries: "",
   out_type: "", out_schema: "", out_instruction: "", promptModes: {}, notdo: "",
 };
 
@@ -144,6 +144,7 @@ export function HarnessDialog({ initial, onClose, onSaved }: DialogProps) {
           mode: asText(s.mode, "text"),
           image_size: asText(s.image_size),
           image_dir: asText(s.image_dir, "images"),
+          validate_retries: s.validate_retries == null ? "" : String(s.validate_retries),
           out_type: asText(of.type),
           out_schema: of.schema == null ? "" : JSON.stringify(of.schema),
           out_instruction: asText(of.instruction),
@@ -200,6 +201,14 @@ export function HarnessDialog({ initial, onClose, onSaved }: DialogProps) {
       if (form.image_size.trim()) payload.image_size = form.image_size.trim();
       payload.image_dir = form.image_dir || "images";
     }
+    if (form.validate_retries.trim()) {
+      const vr = Number(form.validate_retries);
+      if (!Number.isInteger(vr) || vr < 0) { setErr("validate_retries 须为 >= 0 的整数"); return; }
+      if (vr > 0) {
+        if (form.mode === "image") { setErr("image 模式无文本输出可校验，validate_retries 须为 0"); return; }
+        payload.validate_retries = vr;
+      }
+    }
     if (form.out_type) {
       const of: Record<string, unknown> = { type: form.out_type };
       if (form.out_type === "json_schema" && form.out_schema.trim()) {
@@ -237,13 +246,16 @@ export function HarnessDialog({ initial, onClose, onSaved }: DialogProps) {
         <Row label="model"><Input value={form.model} onChange={(e) => upd({ model: e.target.value })} /></Row>
         <Row label="temperature"><Input value={form.temperature} onChange={(e) => upd({ temperature: e.target.value })} placeholder="0.3" /></Row>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <Row label="think（true/false/JSON，空=不设）"><Input value={form.think} onChange={(e) => upd({ think: e.target.value })} /></Row>
         <Row label="mode">
           <select className={fieldCls} value={form.mode} onChange={(e) => upd({ mode: e.target.value })}>
             <option value="text">text</option>
             <option value="image">image</option>
           </select>
+        </Row>
+        <Row label="validate_retries（校验失败重试）">
+          <Input value={form.validate_retries} onChange={(e) => upd({ validate_retries: e.target.value })} placeholder="0（缺省不重试）" />
         </Row>
       </div>
       {form.mode === "image" && (
