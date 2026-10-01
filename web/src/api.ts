@@ -239,6 +239,23 @@ export const fetchNodeTimeline = (runId: string, node: string) =>
     `/api/runs/${encodeURIComponent(runId)}/timeline?node=${encodeURIComponent(node)}`,
   );
 
+/** GET /api/runs/{id}/nodes/{name}/state 载荷：单节点可变状态（LLM 链审计——
+ *  _prompt/_llm_raw/_usage/_llm_calls 等；节点未执行 → found=false + available 清单）。 */
+export interface NodeStatePayload {
+  run_id: string;
+  node: string;
+  path: string;
+  tick: number | null;
+  found: boolean;
+  value: Record<string, unknown> | null;
+  available: string[] | null;
+}
+
+export const fetchNodeState = (runId: string, node: string) =>
+  getJson<NodeStatePayload>(
+    `/api/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(node)}/state`,
+  );
+
 // ------------------------------------------------------------------
 // 控制面：cancel/pause/unpause + 恢复/回退
 // ------------------------------------------------------------------
