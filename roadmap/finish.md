@@ -605,3 +605,13 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 - **server**：`GET /api/runs/{id}/nodes/{name}/state`——`query.query_value` 的 `state.<node>` 寻址 1:1 薄映射（按节点单取可变状态，避开整包 /status 载荷随全文膨胀）；节点未执行是常态非错误（200 `found=false` + `available` 节点清单），run 不存在才 404，无 sqlite 的失败 run 走 status.json 容忍不 raise。
 - **web 前端**：NodePanel「LLM 调用链」小节（拉取时点同 timeline：挂载/节点切换/live 翻转，不轮询）——多调用节点渲染 `_llm_calls` 条目列表（prompt/原始输出可折叠 + 复制、error 红标、usage 摘要、image_path），单调用渲染标准键（_prompt/_llm_raw/_usage/_llm_error/_validation_*/_image_path）；无审计键整节不渲染（空状态零噪音）；`ws.ts` `call_start` 插流分隔——repair/image 同节点连续 LLM 调用直播输出不再连写。
 - 验收：pytest webview 411 绿（新增 5 例：found 逐键/节点 miss available/无 sqlite 容忍/未知 run 404/非法 run_id 400）+ 库基线 773 绿（-m "not smoke"）+ `npm run build` 过 + 浏览器冒烟实证（种子 run 三态：多调用链渲染含错误标与用量、空状态与未执行节点零渲染、Prompt 折叠展开）。
+
+
+## 运行图产物节点（中间产物上图）——2026-10-02
+
+- 用户指令：**产物条不直观——不只最终产物，所有以链接形式存在的中间产物都要在运行图中显示**。呈现形态问答收敛为卫星产物卡。定稿 `docs/superpowers/specs/2026-10-02-run-graph-artifact-nodes-design.md`；计划 `docs/superpowers/plans/2026-10-02-run-graph-artifact-nodes.md`（subagent-driven 逐任务双审；质量审查抓出并修复「严格每节点末条 output」语义偏差——refire 不残留旧产物、去重不跨代泄漏）。
+- **库侧**（SpecModule 独立提交，api.md 补录）：`query.node_artifacts`——每节点末条输出递归收集字符串值 → 相对路径锚 base_dir 解析（与 run 子进程 cwd 同纪律）→ `os.path.isfile` 存在性锚定（"ok"/markdown/stdout 天然不命中）；kind 与 artifacts.json 按 path 全等比对；节点内/跨节点按解析路径去重（先到先得）。
+- **server**：graph 端点与 WS status 推送叠加 `artifacts` 字段（与 node_states 同拍、sig 变化才算）；`GET /api/runs/{id}/nodes/{node}/artifacts/{index}` 节点产物下载——overlay 现算自查路径，客户端零路径输入（已删文件因存在性锚定实际 404，410 仅竞态护栏）。
+- **web**：卫星产物卡 ArtifactNode（176×34 紧凑卡，虚线自生产节点垂下、dagre 叶节点参与布局、measured 带回防 WS 掉线）——产出即上图、点击即下载、交付物绿徽标；dagre 升级尺寸化布局（layoutGraphSized 单入口）；RunView WS artifacts 整体覆盖 merge。
+- 验收：库基线 785 绿（新增 11 例）+ webview 423 绿（新增 12 例）+ `npm run build` 过 + 浏览器实证（ppt_master_a37223：7 张卫星卡渲染含交付物徽标、虚线布局无重叠、点击下载触发且不误开节点面板、状态节点面板不受影响）。
+- 后排：http(s) 外链产物、卫星卡内联预览（GitHub issue）。

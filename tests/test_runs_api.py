@@ -391,3 +391,62 @@ class TestNodeState:
         # 与 /status 同一 deps 校验：非法字符 / 含 .. → 严格 400
         assert client.get("/api/runs/bad%20id/nodes/P01/state").status_code == 400
         assert client.get("/api/runs/a..b/nodes/P01/state").status_code == 400
+
+
+class TestNodeArtifactDownload:
+    """GET /nodes/{node}/artifacts/{index}：路径永不为客户端输入（overlay 自查）。"""
+
+    def _seed(self, base):
+        proj = base / "projects" / "demo"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "page.svg").write_text("<svg/>", encoding="utf-8")
+        seed_run(base, "na_run", firings=[
+            {"tick": 1, "node": "P", "output": {"file": "projects/demo/page.svg"}},
+        ], status={"module_id": "na_run", "phase": "done", "updated_at": 1.0})
+        return proj / "page.svg"
+
+    def test_download_ok(self, base, client):
+        self._seed(base)
+        r = client.get("/api/runs/na_run/nodes/P/artifacts/0")
+        assert r.status_code == 200
+        assert r.content == b"<svg/>"
+        assert "attachment" in r.headers["content-disposition"]
+
+    def test_unknown_node_404(self, base, client):
+        self._seed(base)
+        r = client.get("/api/runs/na_run/nodes/NOPE/artifacts/0")
+        assert r.status_code == 404
+        assert r.json()["error"] == "节点无产物记录"
+        assert r.json()["run_id"] == "na_run"
+        assert r.json()["node"] == "NOPE"
+
+    def test_index_out_of_range_404(self, base, client):
+        self._seed(base)
+        r = client.get("/api/runs/na_run/nodes/P/artifacts/9")
+        assert r.status_code == 404
+
+    def test_negative_index_404(self, base, client):
+        self._seed(base)
+        r = client.get("/api/runs/na_run/nodes/P/artifacts/-1")
+        assert r.status_code == 404
+
+    def test_non_integer_index_422(self, base, client):
+        self._seed(base)
+        r = client.get("/api/runs/na_run/nodes/P/artifacts/xyz")
+        assert r.status_code == 422
+
+    def test_deleted_file_gone_404(self, base, client):
+        """文件已删 → 404 而非 410：overlay 提取按 isfile 锚定，条目不入 overlay。
+
+        node_artifacts 以存在性为提取锚（非文件字符串天然不命中），删除后
+        「节点无产物记录」即可观测契约；端点保留 410 分支仅覆盖「提取后、
+        响应前」的竞态窗口（与清单通道同契约），进程内同步请求不可达。
+        """
+        f = self._seed(base)
+        f.unlink()
+        r = client.get("/api/runs/na_run/nodes/P/artifacts/0")
+        assert r.status_code == 404
+
+    def test_unknown_run_404(self, base, client):
+        r = client.get("/api/runs/ghost/nodes/P/artifacts/0")
+        assert r.status_code == 404

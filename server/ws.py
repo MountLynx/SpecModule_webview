@@ -99,6 +99,7 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
                     # 记账（轮询跳拍/断线重连不丢完成态）；仅推送时计算（firings
                     # 全量读，WAL 毫秒级，tick 节奏下无压力）
                     node_states = query.node_run_summary(run_id, base_dir=base_dir) or {}
+                    artifacts = query.node_artifacts(run_id, base_dir=base_dir) or {}
                     try:
                         await websocket.send_json({
                             "type": "status",
@@ -109,6 +110,7 @@ async def run_stream(websocket: WebSocket, run_id: str) -> None:
                             "fired": st.fired,
                             "outputs": st.outputs,
                             "node_states": node_states,
+                            "artifacts": artifacts,
                             "error": st.error,
                             "updated_at": st.updated_at,
                             "paused": paused,

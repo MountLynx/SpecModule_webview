@@ -85,4 +85,5 @@ def run_graph(
         "tick": st.tick if st else None,
         "graph": graph_dict,
         "node_states": node_states,
+        "artifacts": query.node_artifacts(run_id, base_dir=base_dir) or {},
     }

@@ -137,3 +137,44 @@ class TestGraph:
     def test_invalid_run_id_400(self, client):
         r = client.get("/api/runs/bad..id/graph")
         assert r.status_code == 400
+
+
+class TestGraphArtifacts:
+    def test_artifacts_overlay_intermediate(self, base, client):
+        proj = base / "projects" / "demo"
+        proj.mkdir(parents=True)
+        (proj / "page_p01.svg").write_text("<svg/>", encoding="utf-8")
+        _seed_graph_run(base, firings=[
+            {"tick": 1, "node": "A",
+             "output": {"status": "ok", "file": "projects/demo/page_p01.svg"}},
+        ])
+        r = client.get("/api/runs/mini_graph/graph")
+        assert r.status_code == 200
+        arts = r.json()["artifacts"]
+        assert list(arts) == ["A"]
+        e = arts["A"][0]
+        assert e["index"] == 0
+        assert e["key"] == "file"
+        assert e["name"] == "page_p01.svg"
+        assert e["kind"] == "intermediate"
+        assert e["size"] == 6
+        assert e["path"] == str(proj / "page_p01.svg")
+
+    def test_artifacts_deliverable_tagged(self, base, client):
+        proj = base / "projects" / "demo"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "out.pptx").write_bytes(b"PK")
+        _seed_graph_run(base, artifacts=[
+            {"name": "演示", "kind": "deliverable", "path": str(proj / "out.pptx"),
+             "size": 2, "modified": "2026-10-02T08:00:00"},
+        ], firings=[
+            {"tick": 1, "node": "A", "output": {"pptx": ["projects/demo/out.pptx"]}},
+        ])
+        r = client.get("/api/runs/mini_graph/graph")
+        assert r.json()["artifacts"]["A"][0]["kind"] == "deliverable"
+
+    def test_artifacts_empty_without_file_refs(self, base, client):
+        _seed_graph_run(base)  # 默认 firings 输出为纯字符串，无文件引用
+        r = client.get("/api/runs/mini_graph/graph")
+        assert r.status_code == 200
+        assert r.json()["artifacts"] == {}

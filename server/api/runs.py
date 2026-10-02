@@ -208,3 +208,39 @@ def run_artifact_download(
             detail={"error": "产物文件已不存在", "run_id": run_id, "path": entry["path"]},
         )
     return FileResponse(p, filename=p.name, content_disposition_type="attachment")
+
+
+@router.get("/{run_id}/nodes/{node}/artifacts/{index}")
+def run_node_artifact_download(
+    run_id: str, node: str, index: int, base_dir: Path = Depends(get_base_dir)
+) -> FileResponse:
+    """节点产物下载：query.node_artifacts 现算 overlay → node/index 命中。
+
+    客户端只给 node+index，路径由服务端从 firings 输出自查——路径永不为
+    客户端输入（与清单下载通道同一安全纪律）。中间产物与交付物统一走此
+    通道；ArtifactsStrip 的清单 index 通道保持不变。
+    """
+    validate_run_id(run_id)
+    arts = query.node_artifacts(run_id, base_dir=base_dir)
+    if not arts or node not in arts:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "节点无产物记录", "run_id": run_id, "node": node},
+        )
+    items = arts[node]
+    if index < 0 or index >= len(items):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": f"产物序号越界（该节点共 {len(items)} 项）",
+                "run_id": run_id, "node": node, "index": index,
+            },
+        )
+    entry = items[index]
+    p = Path(entry["path"])
+    if not p.is_file():
+        raise HTTPException(
+            status_code=410,
+            detail={"error": "产物文件已不存在", "run_id": run_id, "path": entry["path"]},
+        )
+    return FileResponse(p, filename=p.name, content_disposition_type="attachment")

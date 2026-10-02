@@ -38,6 +38,19 @@ export interface NodeState {
   running?: boolean;
 }
 
+/** 按节点产物叠加条目（库 query.node_artifacts 出口；index = 节点级下载通道引用） */
+export interface GraphArtifactEntry {
+  index: number;
+  /** 值在节点输出内的 dot-path（file / pptx.1） */
+  key: string;
+  name: string;
+  /** 解析后绝对路径（tooltip 用） */
+  path: string;
+  kind: "deliverable" | "intermediate";
+  size: number;
+  modified: string;
+}
+
 export interface GraphPayload {
   run_id: string;
   module: string;
@@ -45,6 +58,8 @@ export interface GraphPayload {
   tick: number | null;
   graph: { nodes: GraphNode[]; edges: GraphEdge[]; starts: string[] };
   node_states: Record<string, NodeState>;
+  /** 按节点产物叠加（存在性锚定提取）；无 → {} */
+  artifacts: Record<string, GraphArtifactEntry[]>;
 }
 
 export interface StatusCore {
@@ -64,6 +79,8 @@ export interface StatusMsg extends StatusCore {
   /** 按节点累计运行摘要（{fired_count, last_status, last_tick}，无 running 键）。
    *  仅 WS 推送携带——服务端按 firings 表全量重建，客户端纯覆盖（跳拍/重连不丢）。 */
   node_states?: Record<string, NodeState>;
+  /** 仅 WS 推送携带——按节点产物叠加整体覆盖（服务端现算，与 node_states 同拍） */
+  artifacts?: Record<string, GraphArtifactEntry[]>;
   /**
    * 仅 WS 推送携带——HTTP status 端点无此字段，故挂在 StatusMsg 而非 StatusCore。 */
   stream_mtime: number | null;

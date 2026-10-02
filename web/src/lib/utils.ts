@@ -21,3 +21,10 @@ export function oneLine(text: string, max = 40): string {
   const t = text.replace(/\s+/g, " ").trim();
   return t.length > max ? t.slice(0, max) + "…" : t;
 }
+
+/** 字节数 → 人类可读大小（B/KB/MB；产物条与产物卡共用） */
+export function fmtSize(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${n} B`;
+}

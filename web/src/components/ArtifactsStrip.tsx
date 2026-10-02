@@ -2,13 +2,8 @@
 // 下载 chips——本地/云端同一 HTTP 下载交互；清单为空不渲染。
 import { FileDown } from "lucide-react";
 import type { RunArtifact } from "../api";
+import { fmtSize } from "../lib/utils";
 import { Pill } from "./ui/pill";
-
-function fmtSize(n: number): string {
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${n} B`;
-}
 
 export function ArtifactsStrip({
   runId,

@@ -172,3 +172,26 @@ class TestStream:
             th = stream_msg["records"][1]
             assert th["node"] == "A" and th["chunk"] == "推演"
             assert all("off" not in r for r in stream_msg["records"])
+
+    def test_status_push_carries_artifacts(self, base, client):
+        proj = base / "projects" / "demo"
+        proj.mkdir(parents=True)
+        (proj / "a.svg").write_text("<svg/>", encoding="utf-8")
+        seed_run(
+            base, "ws_art",
+            firings=[{"tick": 1, "node": "A",
+                      "output": {"file": "projects/demo/a.svg"}}],
+            status={"module_id": "ws_art", "phase": "running", "updated_at": 1.0},
+        )
+        with client.websocket_connect("/api/runs/ws_art/stream") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "status"
+            assert list(msg["artifacts"]) == ["A"]
+            assert msg["artifacts"]["A"][0]["name"] == "a.svg"
+
+    def test_artifacts_key_always_present(self, base, client):
+        seed_run(base, "ws_art2",
+                 status={"module_id": "ws_art2", "phase": "running", "updated_at": 1.0})
+        with client.websocket_connect("/api/runs/ws_art2/stream") as ws:
+            msg = ws.receive_json()
+            assert msg["artifacts"] == {}
