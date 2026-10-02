@@ -251,12 +251,14 @@ export function RunView({
     const stream = streamState.msg;
     let cancelled = false;
     const ns = stream.node_states;
-    if (ns) {
+    const arts = stream.artifacts;
+    if (ns || arts) {
       setPayload(
         (prev) =>
           prev && {
             ...prev,
-            node_states: { ...prev.node_states, ...ns },
+            ...(ns ? { node_states: { ...prev.node_states, ...ns } } : {}),
+            ...(arts ? { artifacts: arts } : {}),
           },
       );
     }

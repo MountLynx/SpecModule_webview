@@ -14,20 +14,26 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { layoutGraph, NODE_SIZE } from "../dagre";
+import { layoutGraphSized, NODE_SIZE } from "../dagre";
 import {
   DATA_CARD_NODE_ID,
   DATA_CARD_SIZE,
   DataCardNode,
   type DataCardFlowNode,
 } from "./DataCardNode";
+import {
+  ARTIFACT_SIZE,
+  ArtifactNode,
+  artifactNodeId,
+  type ArtifactFlowNode,
+} from "./ArtifactNode";
 import type { TraceState } from "../lib/inputSource";
 import type { GraphEdge, GraphPayload, StatusCore } from "../api";
 import { badgeOf, StatusNode, type StatusFlowNode, type StatusNodeData } from "./StatusNode";
 import { LocateFixed } from "lucide-react";
 import { cn } from "../lib/utils";
 
-const nodeTypes: NodeTypes = { status: StatusNode, dataCard: DataCardNode };
+const nodeTypes: NodeTypes = { status: StatusNode, dataCard: DataCardNode, artifact: ArtifactNode };
 
 /** 与 index.html 初始化同优先级：localStorage 覆盖 > 跟随系统 */
 function themeColorMode(): "light" | "dark" | "system" {
@@ -81,8 +87,38 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
   const [follow, setFollow] = useState(true); // 按钮文案随动（ref 不触发渲染）
   const fitLockRef = useRef(false); // 程序化 fitView 期间不误判为手动
 
-  const nodes = useMemo<(StatusFlowNode | DataCardFlowNode)[]>(() => {
-    const pos = layoutGraph(payload.graph.nodes, payload.graph.edges);
+  /** 卫星产物卡清单：仅保留生产者在当前图的条目（换模块后引用失配 → 与 trace 卡同一防悬空纪律） */
+  const satellites = useMemo(() => {
+    const artifacts = payload.artifacts ?? {};
+    return Object.entries(artifacts).flatMap(([producer, entries]) =>
+      payload.graph.nodes.some((n) => n.id === producer)
+        ? entries.map((entry) => ({ producer, entry }))
+        : [],
+    );
+  }, [payload]);
+
+  const nodes = useMemo<(StatusFlowNode | DataCardFlowNode | ArtifactFlowNode)[]>(() => {
+    const pos = layoutGraphSized(
+      [
+        ...payload.graph.nodes.map((n) => ({
+          id: n.id,
+          width: NODE_SIZE.width,
+          height: NODE_SIZE.height,
+        })),
+        ...satellites.map(({ producer, entry }) => ({
+          id: artifactNodeId(producer, entry.index),
+          width: ARTIFACT_SIZE.width,
+          height: ARTIFACT_SIZE.height,
+        })),
+      ],
+      [
+        ...payload.graph.edges,
+        ...satellites.map(({ producer, entry }) => ({
+          from: producer,
+          to: artifactNodeId(producer, entry.index),
+        })),
+      ],
+    );
     const live: Record<string, (StatusNodeData & { state?: StatusNodeData["state"] })["state"]> = {
       ...payload.node_states,
     };
@@ -96,7 +132,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
         };
       }
     }
-    const list: (StatusFlowNode | DataCardFlowNode)[] = payload.graph.nodes.map((n) => {
+    const list: (StatusFlowNode | DataCardFlowNode | ArtifactFlowNode)[] = payload.graph.nodes.map((n) => {
       // 受控 setNodes 每次采纳全新节点对象；对象缺 measured 时库会重置已测量的
       // handleBounds（parseHandles），而重测触发在持续 WS 推送下不可靠——handle
       // 测量一旦丢失，getEdgePosition 对全部边静默返回 null，连线整体消失且
@@ -113,6 +149,21 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
         selected: selected === n.id,
       };
     });
+    // 卫星产物卡：叶节点随 dagre 挂在生产者下方；measured 带回防 WS 采纳重置
+    for (const { producer, entry } of satellites) {
+      const id = artifactNodeId(producer, entry.index);
+      const measured = getInternalNode(id)?.measured;
+      list.push({
+        id,
+        type: "artifact",
+        position: pos.get(id) ?? { x: 0, y: 0 },
+        width: ARTIFACT_SIZE.width,
+        height: ARTIFACT_SIZE.height,
+        measured: measured ? { ...measured } : undefined,
+        selectable: false,
+        data: { runId: payload.run_id, producer, entry },
+      });
+    }
     // 溯源值卡（图坐标随缩放平移；不参与 dagre）。上游卡置于上游↔消费缺口右侧、
     // 垂直居中于缺口——卡顶接上游底、卡底接消费顶，值卡落在数据流路径上；
     // spec 卡 / 上游缺失回退 = 消费节点右侧固定偏移。消费节点不在当前图（换模块
@@ -146,7 +197,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
       }
     }
     return list;
-  }, [payload, status, selected, trace, spec, onClearTrace]);
+  }, [payload, status, selected, trace, spec, onClearTrace, satellites]);
 
   const edges = useMemo<Edge[]>(() => {
     // 上游溯源时隐藏原上游→消费控制流实线（由卡 + 两段虚线承接其视觉；收起即恢复）。
@@ -175,6 +226,17 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
           markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
         };
       });
+    // 生产者 → 卫星产物卡虚线（数据流视觉，中性色同默认边）
+    const satStroke = "hsl(var(--foreground) / 0.28)";
+    for (const { producer, entry } of satellites) {
+      list.push({
+        id: `ea::${producer}::${entry.index}`,
+        source: producer,
+        target: artifactNodeId(producer, entry.index),
+        style: { stroke: satStroke, strokeWidth: 1.2, strokeDasharray: "5 3" },
+        markerEnd: { type: MarkerType.ArrowClosed, color: satStroke, width: 12, height: 12 },
+      });
+    }
     // 数据流虚线（dashed、中性色 `hsl(var(--foreground) / 0.28)` 同默认边）。
     // spec 卡：卡→消费节点（左锚点出线、无箭头）。上游卡：两段——上游节点底→卡顶、
     // 卡底→消费节点顶，每段带小箭头指流向。消费/上游节点不在当前图（换模块失配）
@@ -214,11 +276,12 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
       }
     }
     return list;
-  }, [payload, status, trace]);
+  }, [payload, status, trace, satellites]);
 
   /** MiniMap 节点底色：取状态主色（bg 洗淡变体在小图上几乎不可见） */
   const minimapColor = useCallback((n: Node): string => {
     if (n.type === "dataCard") return "hsl(var(--muted-foreground) / 0.5)";
+    if (n.type === "artifact") return "hsl(var(--primary) / 0.4)";
     const b = badgeOf((n as StatusFlowNode).data.state);
     if (b === "running") return "var(--ph-running)";
     if (b === "done") return "var(--ph-done)";
@@ -336,7 +399,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
         nodeTypes={nodeTypes}
         onMoveStart={onMoveStart}
         onNodeClick={(_, n) => {
-          if (n.type === "dataCard") return;
+          if (n.type === "dataCard" || n.type === "artifact") return;
           onSelect(n.id);
         }}
         onPaneClick={() => onSelect(null)}
