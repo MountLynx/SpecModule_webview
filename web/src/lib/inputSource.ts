@@ -7,10 +7,12 @@ export type InputSource =
   | { kind: "spec"; key: string }
   | { kind: "node"; nodeId: string };
 
-/** 一次溯源：消费节点 + 触发上报的输入字段名 + 来源 */
+/** 一次溯源：消费节点 + 触发上报的输入字段名 + 来源。
+ * NodePanel 胶囊点入 = consumerId/field 具体值；spec 卡直点 = 二者皆 null
+ * （溯源目标 = 该键全部消费节点，由渲染方展开虚线）。 */
 export interface TraceState {
-  consumerId: string;
-  field: string;
+  consumerId: string | null;
+  field: string | null;
   source: InputSource;
 }
 
