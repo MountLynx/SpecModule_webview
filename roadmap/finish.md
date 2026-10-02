@@ -615,3 +615,23 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 - **web**：卫星产物卡 ArtifactNode（176×34 紧凑卡，虚线自生产节点垂下、dagre 叶节点参与布局、measured 带回防 WS 掉线）——产出即上图、点击即下载、交付物绿徽标；dagre 升级尺寸化布局（layoutGraphSized 单入口）；RunView WS artifacts 整体覆盖 merge。
 - 验收：库基线 785 绿（新增 11 例）+ webview 423 绿（新增 12 例）+ `npm run build` 过 + 浏览器实证（ppt_master_a37223：7 张卫星卡渲染含交付物徽标、虚线布局无重叠、点击下载触发且不误开节点面板、状态节点面板不受影响）。
 - 后排：http(s) 外链产物、卫星卡内联预览（GitHub issue）。
+
+
+## 运行图节点拖动持久化——三类元素可拖——2026-10-02
+
+- 用户指令：**画布中的元素都可被拖动**。现状是「假拖」——GraphView 的 nodes memo 依赖
+  `status`/`selected`，WS 推送/点选即从 dagre 重排，拖动立刻弹回；值卡显式不可拖。
+  方案问答收敛：位置覆盖表（React Flow 官方受控模式的等价实现；官方 dagre 示例
+  "static layouting" 语义：布局只按结构算、拖动位置即状态、数据推送永不重排）。
+  定稿 `docs/superpowers/specs/2026-10-02-graph-draggable-design.md`。
+- **web 前端单文件改动（GraphView.tsx）**：① dagre 基准布局按结构内容键 memo 化
+  （run/module + 节点/边集 + 卫星卡序列）——推送不再触发重算；② 用户覆盖表
+  （`Map<nodeId, 位置>`），`onNodeDrag` 全程实时写（防中途推送弹回）、组装时覆盖
+  优先于 dagre；③ 值卡移除 `draggable: false` 且位置接入覆盖（锚点仍取消费/上游
+  有效位置）；④ 失效语义：换 run/module 清空回 dagre，trace 变化只清值卡覆盖，
+  **同 run 内结构变化（新产物卡上图）保留用户已拖位置**（与官方 static 语义的
+  唯一偏差，已确认采纳）；⑤「重置布局」按钮（有覆盖才出现）清覆盖回 dagre。
+- 实施中浏览器实证抓出一处遗漏：值卡位置未接覆盖表（拖了即弹回），补齐后复验通过。
+- 验收：`npm run build` 过 + 浏览器实证（ppt_master_a37223：状态节点拖动后点选
+  不弹回、产物卡/值卡可拖且虚线跟随、重置布局一键回 dagre 且按钮消失）。纯前端
+  视图状态，server/库零改动。

@@ -1,4 +1,4 @@
-// 画布：dagre 分层布局 + 状态徽章 + guard 边标签 + 跟随镜头 + 溯源值卡/数据流虚线（手动即解锁）。
+// 画布：dagre 分层布局（结构键控，推送不重排）+ 节点拖动持久（覆盖表）+ 状态徽章 + guard 边标签 + 跟随镜头 + 溯源值卡/数据流虚线（手动即解锁）。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -12,6 +12,7 @@ import {
   type Edge,
   type Node,
   type NodeTypes,
+  type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { layoutGraphSized, NODE_SIZE } from "../dagre";
@@ -30,10 +31,12 @@ import {
 import type { TraceState } from "../lib/inputSource";
 import type { GraphEdge, GraphPayload, StatusCore } from "../api";
 import { badgeOf, StatusNode, type StatusFlowNode, type StatusNodeData } from "./StatusNode";
-import { LocateFixed } from "lucide-react";
+import { LocateFixed, RotateCcw } from "lucide-react";
 import { cn } from "../lib/utils";
 
 const nodeTypes: NodeTypes = { status: StatusNode, dataCard: DataCardNode, artifact: ArtifactNode };
+
+type GraphFlowNode = StatusFlowNode | DataCardFlowNode | ArtifactFlowNode;
 
 /** 与 index.html 初始化同优先级：localStorage 覆盖 > 跟随系统 */
 function themeColorMode(): "light" | "dark" | "system" {
@@ -86,6 +89,9 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
   const followRef = useRef(true); // 跟随模式（默认开；用户拖动即关）
   const [follow, setFollow] = useState(true); // 按钮文案随动（ref 不触发渲染）
   const fitLockRef = useRef(false); // 程序化 fitView 期间不误判为手动
+  // 用户拖过的节点位置（官方受控模式的等价物：拖动位置即状态）——节点组装时
+  // 优先于 dagre 基准，使拖动在 WS 推送/点选引发的重渲染下不弹回
+  const [overrides, setOverrides] = useState<Map<string, { x: number; y: number }>>(new Map());
 
   /** 卫星产物卡清单：仅保留生产者在当前图的条目（换模块后引用失配 → 与 trace 卡同一防悬空纪律） */
   const satellites = useMemo(() => {
@@ -97,28 +103,57 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
     );
   }, [payload]);
 
-  const nodes = useMemo<(StatusFlowNode | DataCardFlowNode | ArtifactFlowNode)[]>(() => {
-    const pos = layoutGraphSized(
+  /** 结构内容键：布局输入的内容指纹（run/module + 节点 id 序 + 边集 + 卫星卡）。
+   * status/selected/WS 推送不改变内容即不触发布局重算。 */
+  const structureKey = useMemo(
+    () =>
       [
-        ...payload.graph.nodes.map((n) => ({
-          id: n.id,
-          width: NODE_SIZE.width,
-          height: NODE_SIZE.height,
-        })),
-        ...satellites.map(({ producer, entry }) => ({
-          id: artifactNodeId(producer, entry.index),
-          width: ARTIFACT_SIZE.width,
-          height: ARTIFACT_SIZE.height,
-        })),
-      ],
-      [
-        ...payload.graph.edges,
-        ...satellites.map(({ producer, entry }) => ({
-          from: producer,
-          to: artifactNodeId(producer, entry.index),
-        })),
-      ],
-    );
+        payload.run_id,
+        payload.module ?? "",
+        payload.graph.nodes.map((n) => n.id).join(","),
+        payload.graph.edges.map((e) => `${e.from}>${e.to}`).join(","),
+        satellites.map(({ producer, entry }) => artifactNodeId(producer, entry.index)).join(","),
+      ].join("|"),
+    [payload, satellites],
+  );
+
+  /** dagre 基准布局：只按结构内容键重算（官方 static layouting 语义——结构不变
+   * 布局不重排）。依赖刻意只留键：键不变时数组身份随推送变化也沿用缓存（键即
+   * 内容指纹，重算时闭包取当轮数组）。 */
+  const basePos = useMemo(
+    () =>
+      layoutGraphSized(
+        [
+          ...payload.graph.nodes.map((n) => ({
+            id: n.id,
+            width: NODE_SIZE.width,
+            height: NODE_SIZE.height,
+          })),
+          ...satellites.map(({ producer, entry }) => ({
+            id: artifactNodeId(producer, entry.index),
+            width: ARTIFACT_SIZE.width,
+            height: ARTIFACT_SIZE.height,
+          })),
+        ],
+        [
+          ...payload.graph.edges,
+          ...satellites.map(({ producer, entry }) => ({
+            from: producer,
+            to: artifactNodeId(producer, entry.index),
+          })),
+        ],
+      ),
+    [structureKey],
+  );
+
+  /** 有效位置：用户拖过的节点以覆盖为准，其余走 dagre 基准；未命中（id 不在
+   * 当前图，如 trace 引用失配）返回 undefined——沿用「不叠卡」防悬空语义 */
+  const posOf = useCallback(
+    (id: string) => overrides.get(id) ?? basePos.get(id),
+    [overrides, basePos],
+  );
+
+  const nodes = useMemo<GraphFlowNode[]>(() => {
     const live: Record<string, (StatusNodeData & { state?: StatusNodeData["state"] })["state"]> = {
       ...payload.node_states,
     };
@@ -132,7 +167,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
         };
       }
     }
-    const list: (StatusFlowNode | DataCardFlowNode | ArtifactFlowNode)[] = payload.graph.nodes.map((n) => {
+    const list: GraphFlowNode[] = payload.graph.nodes.map((n) => {
       // 受控 setNodes 每次采纳全新节点对象；对象缺 measured 时库会重置已测量的
       // handleBounds（parseHandles），而重测触发在持续 WS 推送下不可靠——handle
       // 测量一旦丢失，getEdgePosition 对全部边静默返回 null，连线整体消失且
@@ -141,7 +176,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
       return {
         id: n.id,
         type: "status" as const,
-        position: pos.get(n.id) ?? { x: 0, y: 0 },
+        position: posOf(n.id) ?? { x: 0, y: 0 },
         width: NODE_SIZE.width,
         height: NODE_SIZE.height,
         measured: measured ? { ...measured } : undefined,
@@ -156,7 +191,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
       list.push({
         id,
         type: "artifact",
-        position: pos.get(id) ?? { x: 0, y: 0 },
+        position: posOf(id) ?? { x: 0, y: 0 },
         width: ARTIFACT_SIZE.width,
         height: ARTIFACT_SIZE.height,
         measured: measured ? { ...measured } : undefined,
@@ -169,24 +204,25 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
     // spec 卡 / 上游缺失回退 = 消费节点右侧固定偏移。消费节点不在当前图（换模块
     // 后引用失配）→ 不叠卡，trace 边同理（edges 处）。
     if (trace) {
-      const cp = pos.get(trace.consumerId);
+      const cp = posOf(trace.consumerId);
       if (cp) {
-        const up = trace.source.kind === "node" ? pos.get(trace.source.nodeId) : null;
-        // 值卡与状态节点同理：随推送重建的对象带回上次测量，虚线边不因采纳重置而消失
+        const up = trace.source.kind === "node" ? posOf(trace.source.nodeId) : null;
+        // 值卡与状态节点同理：随推送重建的对象带回上次测量，虚线边不因采纳重置而消失。
+        // 位置：用户拖过的以覆盖为准，否则按锚点计算。
         const cardMeasured = getInternalNode(DATA_CARD_NODE_ID)?.measured;
         list.push({
           id: DATA_CARD_NODE_ID,
           type: "dataCard",
-          position: {
-            x: (up ? Math.max(up.x, cp.x) : cp.x) + NODE_SIZE.width + 48,
-            y: up
-              ? (up.y + NODE_SIZE.height + cp.y) / 2 - DATA_CARD_SIZE.height / 2
-              : cp.y,
-          },
+          position:
+            overrides.get(DATA_CARD_NODE_ID) ?? {
+              x: (up ? Math.max(up.x, cp.x) : cp.x) + NODE_SIZE.width + 48,
+              y: up
+                ? (up.y + NODE_SIZE.height + cp.y) / 2 - DATA_CARD_SIZE.height / 2
+                : cp.y,
+            },
           width: DATA_CARD_SIZE.width,
           height: DATA_CARD_SIZE.height,
           measured: cardMeasured ? { ...cardMeasured } : undefined,
-          draggable: false,
           selectable: false,
           data: {
             heading: cardHeading(trace),
@@ -197,7 +233,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
       }
     }
     return list;
-  }, [payload, status, selected, trace, spec, onClearTrace, satellites]);
+  }, [payload, status, selected, trace, spec, onClearTrace, satellites, posOf]);
 
   const edges = useMemo<Edge[]>(() => {
     // 上游溯源时隐藏原上游→消费控制流实线（由卡 + 两段虚线承接其视觉；收起即恢复）。
@@ -277,6 +313,29 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
     }
     return list;
   }, [payload, status, trace, satellites]);
+
+  /** 拖动全程实时写覆盖表（跟手 + 防中途 WS 推送弹回——构建器画布同款模式）；
+   * stop 兜底同形。 */
+  const onNodeDrag = useCallback<OnNodeDrag<GraphFlowNode>>(
+    (_, node) => setOverrides((m) => new Map(m).set(node.id, node.position)),
+    [],
+  );
+
+  // 换 run / 换 module：覆盖表清空回 dagre；同 run 内结构变化（如新产物卡上图）
+  // 不清——保留用户已排布的位置（与官方 static 语义的唯一偏差，已定稿采纳）
+  useEffect(() => {
+    setOverrides(new Map());
+  }, [payload.run_id, payload.module]);
+
+  // trace 变化：值卡语义随引用走，只清值卡自身覆盖（锚点仍取消费/上游节点有效位置）
+  useEffect(() => {
+    setOverrides((m) => {
+      if (!m.has(DATA_CARD_NODE_ID)) return m;
+      const next = new Map(m);
+      next.delete(DATA_CARD_NODE_ID);
+      return next;
+    });
+  }, [trace]);
 
   /** MiniMap 节点底色：取状态主色（bg 洗淡变体在小图上几乎不可见） */
   const minimapColor = useCallback((n: Node): string => {
@@ -374,29 +433,43 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      {(() => {
-        const isRunning = status?.phase === "running";
-        const label = !isRunning ? "回到当前" : follow ? "跟随中 · F" : "已解锁 · F";
-        return (
+      <div className="absolute left-2 top-2 z-10 flex items-center gap-1.5">
+        {(() => {
+          const isRunning = status?.phase === "running";
+          const label = !isRunning ? "回到当前" : follow ? "跟随中 · F" : "已解锁 · F";
+          return (
+            <button
+              onClick={engageFollow}
+              title="重新跟随正在执行的节点（F）"
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                isRunning && follow
+                  ? "border-[var(--ph-running-border)] bg-[var(--ph-running-bg)] text-[var(--ph-running-text)]"
+                  : "border-border bg-card text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <LocateFixed className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          );
+        })()}
+        {overrides.size > 0 && (
           <button
-            onClick={engageFollow}
-            title="重新跟随正在执行的节点（F）"
-            className={cn(
-              "absolute left-2 top-2 z-10 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-              isRunning && follow
-                ? "border-[var(--ph-running-border)] bg-[var(--ph-running-bg)] text-[var(--ph-running-text)]"
-                : "border-border bg-card text-muted-foreground hover:text-foreground",
-            )}
+            onClick={() => setOverrides(new Map())}
+            title="清除手动拖放的位置，回到自动布局"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
-            <LocateFixed className="h-3.5 w-3.5" />
-            {label}
+            <RotateCcw className="h-3.5 w-3.5" />
+            重置布局
           </button>
-        );
-      })()}
+        )}
+      </div>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        onNodeDrag={onNodeDrag}
+        onNodeDragStop={onNodeDrag}
         onMoveStart={onMoveStart}
         onNodeClick={(_, n) => {
           if (n.type === "dataCard" || n.type === "artifact") return;
