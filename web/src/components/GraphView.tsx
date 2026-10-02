@@ -23,25 +23,41 @@ import {
   type DataCardFlowNode,
 } from "./DataCardNode";
 import {
+  SPEC_CARD_SIZE,
+  SpecCardNode,
+  specCardNodeId,
+  type SpecCardFlowNode,
+} from "./SpecCardNode";
+import {
   ARTIFACT_SIZE,
   ArtifactNode,
   artifactNodeId,
   type ArtifactFlowNode,
 } from "./ArtifactNode";
-import type { TraceState } from "../lib/inputSource";
+import { resolveInputSource, type TraceState } from "../lib/inputSource";
 import type { GraphEdge, GraphPayload, StatusCore } from "../api";
 import { badgeOf, StatusNode, type StatusFlowNode, type StatusNodeData } from "./StatusNode";
 import { LocateFixed, RotateCcw } from "lucide-react";
 import { cn } from "../lib/utils";
 
-const nodeTypes: NodeTypes = { status: StatusNode, dataCard: DataCardNode, artifact: ArtifactNode };
+const nodeTypes: NodeTypes = {
+  status: StatusNode,
+  dataCard: DataCardNode,
+  artifact: ArtifactNode,
+  specCard: SpecCardNode,
+};
 
-type GraphFlowNode = StatusFlowNode | DataCardFlowNode | ArtifactFlowNode;
+type GraphFlowNode = StatusFlowNode | DataCardFlowNode | ArtifactFlowNode | SpecCardFlowNode;
 
 /** 与 index.html 初始化同优先级：localStorage 覆盖 > 跟随系统 */
 function themeColorMode(): "light" | "dark" | "system" {
   const t = localStorage.getItem("specmodule-webview.theme");
   return t === "dark" || t === "light" ? t : "system";
+}
+
+/** spec 卡正文：键值（字符串原样，其余 JSON 化）——卡仅对存档键渲染，无缺键分支 */
+function specCardBody(v: unknown): string {
+  return typeof v === "string" ? v : JSON.stringify(v, null, 2);
 }
 
 /** 值卡头部来源标识：spec 卡 `spec.<key>`；上游卡 `<上游节点> → <字段名>` */
@@ -81,9 +97,20 @@ type Props = {
   spec: Record<string, unknown> | null;
   /** 值卡 ✕ 关闭（清溯源） */
   onClearTrace: () => void;
+  /** spec 卡直点 toggle（RunView 持有 trace） */
+  onToggleSpecCard: (key: string) => void;
 };
 
-function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClearTrace }: Props) {
+function GraphCanvas({
+  payload,
+  status,
+  selected,
+  onSelect,
+  trace,
+  spec,
+  onClearTrace,
+  onToggleSpecCard,
+}: Props) {
   const { fitView, getInternalNode } = useReactFlow();
   const colorMode = useMemo(() => themeColorMode(), []);
   const followRef = useRef(true); // 跟随模式（默认开；用户拖动即关）
@@ -102,6 +129,30 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
         : [],
     );
   }, [payload]);
+
+  /** spec 值卡清单：每键一卡（spec 存档键序；null/空 → 无卡列） */
+  const specCards = useMemo(() => (spec ? Object.keys(spec) : []), [spec]);
+
+  /** spec 键 → 消费节点 id 列表（inputs 值经 resolveInputSource 判定）；
+   * 仅收录有卡的键——无卡键的溯源走浮卡兜底。依赖锚 payload.graph（WS merge
+   * 为 spread、graph 身份跨推送稳定）：身份漂移会把溯源镜头 effect 每秒重飞 */
+  const specConsumers = useMemo(() => {
+    const map = new Map<string, string[]>();
+    if (!spec) return map;
+    const nodeIds = new Set(payload.graph.nodes.map((n) => n.id));
+    const keys = new Set(Object.keys(spec));
+    for (const n of payload.graph.nodes) {
+      for (const v of Object.values(n.inputs ?? {})) {
+        const src = resolveInputSource(v, nodeIds);
+        if (src?.kind === "spec" && keys.has(src.key)) {
+          const list = map.get(src.key) ?? [];
+          if (!list.includes(n.id)) list.push(n.id);
+          map.set(src.key, list);
+        }
+      }
+    }
+    return map;
+  }, [payload.graph, spec]);
 
   /** 结构内容键：布局输入的内容指纹（run/module + 节点 id 序 + 边集 + 卫星卡）。
    * status/selected/WS 推送不改变内容即不触发布局重算。 */
@@ -146,11 +197,31 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
     [structureKey],
   );
 
+  /** spec 卡列基准位置：dagre 包围盒左侧一列（不进 dagre——无布局边会被
+   * 当作无依赖节点散置）；每轮按同一规则重算，确定性等价缓存 */
+  const specPos = useMemo(() => {
+    const pos = new Map<string, { x: number; y: number }>();
+    if (!specCards.length || basePos.size === 0) return pos;
+    let minX = Infinity;
+    let minY = Infinity;
+    for (const p of basePos.values()) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+    }
+    const x = minX - SPEC_CARD_SIZE.width - 48;
+    let y = minY;
+    for (const key of specCards) {
+      pos.set(specCardNodeId(key), { x, y });
+      y += SPEC_CARD_SIZE.height + 16;
+    }
+    return pos;
+  }, [specCards, basePos]);
+
   /** 有效位置：用户拖过的节点以覆盖为准，其余走 dagre 基准；未命中（id 不在
    * 当前图，如 trace 引用失配）返回 undefined——沿用「不叠卡」防悬空语义 */
   const posOf = useCallback(
-    (id: string) => overrides.get(id) ?? basePos.get(id),
-    [overrides, basePos],
+    (id: string) => overrides.get(id) ?? basePos.get(id) ?? specPos.get(id),
+    [overrides, basePos, specPos],
   );
 
   const nodes = useMemo<GraphFlowNode[]>(() => {
@@ -199,41 +270,73 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
         data: { runId: payload.run_id, producer, entry },
       });
     }
+    // spec 值卡列：画布左侧常驻一列（每键一卡，不进 dagre）；measured 带回
+    // 防 WS 采纳重置（同三卡纪律）
+    for (const key of specCards) {
+      const id = specCardNodeId(key);
+      const measured = getInternalNode(id)?.measured;
+      list.push({
+        id,
+        type: "specCard",
+        position: posOf(id) ?? { x: 0, y: 0 },
+        width: SPEC_CARD_SIZE.width,
+        height: SPEC_CARD_SIZE.height,
+        measured: measured ? { ...measured } : undefined,
+        selectable: false,
+        data: {
+          key,
+          body: specCardBody(spec?.[key]),
+          active:
+            trace != null &&
+            trace.source.kind === "spec" &&
+            trace.source.key === key,
+          onToggle: () => onToggleSpecCard(key),
+        },
+      });
+    }
     // 溯源值卡（图坐标随缩放平移；不参与 dagre）。上游卡置于上游↔消费缺口右侧、
     // 垂直居中于缺口——卡顶接上游底、卡底接消费顶，值卡落在数据流路径上；
-    // spec 卡 / 上游缺失回退 = 消费节点右侧固定偏移。消费节点不在当前图（换模块
-    // 后引用失配）→ 不叠卡，trace 边同理（edges 处）。
+    // spec 键无卡兜底 / 上游缺失回退 = 消费节点右侧固定偏移。消费节点不在当前图
+    // （换模块后引用失配）→ 不叠卡，trace 边同理（edges 处）。
     if (trace) {
-      const cp = posOf(trace.consumerId);
-      if (cp) {
-        const up = trace.source.kind === "node" ? posOf(trace.source.nodeId) : null;
-        // 值卡与状态节点同理：随推送重建的对象带回上次测量，虚线边不因采纳重置而消失。
-        // 位置：用户拖过的以覆盖为准，否则按锚点计算。
-        const cardMeasured = getInternalNode(DATA_CARD_NODE_ID)?.measured;
-        list.push({
-          id: DATA_CARD_NODE_ID,
-          type: "dataCard",
-          position:
-            overrides.get(DATA_CARD_NODE_ID) ?? {
-              x: (up ? Math.max(up.x, cp.x) : cp.x) + NODE_SIZE.width + 48,
-              y: up
-                ? (up.y + NODE_SIZE.height + cp.y) / 2 - DATA_CARD_SIZE.height / 2
-                : cp.y,
+      // 浮卡承担：上游溯源（node 来源）恒浮卡；spec 溯源仅键无卡（无存档/
+      // 键缺失）兜底——卡在列则虚线接常驻卡，不出浮卡。卡直点 consumerId
+      // 必非 null（守卫为防御性）。
+      const specHasCard =
+        trace.source.kind === "spec" && specCards.includes(trace.source.key);
+      const floating = trace.source.kind === "node" || !specHasCard;
+      if (floating && trace.consumerId != null) {
+        const cp = posOf(trace.consumerId);
+        if (cp) {
+          const up = trace.source.kind === "node" ? posOf(trace.source.nodeId) : null;
+          // 值卡与状态节点同理：随推送重建的对象带回上次测量，虚线边不因采纳重置而消失。
+          // 位置：用户拖过的以覆盖为准，否则按锚点计算。
+          const cardMeasured = getInternalNode(DATA_CARD_NODE_ID)?.measured;
+          list.push({
+            id: DATA_CARD_NODE_ID,
+            type: "dataCard",
+            position:
+              overrides.get(DATA_CARD_NODE_ID) ?? {
+                x: (up ? Math.max(up.x, cp.x) : cp.x) + NODE_SIZE.width + 48,
+                y: up
+                  ? (up.y + NODE_SIZE.height + cp.y) / 2 - DATA_CARD_SIZE.height / 2
+                  : cp.y,
+              },
+            width: DATA_CARD_SIZE.width,
+            height: DATA_CARD_SIZE.height,
+            measured: cardMeasured ? { ...cardMeasured } : undefined,
+            selectable: false,
+            data: {
+              heading: cardHeading(trace),
+              body: cardBody(trace, spec, status?.outputs ?? {}),
+              onClose: onClearTrace,
             },
-          width: DATA_CARD_SIZE.width,
-          height: DATA_CARD_SIZE.height,
-          measured: cardMeasured ? { ...cardMeasured } : undefined,
-          selectable: false,
-          data: {
-            heading: cardHeading(trace),
-            body: cardBody(trace, spec, status?.outputs ?? {}),
-            onClose: onClearTrace,
-          },
-        });
+          });
+        }
       }
     }
     return list;
-  }, [payload, status, selected, trace, spec, onClearTrace, satellites, posOf]);
+  }, [payload, status, selected, trace, spec, onClearTrace, onToggleSpecCard, satellites, specCards, posOf]);
 
   const edges = useMemo<Edge[]>(() => {
     // 上游溯源时隐藏原上游→消费控制流实线（由卡 + 两段虚线承接其视觉；收起即恢复）。
@@ -274,14 +377,38 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
       });
     }
     // 数据流虚线（dashed、中性色 `hsl(var(--foreground) / 0.28)` 同默认边）。
-    // spec 卡：卡→消费节点（左锚点出线、无箭头）。上游卡：两段——上游节点底→卡顶、
-    // 卡底→消费节点顶，每段带小箭头指流向。消费/上游节点不在当前图（换模块失配）
-    // → 与卡一并缺席，防悬空边。
+    // spec 溯源：常驻卡→消费节点（右锚出线带箭头）；键无卡兜底浮卡→消费节点
+    // （左锚点出线、无箭头）。上游卡：两段——上游节点底→卡顶、卡底→消费节点顶，
+    // 每段带小箭头指流向。消费/上游节点不在当前图（换模块失配）→ 对应边缺席，
+    // 防悬空边。
     if (trace) {
       const inGraph = (id: string) => payload.graph.nodes.some((n) => n.id === id);
       const stroke = "hsl(var(--foreground) / 0.28)";
       if (trace.source.kind === "spec") {
-        if (inGraph(trace.consumerId)) {
+        if (specCards.includes(trace.source.key)) {
+          // 常驻 spec 卡在列：卡→消费节点虚线（卡直点=全部消费节点；胶囊点入=该节点）
+          const targets =
+            trace.consumerId != null
+              ? [trace.consumerId]
+              : (specConsumers.get(trace.source.key) ?? []);
+          for (const tid of targets) {
+            if (!inGraph(tid)) continue;
+            list.push({
+              id: `trace-edge-spec::${trace.source.key}::${tid}`,
+              source: specCardNodeId(trace.source.key),
+              sourceHandle: "r",
+              target: tid,
+              style: { stroke, strokeWidth: 1.5, strokeDasharray: "6 4" },
+              markerEnd: {
+                type: MarkerType.ArrowClosed,
+                color: stroke,
+                width: 12,
+                height: 12,
+              },
+            });
+          }
+        } else if (trace.consumerId != null && inGraph(trace.consumerId)) {
+          // 兜底浮卡（无存档/键缺失）：卡→消费节点（左锚出线、无箭头，沿用旧形）
           list.push({
             id: "trace-edge",
             source: DATA_CARD_NODE_ID,
@@ -290,7 +417,11 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
             style: { stroke, strokeWidth: 1.5, strokeDasharray: "6 4" },
           });
         }
-      } else if (inGraph(trace.consumerId) && inGraph(trace.source.nodeId)) {
+      } else if (
+        trace.consumerId != null &&
+        inGraph(trace.consumerId) &&
+        inGraph(trace.source.nodeId)
+      ) {
         list.push(
           {
             id: "trace-edge-in",
@@ -312,7 +443,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
       }
     }
     return list;
-  }, [payload, status, trace, satellites]);
+  }, [payload, status, trace, satellites, specCards, specConsumers]);
 
   /** 拖动全程实时写覆盖表（跟手 + 防中途 WS 推送弹回——构建器画布同款模式）；
    * stop 兜底同形。 */
@@ -340,6 +471,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
   /** MiniMap 节点底色：取状态主色（bg 洗淡变体在小图上几乎不可见） */
   const minimapColor = useCallback((n: Node): string => {
     if (n.type === "dataCard") return "hsl(var(--muted-foreground) / 0.5)";
+    if (n.type === "specCard") return "hsl(var(--muted-foreground) / 0.35)";
     if (n.type === "artifact") return "hsl(var(--primary) / 0.4)";
     const b = badgeOf((n as StatusFlowNode).data.state);
     if (b === "running") return "var(--ph-running)";
@@ -398,18 +530,26 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
     }
   }, []);
 
-  // 溯源变化：镜头飞消费节点 + 值卡（上游溯源另含上游节点，整条接线路径可见；
-  // padding 放宽容纳卡片）；飞行即解锁跟随（与手动交互语义一致，F/按钮可再跟随）
+  // 溯源变化：镜头飞消费节点 + 值卡（上游=上游节点+浮卡整条路径；spec 卡直点=
+  // 常驻卡+全部消费节点；胶囊点入=常驻卡+该节点；键无卡兜底=浮卡）。
+  // 飞行即解锁跟随（与手动交互语义一致，F/按钮可再跟随）
   useEffect(() => {
     if (!trace) return;
     followRef.current = false;
     setFollow(false);
-    const ids =
+    const raw: (string | null)[] =
       trace.source.kind === "node"
         ? [trace.source.nodeId, trace.consumerId, DATA_CARD_NODE_ID]
-        : [trace.consumerId, DATA_CARD_NODE_ID];
-    centerOn(ids, 0.3);
-  }, [trace, centerOn]);
+        : specCards.includes(trace.source.key)
+          ? [
+              specCardNodeId(trace.source.key),
+              ...(trace.consumerId != null
+                ? [trace.consumerId]
+                : (specConsumers.get(trace.source.key) ?? [])),
+            ]
+          : [trace.consumerId, DATA_CARD_NODE_ID];
+    centerOn(raw.filter((id): id is string => id != null), 0.3);
+  }, [trace, centerOn, specCards, specConsumers]);
 
   // F 快捷键：重新跟随。输入框/文本域/下拉/contentEditable 聚焦时让位。
   useEffect(() => {
@@ -472,7 +612,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
         onNodeDragStop={onNodeDrag}
         onMoveStart={onMoveStart}
         onNodeClick={(_, n) => {
-          if (n.type === "dataCard" || n.type === "artifact") return;
+          if (n.type === "dataCard" || n.type === "artifact" || n.type === "specCard") return;
           onSelect(n.id);
         }}
         onPaneClick={() => onSelect(null)}

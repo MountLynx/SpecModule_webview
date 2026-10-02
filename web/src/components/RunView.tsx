@@ -335,6 +335,20 @@ export function RunView({
 
   const clearTrace = useCallback(() => setTrace(null), []);
 
+  // spec 卡直点：置/收 spec 溯源（目标 = 该键全部消费节点，渲染方展开虚线）；
+  // 再点同卡收起（与胶囊 toggle 同语义）。consumerId/field 为 null 标记
+  // 「全部消费节点」形态，与胶囊点入（具体节点）区分。
+  const handleToggleSpecCard = useCallback((key: string) => {
+    setTrace((prev) =>
+      prev &&
+      prev.source.kind === "spec" &&
+      prev.source.key === key &&
+      prev.consumerId == null
+        ? null
+        : { source: { kind: "spec", key }, consumerId: null, field: null },
+    );
+  }, []);
+
   // 产物清单：终态（done/aborted/cancelled/truncated）拉取——终态翻转与
   // 终态 run 首载都经 phase 变化触发；非终态清空（resume 重跑后旧清单失效）
   const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
@@ -599,6 +613,7 @@ export function RunView({
               trace={trace}
               spec={spec}
               onClearTrace={clearTrace}
+              onToggleSpecCard={handleToggleSpecCard}
             />
           ) : (
             !error && !waitingMaterial && <div className="p-3 text-[12px]">图加载中…</div>

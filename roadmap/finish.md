@@ -635,3 +635,28 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
 - 验收：`npm run build` 过 + 浏览器实证（ppt_master_a37223：状态节点拖动后点选
   不弹回、产物卡/值卡可拖且虚线跟随、重置布局一键回 dagre 且按钮消失）。纯前端
   视图状态，server/库零改动。
+
+
+## 运行图 spec 值卡常驻列与溯源统一——2026-10-02
+
+- 用户指令：**运行监控时图上能直接看见 spec 的内容**——一侧划一片区域存放各个
+  spec 的值卡，点卡出虚线指向被消费的 node；点输入胶囊若来源是 spec 不再另出
+  浮卡。方案问答收敛：每键一卡常驻 + 画布内一列（非固定 DOM 面板）。
+  定稿 `docs/superpowers/specs/2026-10-02-spec-cards-column-design.md`；计划
+  `docs/superpowers/plans/2026-10-02-spec-cards-column.md`（subagent-driven，
+  规格审查 ✅ + 质量审查抓出并修复 Critical：`specConsumers` memo 依赖
+  `[payload, spec]` 随 WS 推送身份漂移 → 溯源镜头每秒重飞，改锚
+  `payload.graph`（spread merge 下 graph 身份稳定））。
+- **纯前端零后端改动**（spec 存档已由 `/inputs` 暴露并随 run 拉取）：新组件
+  SpecCardNode（每 spec 键一卡，头部 `spec.<key>`、正文键值 mono 滚动、trace
+  命中高亮、常驻无可关）；不进 dagre，手动定位布局包围盒左侧一列（可拖，复用
+  overrides）；溯源统一——spec 卡直点置 `{consumerId:null}` 溯源，虚线自卡右
+  handle 出、指全部消费节点，NodePanel 点 spec 胶囊复用常驻卡（不再弹浮卡），
+  TraceState 扩展 `consumerId/field` 可空；上游溯源浮卡不动；无存档/键缺失保留
+  浮卡兜底（旧 run 不劣化）。
+- 验收：`npm run build` 过 + 浏览器实证（academic_writer_1ee1d9：raw_text 卡
+  点出 4 消费节点扇形虚线、raw_text 胶囊高亮常驻卡单虚线零浮卡、缺失键
+  target_field 回退浮卡「无存档值」、上游 loop1 胶囊两段虚线不回归、拖卡重渲染
+  不弹回 + 重置布局、暗色主题与 MiniMap 独立底色；夹具 running run 每秒 WS
+  推送下溯源打开平移画布 transform 3.5s 零漂移——Critical 修复实证）。
+- 后排：spec 卡折叠/分页（键多时；YAGNI 未做，疼了开 issue）。
