@@ -75,7 +75,7 @@ type Props = {
 };
 
 function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClearTrace }: Props) {
-  const { fitView } = useReactFlow();
+  const { fitView, getInternalNode } = useReactFlow();
   const colorMode = useMemo(() => themeColorMode(), []);
   const followRef = useRef(true); // 跟随模式（默认开；用户拖动即关）
   const [follow, setFollow] = useState(true); // 按钮文案随动（ref 不触发渲染）
@@ -96,15 +96,23 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
         };
       }
     }
-    const list: (StatusFlowNode | DataCardFlowNode)[] = payload.graph.nodes.map((n) => ({
-      id: n.id,
-      type: "status" as const,
-      position: pos.get(n.id) ?? { x: 0, y: 0 },
-      width: NODE_SIZE.width,
-      height: NODE_SIZE.height,
-      data: { label: n.label, type: n.type, isStart: n.is_start, state: live[n.id] },
-      selected: selected === n.id,
-    }));
+    const list: (StatusFlowNode | DataCardFlowNode)[] = payload.graph.nodes.map((n) => {
+      // 受控 setNodes 每次采纳全新节点对象；对象缺 measured 时库会重置已测量的
+      // handleBounds（parseHandles），而重测触发在持续 WS 推送下不可靠——handle
+      // 测量一旦丢失，getEdgePosition 对全部边静默返回 null，连线整体消失且
+      // 直至重挂载才恢复。把库侧上次测量值带回对象，采纳即保留测量，边不随推送掉线。
+      const measured = getInternalNode(n.id)?.measured;
+      return {
+        id: n.id,
+        type: "status" as const,
+        position: pos.get(n.id) ?? { x: 0, y: 0 },
+        width: NODE_SIZE.width,
+        height: NODE_SIZE.height,
+        measured: measured ? { ...measured } : undefined,
+        data: { label: n.label, type: n.type, isStart: n.is_start, state: live[n.id] },
+        selected: selected === n.id,
+      };
+    });
     // 溯源值卡（图坐标随缩放平移；不参与 dagre）。上游卡置于上游↔消费缺口右侧、
     // 垂直居中于缺口——卡顶接上游底、卡底接消费顶，值卡落在数据流路径上；
     // spec 卡 / 上游缺失回退 = 消费节点右侧固定偏移。消费节点不在当前图（换模块
@@ -113,6 +121,8 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
       const cp = pos.get(trace.consumerId);
       if (cp) {
         const up = trace.source.kind === "node" ? pos.get(trace.source.nodeId) : null;
+        // 值卡与状态节点同理：随推送重建的对象带回上次测量，虚线边不因采纳重置而消失
+        const cardMeasured = getInternalNode(DATA_CARD_NODE_ID)?.measured;
         list.push({
           id: DATA_CARD_NODE_ID,
           type: "dataCard",
@@ -124,6 +134,7 @@ function GraphCanvas({ payload, status, selected, onSelect, trace, spec, onClear
           },
           width: DATA_CARD_SIZE.width,
           height: DATA_CARD_SIZE.height,
+          measured: cardMeasured ? { ...cardMeasured } : undefined,
           draggable: false,
           selectable: false,
           data: {
