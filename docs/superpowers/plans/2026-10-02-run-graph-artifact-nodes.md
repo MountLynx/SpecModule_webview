@@ -14,6 +14,11 @@
 
 ### Task 1: 库侧 `query.node_artifacts`（TDD，SpecModule 仓库）
 
+> 执行修订（2026-10-02 质量审查）：提取循环改为「每节点严格末条 output」——
+> 先按 append 序无条件覆盖收集 `last[node] = output`，再对该 dict 做存在性
+> 提取与跨节点去重（原计划代码遍历全部 firing，refire 无引用时残留旧产物、
+> 去重跨代泄漏）；测试 8 基础 + 3 回归 = 11。已按此落地（fix commit）。
+
 **Files:**
 - Create: `<LIB>/module_harness/tests/test_node_artifacts.py`
 - Modify: `<LIB>/module_harness/infra/query.py`（imports + `read_artifacts` 之后新增函数）
@@ -252,7 +257,7 @@ def node_artifacts(
 - [ ] **Step 5: 运行测试确认通过**
 
 Run: `cd "C:\Users\xingy\Desktop\开发\SpecModule_webview" && uv run pytest ../SpecModule/module_harness/tests/test_node_artifacts.py -q`
-Expected: 9 passed。
+Expected: 11 passed（8 基础 + 3 质量审查回归）。
 
 - [ ] **Step 6: 库基线回归**
 
