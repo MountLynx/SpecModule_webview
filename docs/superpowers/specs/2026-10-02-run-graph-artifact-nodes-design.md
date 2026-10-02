@@ -45,8 +45,9 @@
 - **WS status 推送叠加同名字段**：与 `node_states` 同拍（仅 sig 变化时计算）——
   运行中产物卫星卡随 tick 实时冒出；客户端整体覆盖。
 - 新端点 **`GET /api/runs/{id}/nodes/{node}/artifacts/{index}`**：现算 overlay →
-  node/index 两级命中 → `FileResponse`（attachment）。404（无 run/无该节点/越界）、
-  410（计算后文件被删，OSError 捕获）。客户端只给 node+index，路径永不为客户端
+  node/index 两级命中 → `FileResponse`（attachment）。404（无 run/无该节点/越界/
+  文件已删——存在性锚定使已删文件不进 overlay；410 分支仅保留为计算→响应
+  竞态窗口的护栏，同步请求内不可达）。客户端只给 node+index，路径永不为客户端
   输入——与清单下载通道同一安全纪律。交付物/中间物统一走此通道（前端单一分支），
   ArtifactsStrip 的清单 index 通道保持不变。
 - base_dir / 搜索路径锚定走既有 `deps.py`。
