@@ -98,8 +98,15 @@ def reap(run_id: str) -> _Proc | None:
 
 
 def _spawn(argv: list[str], cwd: str, log_fh: Any) -> subprocess.Popen:
-    """spawn 薄封装（测试 monkeypatch 点）。"""
-    return subprocess.Popen(argv, cwd=cwd, stdout=log_fh, stderr=subprocess.STDOUT)
+    """spawn 薄封装（测试 monkeypatch 点）。
+
+    CREATE_NEW_PROCESS_GROUP：子进程脱离后端所在控制台的 Ctrl+C 组——
+    Windows 共享控制台默认全组接收，停后端不应连带打断在跑的 run 子进程。
+    """
+    flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    return subprocess.Popen(
+        argv, cwd=cwd, stdout=log_fh, stderr=subprocess.STDOUT, creationflags=flags
+    )
 
 
 def _require_run(run_id: str, base_dir: Path) -> None:
