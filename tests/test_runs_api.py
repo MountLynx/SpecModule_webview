@@ -416,11 +416,24 @@ class TestNodeArtifactDownload:
         self._seed(base)
         r = client.get("/api/runs/na_run/nodes/NOPE/artifacts/0")
         assert r.status_code == 404
+        assert r.json()["error"] == "节点无产物记录"
+        assert r.json()["run_id"] == "na_run"
+        assert r.json()["node"] == "NOPE"
 
     def test_index_out_of_range_404(self, base, client):
         self._seed(base)
         r = client.get("/api/runs/na_run/nodes/P/artifacts/9")
         assert r.status_code == 404
+
+    def test_negative_index_404(self, base, client):
+        self._seed(base)
+        r = client.get("/api/runs/na_run/nodes/P/artifacts/-1")
+        assert r.status_code == 404
+
+    def test_non_integer_index_422(self, base, client):
+        self._seed(base)
+        r = client.get("/api/runs/na_run/nodes/P/artifacts/xyz")
+        assert r.status_code == 422
 
     def test_deleted_file_gone_404(self, base, client):
         """文件已删 → 404 而非 410：overlay 提取按 isfile 锚定，条目不入 overlay。
