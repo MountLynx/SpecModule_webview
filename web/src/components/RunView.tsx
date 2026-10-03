@@ -418,8 +418,9 @@ export function RunView({
     return () => clearInterval(t);
   }, []);
 
-  // ⑤ terminate 按钮：running 期间轮询 /process（只对本 server 拉起的恢复子进程可见），
-  // 同节奏顺带重读 control.json 做控制面调和（侧栏发起的取消不经控制条，靠此收敛）
+  // ⑤ running 期间轮询 /process（procRunning 是控制条强制终止按钮的浮现条件之一，
+  // 按钮本体仅停滞升级时可见），同节奏顺带重读 control.json 做控制面调和
+  //（侧栏发起的取消不经控制条，靠此收敛）
   useEffect(() => {
     if (statusView?.phase !== "running") {
       setProcRunning(false);
@@ -490,7 +491,7 @@ export function RunView({
     } catch (e) {
       // 409（server 重启清过注册表 / 进程已自然退出）不再静默——透出控制条错误位，
       // 否则按钮看似没按，用户只能等 120s 停滞检测
-      setTerminateErr(`终止失败：${e instanceof Error ? e.message : String(e)}`);
+      setTerminateErr(`强制终止失败：${e instanceof Error ? e.message : String(e)}`);
     }
     onRefreshRuns();
   }, [runId, onRefreshRuns]);
@@ -572,6 +573,7 @@ export function RunView({
           resumeRequest={resumeRequest}
           onResumeRequestConsumed={onResumeRequestConsumed}
           procRunning={procRunning}
+          stalled={stalled}
           onTerminate={terminateProc}
           terminateError={terminateErr}
           onResumeStarted={() => setTerminated(false)}
@@ -580,7 +582,7 @@ export function RunView({
       <ArtifactsStrip runId={runId} artifacts={artifacts} />
       {terminated && runPhase === "running" && (
         <div className="flex items-center gap-2.5 bg-[color-mix(in_srgb,var(--ph-truncated)_14%,transparent)] px-3.5 py-1.5 text-[12px] text-[var(--ph-truncated)]">
-          <span>进程已终止，status 残留 running——可强制恢复。</span>
+          <span>进程已强制终止，status 残留 running——可强制恢复。</span>
           <Button variant="outline" size="sm" onClick={() => onRequestResume(runId)}>
             打开恢复/回退…
           </Button>
@@ -589,7 +591,10 @@ export function RunView({
       {stalled && !terminated && (
         <div className="flex items-center gap-2.5 bg-[color-mix(in_srgb,var(--ph-truncated)_14%,transparent)] px-3.5 py-1.5 text-[12px] text-[var(--ph-truncated)]">
           <span>
-            进程长时间无输出——可能已失联/崩溃。若确认进程已退出，可强制恢复。
+            进程长时间无输出——可能已卡死/失联。
+            {procRunning
+              ? "取消在等 tick 边界（卡死等不到），可在控制条强制终止进程；确认进程退出后可强制恢复。"
+              : "若确认进程已退出，可强制恢复。"}
           </span>
           <Button variant="outline" size="sm" onClick={() => onRequestResume(runId)}>
             打开恢复/回退…
