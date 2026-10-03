@@ -660,3 +660,19 @@ paused→继续（WS `paused` 字段驱动徽章）、终态→恢复/回退入�
   不弹回 + 重置布局、暗色主题与 MiniMap 独立底色；夹具 running run 每秒 WS
   推送下溯源打开平移画布 transform 3.5s 零漂移——Critical 修复实证）。
 - 后排：spec 卡折叠/分页（键多时；YAGNI 未做，疼了开 issue）。
+
+## 运行图 spec 值卡虚线分组框——2026-10-03
+
+- 用户指令：**spec 卡片用虚线圈一个区域放在其中**——卡列与主图无视觉分组，
+  多卡堆叠后结构感缺失。方案问答收敛：纯视觉圈选（框不拦截鼠标、不做组拖动）。
+  定稿 `docs/superpowers/specs/2026-10-03-spec-cards-region-frame-design.md`。
+- **纯前端零后端改动**：新组件 SpecRegionNode（圆角虚线框 + 左上角标签
+  `spec 输入`；无 Handle、不可选不可拖、`pointerEvents:"none"` 事件穿透画布）；
+  GraphView 组装为 `specRegion` 节点类型——几何 = 全部 spec 卡有效位置（基准
+  列或拖动覆盖）包围盒 + padding（顶部留标签带），排在节点数组最前 = 渲染最底
+  （自身永不选中不 elevate）；MiniMap 透明色；零状态零持久化——拖卡框实时跟随、
+  重置布局随卡回位。方案比较否决 React Flow 父子分组（parentId 相对坐标会动
+  刚定稿的拖动覆盖/measured 链路）与 SVG 覆盖层（需自行同步 pan/zoom）。
+- 验收：`npm run build` 过 + 浏览器实证（ppt_master_eaca9c：虚线框圈住卡列、
+  标签就位、spec.project 点亮溯源高亮、拖卡框实时扩展包住、重置布局回位、
+  框内空隙拖动平移画布（穿透生效）、MiniMap 无灰块、暗色主题正常）。
