@@ -1,5 +1,7 @@
-// 头部控制条：phase 感知的运行控制（暂停/继续/取消/终止恢复进程）+ 存检查点 +
-// 终态恢复/回退入口。控制逻辑（含 resumeRequest runId+seq 守卫）不变，仅换皮。
+// 头部控制条：phase 感知的运行控制（暂停/继续/取消）+ 存检查点 + 终态恢复/回退入口。
+// 强制终止进程是升级手段而非平级选项：仅运行停滞时浮现——取消走 control.json
+// 协作协议、等 tick 边界消费，进程卡死等不到边界时才需要硬杀（语义分工见
+// server/api/control.py；硬杀不写终态，需强制恢复收尾）。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Ban, Bookmark, Pause, Play, RotateCcw, Square } from "lucide-react";
 import { postControl, TERMINAL_PHASES, type ControlAction } from "../api";
@@ -26,8 +28,10 @@ interface RunControlsProps {
   resumeRequest: { runId: string; seq: number } | null;
   /** 恢复请求已消费（App 据此清空，防重挂载重放） */
   onResumeRequestConsumed?: () => void;
-  /** 本 server 拉起的恢复子进程在跑（/process 轮询） */
+  /** 本 server 拉起的子进程在跑（/process 轮询；发起与恢复共用 spawn 注册表） */
   procRunning: boolean;
+  /** 运行停滞（WS 消息 120s 无更新）——强制终止进程的浮现条件（升级手段，非平级选项） */
+  stalled: boolean;
   onTerminate: () => void;
   /** 终止失败信息（terminate POST 409 等；与 act 错误共用右侧错误位，act 有错时优先） */
   terminateError?: string | null;
@@ -46,6 +50,7 @@ export function RunControls({
   resumeRequest,
   onResumeRequestConsumed,
   procRunning,
+  stalled,
   onTerminate,
   terminateError,
   onResumeStarted,
@@ -77,6 +82,9 @@ export function RunControls({
   const controlsDead = terminated && running;
   // 取消已请求、尚未被 tick 边界消费：暂停会覆盖 control.json 里的 cancel（请求丢失），一并禁用
   const cancelPending = cancelRequested && running && !controlsDead;
+  // 强制终止仅停滞时浮现：流式输出断流 120s 说明进程卡死/失联，cancel 等 tick
+  // 边界已不可达——此时它才是取消失效后的逃生口，而非与取消并列的另一种停止
+  const escalate = running && stalled && procRunning && !controlsDead;
 
   // 外部请求打开恢复对话框（ref 记上次已响应的 seq——只响应当前 run 的新请求）
   const lastSeqRef = useRef<number | null>(null);
@@ -123,7 +131,7 @@ export function RunControls({
           className="text-destructive"
           disabled={busy || cancelPending}
           onClick={() => {
-            if (window.confirm("取消该运行？（已落盘，可稍后恢复/回退）")) act("cancel");
+            if (window.confirm("取消该运行？将在当前 tick 结束时生效（已落盘，可恢复/回退）")) act("cancel");
           }}
         >
           <Ban className="h-3.5 w-3.5" />取消
@@ -138,19 +146,23 @@ export function RunControls({
       <Button variant="outline" size="sm" disabled={busy} onClick={() => setCpOpen(true)}>
         <Bookmark className="h-3.5 w-3.5" />存检查点…
       </Button>
-      {procRunning && (
+      {escalate && (
         <Button
           variant="outline"
           size="sm"
           className="text-destructive"
           disabled={busy}
           onClick={() => {
-            if (window.confirm("硬终止恢复子进程？（不写终态，status 停留 running；之后可强制恢复）")) {
+            if (
+              window.confirm(
+                "强制终止子进程？将立即杀掉进程，不写终态（status 停留 running），之后需通过恢复/回退收尾。",
+              )
+            ) {
               onTerminate();
             }
           }}
         >
-          <Square className="h-3.5 w-3.5" />终止进程
+          <Square className="h-3.5 w-3.5" />强制终止进程
         </Button>
       )}
       {resumable && (
