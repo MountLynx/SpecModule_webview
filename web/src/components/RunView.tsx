@@ -328,10 +328,33 @@ export function RunView({
     [selected, nodeIds],
   );
 
-  // 切节点 / 点画布空白（selected 变化）→ 溯源归零（图上值卡与虚线随 trace 清除）
-  useEffect(() => {
-    setTrace(null);
-  }, [selected]);
+  // 选中动作（点节点 / 点画布空白 / 关面板）：开面板即程序化点第一个可定位输入
+  // 胶囊——首个输入的值卡（spec 常驻卡高亮或上游浮卡）随侧栏出现；无可定位输入
+  // → 溯源归零。走 handler 而非 effect：payload/nodeIds 进 effect 依赖会随 WS
+  // 推送身份漂移（每秒重置 trace + 镜头重飞）；置新 trace 即隐含清旧，单一溯源
+  // 不变量保持。
+  const handleSelect = useCallback(
+    (id: string | null) => {
+      setSelected(id);
+      if (!id) {
+        setTrace(null);
+        return;
+      }
+      const node = payload?.graph.nodes.find((n) => n.id === id);
+      let next: TraceState | null = null;
+      if (node) {
+        for (const [k, v] of Object.entries(node.inputs ?? {})) {
+          const src = resolveInputSource(v, nodeIds);
+          if (src) {
+            next = { consumerId: id, field: k, source: src };
+            break;
+          }
+        }
+      }
+      setTrace(next);
+    },
+    [payload, nodeIds],
+  );
 
   const clearTrace = useCallback(() => setTrace(null), []);
 
@@ -609,7 +632,7 @@ export function RunView({
               payload={payload}
               status={statusView}
               selected={selected}
-              onSelect={setSelected}
+              onSelect={handleSelect}
               trace={trace}
               spec={spec}
               onClearTrace={clearTrace}
@@ -631,7 +654,7 @@ export function RunView({
             nodeIds={nodeIds}
             trace={trace}
             onTraceInput={handleTraceInput}
-            onClose={() => setSelected(null)}
+            onClose={() => handleSelect(null)}
           />
         )}
       </div>
