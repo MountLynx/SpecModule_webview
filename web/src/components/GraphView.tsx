@@ -29,6 +29,11 @@ import {
   type SpecCardFlowNode,
 } from "./SpecCardNode";
 import {
+  SPEC_REGION_NODE_ID,
+  SpecRegionNode,
+  type SpecRegionFlowNode,
+} from "./SpecRegionNode";
+import {
   ARTIFACT_SIZE,
   ArtifactNode,
   artifactNodeId,
@@ -45,9 +50,15 @@ const nodeTypes: NodeTypes = {
   dataCard: DataCardNode,
   artifact: ArtifactNode,
   specCard: SpecCardNode,
+  specRegion: SpecRegionNode,
 };
 
-type GraphFlowNode = StatusFlowNode | DataCardFlowNode | ArtifactFlowNode | SpecCardFlowNode;
+type GraphFlowNode =
+  | StatusFlowNode
+  | DataCardFlowNode
+  | ArtifactFlowNode
+  | SpecCardFlowNode
+  | SpecRegionFlowNode;
 
 /** 与 index.html 初始化同优先级：localStorage 覆盖 > 跟随系统 */
 function themeColorMode(): "light" | "dark" | "system" {
@@ -238,7 +249,45 @@ function GraphCanvas({
         };
       }
     }
-    const list: GraphFlowNode[] = payload.graph.nodes.map((n) => {
+    const list: GraphFlowNode[] = [];
+    // spec 分组框：纯视觉背景圈住全部 spec 卡——几何 = 有效位置（基准列或拖动
+    // 覆盖）包围盒 + padding（顶部留标签带），拖动实时跟随、重置布局随卡回位；
+    // 排在数组最前 = 渲染最底（自身永不选中不 elevate）；pointer-events none
+    // 不拦画布交互。位置缺失（basePos 未就绪首拍）不叠框，下一拍自然出现。
+    if (specCards.length) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      let ok = true;
+      for (const key of specCards) {
+        const p = posOf(specCardNodeId(key));
+        if (!p) {
+          ok = false;
+          break;
+        }
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x + SPEC_CARD_SIZE.width);
+        maxY = Math.max(maxY, p.y + SPEC_CARD_SIZE.height);
+      }
+      if (ok) {
+        const pad = 14;
+        list.push({
+          id: SPEC_REGION_NODE_ID,
+          type: "specRegion",
+          position: { x: minX - pad, y: minY - 26 },
+          width: maxX - minX + pad * 2,
+          height: maxY - minY + 26 + pad,
+          selectable: false,
+          draggable: false,
+          style: { pointerEvents: "none" },
+          data: {},
+        });
+      }
+    }
+    list.push(
+      ...payload.graph.nodes.map((n) => {
       // 受控 setNodes 每次采纳全新节点对象；对象缺 measured 时库会重置已测量的
       // handleBounds（parseHandles），而重测触发在持续 WS 推送下不可靠——handle
       // 测量一旦丢失，getEdgePosition 对全部边静默返回 null，连线整体消失且
@@ -254,7 +303,8 @@ function GraphCanvas({
         data: { label: n.label, type: n.type, isStart: n.is_start, state: live[n.id] },
         selected: selected === n.id,
       };
-    });
+      })
+    );
     // 卫星产物卡：叶节点随 dagre 挂在生产者下方；measured 带回防 WS 采纳重置
     for (const { producer, entry } of satellites) {
       const id = artifactNodeId(producer, entry.index);
@@ -470,6 +520,7 @@ function GraphCanvas({
 
   /** MiniMap 节点底色：取状态主色（bg 洗淡变体在小图上几乎不可见） */
   const minimapColor = useCallback((n: Node): string => {
+    if (n.type === "specRegion") return "transparent";
     if (n.type === "dataCard") return "hsl(var(--muted-foreground) / 0.5)";
     if (n.type === "specCard") return "hsl(var(--muted-foreground) / 0.35)";
     if (n.type === "artifact") return "hsl(var(--primary) / 0.4)";
@@ -612,7 +663,8 @@ function GraphCanvas({
         onNodeDragStop={onNodeDrag}
         onMoveStart={onMoveStart}
         onNodeClick={(_, n) => {
-          if (n.type === "dataCard" || n.type === "artifact" || n.type === "specCard") return;
+          if (n.type === "dataCard" || n.type === "artifact" || n.type === "specCard" || n.type === "specRegion")
+            return;
           onSelect(n.id);
         }}
         onPaneClick={() => onSelect(null)}
